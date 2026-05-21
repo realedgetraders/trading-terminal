@@ -33,15 +33,46 @@ pages/1_Seasonality.py — DO NOT BREAK THIS FILE
 Layout:
 - Title row: st.columns([2,5,2]) — "← Back to Hub" left | "Seasonality Tracker" centered | empty right
 - Controls row: ASSET dropdown | HISTORICAL DATA buttons (5y/10y/15y/20y/25y) | PATTERN WINDOW (START/END date pickers)
+- START date default: today | END date default: today + 1 month
 - Info line: "{asset} · {X}-Year Analysis · {n} Trading Days · {date range} · Data: Yahoo Finance"
-- Main chart: seasonal trend line indexed to 100, compounded avg daily returns by DOY
+- Main chart: seasonal trend line, mean-normalized to 100, rolling(3) smooth
 - Slider below chart: date range selector synced with date pickers, colored green/gray
 - Pattern Analysis section: donut chart (Long % green / Short % red), stats cards (Ann.Return, Win Rate, Avg Return, Median Return, Sharpe), additional stats (Gains, Losses, Best Trade, Worst Trade, Std Dev, Streak), year-by-year table
 - Seasonality Radar: best-pattern finder per asset, 10Y fixed history, Forex/Index split, Extreme/Watch/Bias signals, dynamic window scanner (start offsets -3..+7 days, lengths 14/21/30d), WINDOW + DAYS columns
 
 Assets: all major/minor Forex pairs + indices + commodities via yfinance
 History: 5y/10y/15y/20y/25y (Radar always uses 10Y)
-Sharpe: per-occurrence pattern returns, rf=0
+Sharpe: avg_return / std_return (no annualization factor), rf=0
+
+### Data Layer — fetch_data()
+- Forex cross-pairs (GBPAUD, EURJPY, etc.): synthetic calculation via USD major legs
+  → GBPAUD = GBPUSD / AUDUSD — gives 20+ years history
+  → SYNTHETIC_CROSSES dict maps all 21 cross-pairs to their USD leg tickers
+  → USD_YF dict maps leg keys to yfinance tickers (CAD=X, CHF=X, JPY=X for inverted pairs)
+- yfinance -1 day index shift applied to all forex tickers (=X suffix) to correct UTC offset
+- Non-forex (indices GC=F ^GSPC etc.): direct yfinance, no shift
+- Cache: @st.cache_data(ttl=3600)
+
+### Seasonal Curve — calc_seasonal_curve()
+- Method: Month/Day grouping (matches Seasonax exactly)
+  1. Exclude current calendar year (incomplete)
+  2. Normalize each year to 100 at first trading day
+  3. Forward-fill to all calendar dates (weekends included)
+  4. Group by (month, day), average across years (≥2 obs)
+  5. Re-normalize: curve_mean → 100 (Seasonax re-normalization)
+  6. Apply rolling(3, center=True, min_periods=1) smooth
+  7. Map to _REF_YEAR=2023 (non-leap) for x-axis Timestamps
+- Returns: (mean_df, year_paths) — year_paths no longer plotted
+- x-axis: actual date Timestamps (Plotly type="date"), month ticks from first trading day of each month
+
+### Pattern Analysis — calc_pattern_analysis()
+- Entry price: Close on entry date (first trading day on/after window start)
+- Exit price: Close on exit date (last trading day on/before window end)
+- Excludes: current year (≥ current_year) + years where entry < data_start (strictly less than)
+  NOTE: entry == data_start IS included (fixes first-year exclusion bug, verified vs Seasonax)
+- Annualized Return: (1 + avg_ret/100)^(365/calendar_days) - 1
+- Sharpe: avg_ret / std_ret (no sqrt annualization)
+- Handles cross-year patterns (e.g. Nov → Feb)
 
 Radar assets (RADAR_ASSETS dict):
 - Forex Majors: EUR/USD, GBP/USD, USD/JPY, USD/CHF, AUD/USD, NZD/USD, USD/CAD
@@ -54,6 +85,11 @@ Radar signal logic:
 - Watch (⚠): no qualifying extreme window, shown up to fill 15 total → amber row
 - Bias (📊): Index/Commodity category — always structural long bias, separate sub-section
 - Forex Extreme + Watch shown in primary table; Index/Commodity in sub-section below
+
+### Key Constants
+- _REF_YEAR = 2023 (non-leap reference year for x-axis date mapping)
+- SYNTHETIC_CROSSES: 21 cross-pairs → (num_leg, den_leg) tuples
+- _USD_YF: maps leg keys to yfinance tickers
 
 ## Module 2 — COT Analysis (COMPLETE)
 pages/2_COT_Analysis.py — DO NOT BREAK THIS FILE
@@ -74,7 +110,7 @@ Markets:
 - Bonds:       10Y T-Note / 30Y T-Bond / 2Y T-Note / 5Y T-Note
 
 Charts (in order):
-1. COT Index — 52-week rolling percentile per group, range [-2, 105]
+1. COT Index — 26-week min-max normalization per group, range [-2, 105]
 2. Long vs Short Donuts — 3 side-by-side donuts (make_subplots), latest report week
 3. Net Positioning — dual Y-axis (Non-Reportable on right), 3-year default window
 4. COT Divergence Screener — table of all markets sorted by Comm vs NRept divergence (covers all categories including Commodities)
