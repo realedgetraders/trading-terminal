@@ -23,7 +23,7 @@ MODULES = [
     {
         "title":    "Seasonality",
         "icon":     "📈",
-        "desc":     "Seasonax-style seasonal trend analysis with pattern windows and year-by-year breakdown.",
+        "desc":     "Decode recurring price patterns across 25 years — custom windows, win rates, Sharpe, and a full radar of the strongest seasonal setups.",
         "active":   True,
         "page":     "pages/1_Seasonality.py",
     },
