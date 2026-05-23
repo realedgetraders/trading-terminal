@@ -7,8 +7,10 @@ Sources (financial): FXStreet · ForexLive · CNBC · Bloomberg · MarketWatch �
 
 import time
 import urllib.parse
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
+import pandas as pd
 import requests
 import streamlit as st
 
@@ -320,6 +322,110 @@ _CCY_CAT_INTERP: dict[str, dict[str, str]] = {
 TTL_CCY    = 300   # 5-min — per-currency Google News cache
 TTL_GLOBAL = 600   # 10-min — direct RSS feed cache
 TTL_FIN    = 300   # 5-min — financial RSS feed cache
+TTL_CAL    = 1800  # 30-min — ForexFactory calendar cache TTL
+
+# ── ForexFactory calendar constants (used by calendar tab) ───────────────────
+COUNTRY_TO_CURRENCY_M4: dict[str, str] = {
+    "United States":  "USD", "US":             "USD",
+    "Euro Zone":      "EUR", "Eurozone":        "EUR", "European Union": "EUR",
+    "United Kingdom": "GBP", "UK":              "GBP",
+    "Japan":          "JPY",
+    "Australia":      "AUD",
+    "Canada":         "CAD",
+    "Switzerland":    "CHF",
+    "New Zealand":    "NZD",
+}
+_SUPPORTED_CCY_M4 = ["USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"]
+
+_CALENDAR_CCY_KEYWORDS_M4: dict[str, list[str]] = {
+    "USD": ["usd", "us", "united states", "federal reserve", "fed", "fomc", "powell"],
+    "EUR": ["eur", "euro", "european", "ecb", "eurozone", "euro zone", "lagarde"],
+    "GBP": ["gbp", "british", "uk", "united kingdom", "boe", "bank of england", "bailey"],
+    "JPY": ["jpy", "japanese", "japan", "boj", "bank of japan", "ueda"],
+    "AUD": ["aud", "australian", "australia", "rba", "reserve bank of australia"],
+    "CAD": ["cad", "canadian", "canada", "boc", "bank of canada", "macklem"],
+    "CHF": ["chf", "swiss", "switzerland", "snb", "swiss national bank"],
+    "NZD": ["nzd", "new zealand", "rbnz", "reserve bank of new zealand"],
+}
+
+_RAW_IND_MAP_M4: dict[str, str] = {
+    "consumer price index": "CPI y/y", "consumer confidence": "Consumer Confidence",
+    "average hourly earnings": "Wage Growth", "markit manufacturing": "Manufacturing PMI",
+    "manufacturing pmi": "Manufacturing PMI", "ism manufacturing": "Manufacturing PMI",
+    "services pmi": "Services PMI", "ism non-mfg": "Services PMI",
+    "ism services": "Services PMI", "building permits": "Building Permits",
+    "producer price": "PPI", "government debt": "Government Debt",
+    "gross domestic": "GDP Growth", "current account": "Current Account",
+    "trade balance": "Trade Balance", "budget balance": "Budget Balance",
+    "retail sales": "Retail Sales", "interest rate": "Interest Rate",
+    "cash rate": "Interest Rate", "overnight rate": "Interest Rate",
+    "policy rate": "Interest Rate", "fed funds": "Interest Rate",
+    "base rate": "Interest Rate", "unemployment": "Unemployment Rate",
+    "claimant count": "Unemployment Rate", "jobless": "Unemployment Rate",
+    "wage growth": "Wage Growth", "labor cost": "Wage Growth",
+    "labour cost": "Wage Growth", "gdp": "GDP Growth", "cpi": "CPI y/y",
+    "ppi": "PPI",
+}
+_INDICATOR_MAP_M4: list[tuple[str, str]] = sorted(
+    _RAW_IND_MAP_M4.items(), key=lambda x: len(x[0]), reverse=True
+)
+
+_FF_HDR_JSON_M4 = {
+    "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept":          "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer":         "https://www.forexfactory.com/",
+    "Origin":          "https://www.forexfactory.com",
+}
+_FF_HDR_XML_M4 = {
+    "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept":          "application/xml, text/xml, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer":         "https://www.forexfactory.com/",
+}
+_FF_ENDPOINTS_M4 = [
+    ("json", "https://nfs.faireconomy.media/ff_calendar_thisweek.json"),
+    ("json", "https://nfs.faireconomy.media/ff_calendar_nextweek.json"),
+    ("json", "https://nfs.faireconomy.media/ff_calendar_month.json"),
+    ("xml",  "https://cdn-nfs.faireconomy.media/ff_calendar_thisweek.xml"),
+    ("xml",  "https://cdn-nfs.faireconomy.media/ff_calendar_nextweek.xml"),
+]
+
+_STATIC_CALENDAR_M4: list[dict] = [
+    {"currency":"USD","indicator":"GDP Growth",        "title":"GDP Growth Rate QoQ Prelim","date":"2026-05-28","impact":"High",  "forecast": 2.7,  "previous": 2.8 },
+    {"currency":"USD","indicator":"Manufacturing PMI", "title":"ISM Manufacturing PMI",     "date":"2026-06-01","impact":"Medium","forecast":50.0,  "previous":49.8 },
+    {"currency":"USD","indicator":"Services PMI",      "title":"ISM Services PMI",          "date":"2026-06-03","impact":"Medium","forecast":51.5,  "previous":51.2 },
+    {"currency":"USD","indicator":"Unemployment Rate", "title":"Unemployment Rate",         "date":"2026-06-05","impact":"High",  "forecast": 4.0,  "previous": 4.0 },
+    {"currency":"USD","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-06-10","impact":"High",  "forecast": 3.3,  "previous": 3.4 },
+    {"currency":"USD","indicator":"Interest Rate",     "title":"Fed Funds Rate",            "date":"2026-06-18","impact":"High",  "forecast": 4.50, "previous": 4.50},
+    {"currency":"USD","indicator":"GDP Growth",        "title":"GDP Growth Rate QoQ Final", "date":"2026-06-25","impact":"High",  "forecast": 2.8,  "previous": 2.8 },
+    {"currency":"USD","indicator":"Unemployment Rate", "title":"Unemployment Rate",         "date":"2026-07-02","impact":"High",  "forecast": 3.9,  "previous": 4.0 },
+    {"currency":"USD","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-07-14","impact":"High",  "forecast": 3.2,  "previous": 3.3 },
+    {"currency":"USD","indicator":"Interest Rate",     "title":"Fed Funds Rate",            "date":"2026-07-29","impact":"High",  "forecast": 4.25, "previous": 4.50},
+    {"currency":"EUR","indicator":"CPI y/y",           "title":"CPI Flash y/y",             "date":"2026-06-04","impact":"High",  "forecast": 1.8,  "previous": 1.9 },
+    {"currency":"EUR","indicator":"Interest Rate",     "title":"ECB Rate Decision",         "date":"2026-06-05","impact":"High",  "forecast": 2.00, "previous": 2.25},
+    {"currency":"EUR","indicator":"GDP Growth",        "title":"GDP Growth Rate QoQ",       "date":"2026-06-30","impact":"High",  "forecast": 0.9,  "previous": 0.8 },
+    {"currency":"EUR","indicator":"Interest Rate",     "title":"ECB Rate Decision",         "date":"2026-07-24","impact":"High",  "forecast": 2.00, "previous": 2.00},
+    {"currency":"GBP","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-06-17","impact":"High",  "forecast": 3.0,  "previous": 3.2 },
+    {"currency":"GBP","indicator":"Interest Rate",     "title":"BOE Rate Decision",         "date":"2026-06-18","impact":"High",  "forecast": 4.00, "previous": 4.25},
+    {"currency":"GBP","indicator":"Interest Rate",     "title":"BOE Rate Decision",         "date":"2026-08-06","impact":"High",  "forecast": 3.75, "previous": 4.00},
+    {"currency":"JPY","indicator":"Interest Rate",     "title":"BOJ Rate Decision",         "date":"2026-06-17","impact":"High",  "forecast": 0.50, "previous": 0.50},
+    {"currency":"JPY","indicator":"CPI y/y",           "title":"National CPI y/y",          "date":"2026-06-19","impact":"High",  "forecast": 2.6,  "previous": 2.8 },
+    {"currency":"JPY","indicator":"Interest Rate",     "title":"BOJ Rate Decision",         "date":"2026-07-30","impact":"High",  "forecast": 0.75, "previous": 0.50},
+    {"currency":"AUD","indicator":"Interest Rate",     "title":"RBA Rate Decision",         "date":"2026-06-02","impact":"High",  "forecast": 3.60, "previous": 3.85},
+    {"currency":"AUD","indicator":"Unemployment Rate", "title":"Unemployment Rate",         "date":"2026-06-18","impact":"High",  "forecast": 4.2,  "previous": 4.2 },
+    {"currency":"AUD","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-07-29","impact":"High",  "forecast": 2.9,  "previous": 3.2 },
+    {"currency":"CAD","indicator":"Interest Rate",     "title":"BOC Rate Decision",         "date":"2026-06-04","impact":"High",  "forecast": 2.50, "previous": 2.75},
+    {"currency":"CAD","indicator":"Unemployment Rate", "title":"Unemployment Rate",         "date":"2026-06-05","impact":"High",  "forecast": 7.0,  "previous": 6.9 },
+    {"currency":"CAD","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-06-16","impact":"High",  "forecast": 2.6,  "previous": 2.7 },
+    {"currency":"CHF","indicator":"Interest Rate",     "title":"SNB Rate Decision",         "date":"2026-06-18","impact":"High",  "forecast": 0.00, "previous": 0.00},
+    {"currency":"CHF","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-07-02","impact":"Medium","forecast": 0.5,  "previous": 0.4 },
+    {"currency":"NZD","indicator":"Interest Rate",     "title":"RBNZ Rate Decision",        "date":"2026-05-27","impact":"High",  "forecast": 3.25, "previous": 3.50},
+    {"currency":"NZD","indicator":"GDP Growth",        "title":"GDP Growth Rate QoQ",       "date":"2026-06-18","impact":"High",  "forecast": 0.8,  "previous": 0.7 },
+    {"currency":"NZD","indicator":"Interest Rate",     "title":"RBNZ Rate Decision",        "date":"2026-07-08","impact":"High",  "forecast": 3.00, "previous": 3.25},
+]
 
 # ── Financial news RSS feeds (moved from Module 3) ────────────────────────────
 _FIN_FEEDS: list[tuple[str, str]] = [
@@ -353,6 +459,253 @@ _CCY_FIN_KW: dict[str, list[str]] = {
     "CHF": ["franc", "snb", "chf", "switzerland", "swiss national bank"],
     "NZD": ["kiwi", "rbnz", "nzd", "new zealand", "reserve bank of new zealand"],
 }
+
+
+# ╔══════════════════════════════════════════════════════════════════════════════
+# ║  CALENDAR HELPERS
+# ╚══════════════════════════════════════════════════════════════════════════════
+
+def _parse_numeric_m4(val) -> float | None:
+    if not val or not str(val).strip():
+        return None
+    s = str(val).strip().replace(",", "").replace("$", "").replace(" ", "")
+    if s.endswith("%"):
+        s = s[:-1]
+    mult = 1.0
+    if s.upper().endswith("K"):
+        mult = 1_000; s = s[:-1]
+    elif s.upper().endswith("M"):
+        mult = 1_000_000; s = s[:-1]
+    elif s.upper().endswith("B"):
+        mult = 1_000_000_000; s = s[:-1]
+    try:
+        return float(s) * mult
+    except ValueError:
+        return None
+
+
+def _normalize_indicator_m4(title: str) -> str | None:
+    t = title.lower()
+    for key, canonical in _INDICATOR_MAP_M4:
+        if key in t:
+            return canonical
+    return None
+
+
+def _resolve_calendar_ccy_m4(country: str, title: str) -> str | None:
+    ccy = COUNTRY_TO_CURRENCY_M4.get(country) or (country if country in _SUPPORTED_CCY_M4 else None)
+    if ccy:
+        return ccy
+    haystack = (country + " " + title).lower()
+    for ccy_code, keywords in _CALENDAR_CCY_KEYWORDS_M4.items():
+        if any(kw in haystack for kw in keywords):
+            return ccy_code
+    return None
+
+
+def _generate_static_calendar_m4() -> pd.DataFrame:
+    rows = []
+    for ev in _STATIC_CALENDAR_M4:
+        rows.append({
+            "currency":  ev["currency"],
+            "indicator": ev["indicator"],
+            "title":     ev["title"],
+            "date":      pd.to_datetime(ev["date"]),
+            "impact":    ev["impact"],
+            "actual":    None,
+            "forecast":  ev.get("forecast"),
+            "previous":  ev.get("previous"),
+        })
+    return pd.DataFrame(rows)
+
+
+@st.cache_data(ttl=TTL_CAL, show_spinner=False)
+def fetch_ff_calendar_m4() -> pd.DataFrame:
+    """Fetch ForexFactory calendar for Module 4 — JSON + XML CDN endpoints."""
+    rows: list[dict] = []
+
+    def _append_json(data: list) -> None:
+        for ev in data:
+            title       = str(ev.get("title") or ev.get("name") or "")
+            country_raw = str(ev.get("country", ""))
+            ccy         = _resolve_calendar_ccy_m4(country_raw, title)
+            if not ccy: continue
+            impact_raw  = str(ev.get("impact") or "Low").capitalize()
+            if impact_raw in ("Holiday", "Low"): continue
+            ind = _normalize_indicator_m4(title) or title
+            rows.append({
+                "currency": ccy, "indicator": ind, "title": title,
+                "date":     pd.to_datetime(ev.get("date"), errors="coerce"),
+                "impact":   impact_raw,
+                "actual":   _parse_numeric_m4(str(ev.get("actual")   or "")),
+                "forecast": _parse_numeric_m4(str(ev.get("forecast") or "")),
+                "previous": _parse_numeric_m4(str(ev.get("previous") or "")),
+            })
+
+    def _append_xml(content: bytes) -> None:
+        try: root = ET.fromstring(content)
+        except Exception: return
+        for event in root.findall("event"):
+            def _t(tag: str) -> str:
+                el = event.find(tag)
+                return (el.text or "").strip() if el is not None else ""
+            title      = _t("title")
+            impact_raw = _t("impact").capitalize() or "Low"
+            if impact_raw in ("Holiday", "Low"): continue
+            ccy = _resolve_calendar_ccy_m4(_t("country"), title)
+            if not ccy: continue
+            ind = _normalize_indicator_m4(title) or title
+            rows.append({
+                "currency": ccy, "indicator": ind, "title": title,
+                "date":     pd.to_datetime(_t("date"), errors="coerce"),
+                "impact":   impact_raw,
+                "actual":   _parse_numeric_m4(_t("actual")),
+                "forecast": _parse_numeric_m4(_t("forecast")),
+                "previous": _parse_numeric_m4(_t("previous")),
+            })
+
+    for fmt, url in _FF_ENDPOINTS_M4:
+        hdr = _FF_HDR_JSON_M4 if fmt == "json" else _FF_HDR_XML_M4
+        try:
+            r = requests.get(url, timeout=10, headers=hdr)
+            if r.status_code == 200:
+                if fmt == "json":
+                    data = r.json()
+                    if isinstance(data, list) and data:
+                        _append_json(data)
+                else:
+                    _append_xml(r.content)
+        except Exception:
+            pass
+        time.sleep(0.08)
+
+    if not rows:
+        return pd.DataFrame(columns=[
+            "currency", "indicator", "title", "date", "impact",
+            "actual", "forecast", "previous",
+        ])
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    if df["date"].dt.tz is not None:
+        df["date"] = df["date"].dt.tz_localize(None)
+    return df.drop_duplicates(subset=["currency", "title", "date"])
+
+
+def build_calendar_view_m4(ff_df: pd.DataFrame, currency: str) -> pd.DataFrame:
+    """Past week + next 14 weeks — HIGH and MEDIUM impact only, sorted ascending."""
+    now       = pd.Timestamp.today().normalize()
+    lookback  = now - pd.Timedelta(days=now.dayofweek)
+    lookahead = now + pd.Timedelta(weeks=14)
+
+    source = ff_df if not ff_df.empty else _generate_static_calendar_m4()
+
+    src_dates = source["date"]
+    if hasattr(src_dates, "dt") and src_dates.dt.tz is not None:
+        source = source.copy()
+        source["date"] = src_dates.dt.tz_localize(None)
+
+    sub = source[
+        (source["currency"] == currency) &
+        (source["date"] >= lookback) &
+        (source["date"] <= lookahead) &
+        (source["impact"].isin(["High", "Medium"]))
+    ].copy()
+    if sub.empty:
+        return pd.DataFrame()
+
+    sub["date"]        = pd.to_datetime(sub["date"])
+    sub                = sub.sort_values("date", ascending=True)
+    sub["days_until"]  = (sub["date"] - now).dt.days
+    sub["is_upcoming"] = sub["date"] > now
+    return sub[[
+        "date", "indicator", "title", "impact", "actual", "forecast", "previous",
+        "days_until", "is_upcoming",
+    ]].reset_index(drop=True)
+
+
+def render_calendar_table_m4(calendar_df: pd.DataFrame) -> str:
+    """Render the economic calendar as an HTML table."""
+    if calendar_df.empty:
+        return (
+            f"<div style='padding:24px;text-align:center;color:{C['muted']};"
+            f"font-family:monospace;font-size:12px;background:{C['card']};"
+            f"border:1px solid {C['border']};border-radius:10px;'>"
+            f"⚠ Calendar unavailable — ForexFactory unreachable, showing static data</div>"
+        )
+
+    def _fmt(val) -> str:
+        try:
+            if val is None:
+                return f"<span style='color:{C['muted']};'>—</span>"
+            f = float(val)
+            if f != f:
+                return f"<span style='color:{C['muted']};'>—</span>"
+            s = f"{f:,.2f}".rstrip("0").rstrip(".")
+            return s or "0"
+        except Exception:
+            return f"<span style='color:{C['muted']};'>—</span>"
+
+    def _impact_pill(impact: str) -> str:
+        if str(impact or "").strip().lower() == "low":
+            return f"<span style='color:{C['muted']};font-size:10px;'>●</span>"
+        cfg = {
+            "High":   (C["red"],    "rgba(240,82,98,0.15)"),
+            "Medium": (C["yellow"], "rgba(240,180,41,0.15)"),
+        }
+        color, bg = cfg.get(str(impact).capitalize(), (C["muted"], C["card"]))
+        return (
+            f"<span style='background:{bg};color:{color};font-size:9px;"
+            f"font-family:monospace;font-weight:700;letter-spacing:1px;"
+            f"padding:2px 7px;border-radius:4px;text-transform:uppercase;'>{impact}</span>"
+        )
+
+    cols = ["Date", "Event", "Actual", "Forecast", "Previous", "Impact"]
+    hdr  = (
+        f"<tr style='border-bottom:1px solid {C['border']};'>"
+        + "".join(
+            f"<th style='padding:7px 10px;font-size:10px;color:{C['muted']};"
+            f"font-family:monospace;text-transform:uppercase;letter-spacing:1px;"
+            f"font-weight:600;text-align:left;'>{h}</th>" for h in cols
+        ) + "</tr>"
+    )
+
+    body = ""
+    for _, row in calendar_df.iterrows():
+        days        = int(row.get("days_until", 99))
+        is_upcoming = bool(row.get("is_upcoming", True))
+        soon        = 0 < days <= 7
+        row_bg      = "rgba(69,196,176,0.06)" if soon else "transparent"
+        date_color  = C["teal"] if soon else (C["muted"] if is_upcoming else C["text"])
+
+        try:
+            date_str = pd.Timestamp(row["date"]).strftime("%a %d %b")
+        except Exception:
+            date_str = "—"
+        ind_name = str(row.get("title") or row.get("indicator") or "—")
+
+        body += (
+            f"<tr style='border-bottom:1px solid {C['border']};background:{row_bg};'>"
+            f"<td style='padding:7px 10px;font-size:11px;color:{date_color};"
+            f"font-family:monospace;white-space:nowrap;'>{date_str}</td>"
+            f"<td style='padding:7px 10px;font-size:11px;color:{C['text']};"
+            f"font-family:monospace;'>{ind_name}</td>"
+            f"<td style='padding:7px 10px;font-size:11px;color:{C['text']};"
+            f"font-family:monospace;'>{_fmt(row.get('actual'))}</td>"
+            f"<td style='padding:7px 10px;font-size:11px;color:{C['muted']};"
+            f"font-family:monospace;'>{_fmt(row.get('forecast'))}</td>"
+            f"<td style='padding:7px 10px;font-size:11px;color:{C['muted']};"
+            f"font-family:monospace;'>{_fmt(row.get('previous'))}</td>"
+            f"<td style='padding:7px 10px;'>{_impact_pill(row['impact'])}</td>"
+            f"</tr>"
+        )
+
+    return (
+        f"<div style='background:{C['card']};border:1px solid {C['border']};"
+        f"border-radius:10px;max-height:520px;overflow-y:auto;'>"
+        f"<table style='width:100%;border-collapse:collapse;'>"
+        f"<thead>{hdr}</thead><tbody>{body}</tbody>"
+        f"</table></div>"
+    )
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════
@@ -894,6 +1247,7 @@ def main():
         fetch_ccy_news.clear()
         fetch_global_news.clear()
         fetch_financial_news.clear()
+        fetch_ff_calendar_m4.clear()
         st.session_state.geo_last_refresh = _now
         st.rerun()
 
@@ -929,6 +1283,7 @@ def main():
                 fetch_ccy_news.clear()
                 fetch_global_news.clear()
                 fetch_financial_news.clear()
+                fetch_ff_calendar_m4.clear()
                 st.session_state.geo_last_refresh = time.time()
                 st.rerun()
 
@@ -972,10 +1327,10 @@ def main():
         st.markdown(render_global_feed(global_articles), unsafe_allow_html=True)
 
     with col_news:
-        # ── Tab switcher: Geo Events | Financial News ──────────────────────────
+        # ── Tab switcher: Geo Events | Financial News | Economic Calendar ─────
         news_tab = st.radio(
             "news_tab",
-            ["🌍  Geo Events", "📰  Financial News"],
+            ["🌍  Geo Events", "📰  Financial News", "📅  Economic Calendar"],
             horizontal=True,
             key="geo_news_tab",
             label_visibility="collapsed",
@@ -987,7 +1342,7 @@ def main():
                 render_ccy_feed(ccy_articles, selected_ccy, last_refresh_str),
                 unsafe_allow_html=True,
             )
-        else:
+        elif news_tab.startswith("📰"):
             with st.spinner(f"Fetching financial news for {selected_ccy}..."):
                 fin_items, fin_errors = fetch_financial_news(selected_ccy)
 
@@ -1004,6 +1359,11 @@ def main():
                 render_financial_feed(fin_items, fin_errors, selected_ccy, source_filter),
                 unsafe_allow_html=True,
             )
+        else:
+            with st.spinner("Loading economic calendar..."):
+                cal_df = fetch_ff_calendar_m4()
+            calendar_view = build_calendar_view_m4(cal_df, selected_ccy)
+            st.markdown(render_calendar_table_m4(calendar_view), unsafe_allow_html=True)
 
     # ── Footer ─────────────────────────────────────────────────────────────────
     st.markdown(

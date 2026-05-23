@@ -35,7 +35,6 @@ FRED_API_KEY = "92dba3aead2eb80b8066515b6112958b"
 # ── Refresh intervals ─────────────────────────────────────────────────────────
 AUTO_RERUN_INTERVAL = 300   # 5 min — auto-rerun timer (seconds)
 TTL_INDICATORS      = 3600  # 1 h   — FRED / ECB cache TTL
-TTL_FF_CALENDAR     = 1800  # 30 min — ForexFactory calendar cache TTL
 TTL_NEWS            = 300   # 5 min — RSS news cache TTL
 
 # ── Premium news API keys (optional upgrade) ─────────────────────────────────
@@ -135,13 +134,16 @@ LOWER_IS_BETTER: dict[str, bool] = {
     "Current Account": False, "Wage Growth": False, "PPI": False,
     "Consumer Confidence": False, "Government Debt": True, "Budget Balance": False,
     "Building Permits": False, "Business Confidence": False,
+    "Core CPI": False, "Employment Change": False, "Industrial Production": False,
+    "M2 Money Supply": False,
 }
 INDICATOR_ORDER = [
     # Core — scored
     "CPI y/y", "Interest Rate", "GDP Growth", "Unemployment Rate",
     "Manufacturing PMI", "Services PMI", "Trade Balance", "Retail Sales",
     "Current Account", "Wage Growth", "PPI", "Consumer Confidence",
-    "Government Debt",
+    "Government Debt", "Core CPI", "Employment Change", "Industrial Production",
+    "M2 Money Supply",
     # Extended — table only
     "Budget Balance", "Building Permits", "Business Confidence",
 ]
@@ -158,6 +160,11 @@ FRED_SERIES = {
     "Retail Sales":      ("RSAFS",            "mom"),     # Advance retail sales — m/m computed
     "Trade Balance":     ("BOPGSTB",          "latest"),  # Goods & services trade balance ($B)
     "Wage Growth":       ("CES0500000003",    "yoy"),     # Avg hourly earnings — y/y computed
+    # New indicators
+    "Core CPI":             ("CPILFESL",        "yoy"),
+    "Employment Change":    ("PAYEMS",          "mom_abs"),
+    "Industrial Production":("INDPRO",          "mom"),
+    "M2 Money Supply":      ("M2SL",            "yoy"),
 }
 # Note: FRED key validity check — reject placeholder strings
 _FRED_KEY_VALID = bool(
@@ -410,6 +417,10 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Budget Balance":     {"actual": -5.8,   "previous": -6.1,   "forecast": -6.0,   "date": "2026-04-15", "impact": "Low"},
         "Building Permits":   {"actual": 1482.0, "previous": 1465.0, "forecast": 1460.0, "date": "2026-05-16", "impact": "Medium"},
         "Business Confidence":{"actual": 52.3,   "previous": 50.1,   "forecast": 50.5,   "date": "2026-05-15", "impact": "Low"},
+        "Core CPI":           {"actual": 3.6,    "previous": 3.5,    "forecast": 3.5,    "date": "2026-05-13", "impact": "High"},
+        "Employment Change":  {"actual": 177.0,  "previous": 142.0,  "forecast": 155.0,  "date": "2026-05-02", "impact": "High"},
+        "Industrial Production":{"actual": 0.3,  "previous": 0.1,    "forecast": 0.2,    "date": "2026-05-15", "impact": "Medium"},
+        "M2 Money Supply":    {"actual": 3.8,    "previous": 3.5,    "forecast": 3.6,    "date": "2026-05-07", "impact": "Low"},
     },
     # ── EUR  target score ≈ -2  (SLIGHT BEARISH — cutting cycle, soft PMI, below-target CPI)
     "EUR": {
@@ -429,6 +440,10 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Budget Balance":     {"actual": -3.2,   "previous": -3.5,   "forecast": -3.3,   "date": "2026-04-01", "impact": "Low"},
         "Building Permits":   {"actual": 92.3,   "previous": 95.1,   "forecast": 94.0,   "date": "2026-05-12", "impact": "Low"},
         "Business Confidence":{"actual": 98.5,   "previous": 99.2,   "forecast": 99.5,   "date": "2026-05-20", "impact": "Low"},
+        "Core CPI":           {"actual": 1.7,    "previous": 1.9,    "forecast": 1.8,    "date": "2026-05-06", "impact": "High"},
+        "Employment Change":  {"actual": 140.0,  "previous": 120.0,  "forecast": 130.0,  "date": "2026-04-30", "impact": "Medium"},
+        "Industrial Production":{"actual": -0.2, "previous": 0.1,    "forecast": 0.2,    "date": "2026-04-14", "impact": "Medium"},
+        "M2 Money Supply":    {"actual": 2.1,    "previous": 1.9,    "forecast": 2.0,    "date": "2026-04-25", "impact": "Low"},
     },
     # ── GBP  target score ≈ -4  (SLIGHT BEARISH — stagflation, cutting, weak manufacturing)
     "GBP": {
@@ -448,6 +463,10 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Budget Balance":     {"actual": -4.3,   "previous": -4.8,   "forecast": -4.5,   "date": "2026-04-22", "impact": "Low"},
         "Building Permits":   {"actual": 178.0,  "previous": 185.0,  "forecast": 182.0,  "date": "2026-05-12", "impact": "Low"},
         "Business Confidence":{"actual": 48.2,   "previous": 49.1,   "forecast": 49.5,   "date": "2026-05-19", "impact": "Low"},
+        "Core CPI":           {"actual": 3.5,    "previous": 3.1,    "forecast": 3.3,    "date": "2026-05-21", "impact": "High"},
+        "Employment Change":  {"actual": -5.0,   "previous": 18.0,   "forecast": 10.0,   "date": "2026-05-13", "impact": "Medium"},
+        "Industrial Production":{"actual": -0.5, "previous": 0.2,    "forecast": 0.1,    "date": "2026-05-09", "impact": "Medium"},
+        "M2 Money Supply":    {"actual": 1.8,    "previous": 1.5,    "forecast": 1.7,    "date": "2026-04-28", "impact": "Low"},
     },
     # ── JPY  target score ≈ 0–1  (NEUTRAL — pause after hike, trade deficit, CA surplus)
     "JPY": {
@@ -467,6 +486,10 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Budget Balance":     {"actual": -5.5,   "previous": -5.8,   "forecast": -5.6,   "date": "2026-04-01", "impact": "Low"},
         "Building Permits":   {"actual": 73.5,   "previous": 71.2,   "forecast": 72.0,   "date": "2026-04-30", "impact": "Low"},
         "Business Confidence":{"actual": 13.0,   "previous": 11.0,   "forecast": 11.0,   "date": "2026-04-01", "impact": "Medium"},
+        "Core CPI":           {"actual": 2.4,    "previous": 2.1,    "forecast": 2.2,    "date": "2026-04-25", "impact": "High"},
+        "Employment Change":  {"actual": 18.0,   "previous": 22.0,   "forecast": 20.0,   "date": "2026-05-02", "impact": "Low"},
+        "Industrial Production":{"actual": 0.2,  "previous": -0.4,   "forecast": 0.3,    "date": "2026-04-30", "impact": "Medium"},
+        "M2 Money Supply":    {"actual": 1.2,    "previous": 1.0,    "forecast": 1.1,    "date": "2026-04-28", "impact": "Low"},
     },
     # ── AUD  target score ≈ +3  (SLIGHT BULLISH — trade surplus, rate cycle bottoming)
     "AUD": {
@@ -486,6 +509,10 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Budget Balance":     {"actual": -0.8,   "previous": -1.2,   "forecast": -1.0,   "date": "2026-04-01", "impact": "Low"},
         "Building Permits":   {"actual": 15.2,   "previous": 14.8,   "forecast": 14.9,   "date": "2026-05-07", "impact": "Low"},
         "Business Confidence":{"actual": 5.0,    "previous": 3.0,    "forecast": 3.5,    "date": "2026-05-12", "impact": "Low"},
+        "Core CPI":           {"actual": 2.9,    "previous": 3.3,    "forecast": 3.0,    "date": "2026-04-30", "impact": "High"},
+        "Employment Change":  {"actual": 38.0,   "previous": 52.0,   "forecast": 25.0,   "date": "2026-05-15", "impact": "High"},
+        "Industrial Production":{"actual": 0.4,  "previous": 0.2,    "forecast": 0.3,    "date": "2026-05-13", "impact": "Low"},
+        "M2 Money Supply":    {"actual": 5.2,    "previous": 4.8,    "forecast": 5.0,    "date": "2026-04-28", "impact": "Low"},
     },
     # ── CAD  target score ≈ -4  (SLIGHT BEARISH — cutting, rising unemployment, weak PMI)
     "CAD": {
@@ -505,6 +532,10 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Budget Balance":     {"actual": -1.5,   "previous": -1.8,   "forecast": -1.6,   "date": "2026-04-01", "impact": "Low"},
         "Building Permits":   {"actual": 238.0,  "previous": 253.0,  "forecast": 248.0,  "date": "2026-05-14", "impact": "Medium"},
         "Business Confidence":{"actual": -15.0,  "previous": -12.0,  "forecast": -11.0,  "date": "2026-05-06", "impact": "Low"},
+        "Core CPI":           {"actual": 2.4,    "previous": 2.2,    "forecast": 2.3,    "date": "2026-05-20", "impact": "High"},
+        "Employment Change":  {"actual": -33.0,  "previous": 32.0,   "forecast": 20.0,   "date": "2026-05-09", "impact": "High"},
+        "Industrial Production":{"actual": -0.3, "previous": 0.1,    "forecast": 0.2,    "date": "2026-05-14", "impact": "Medium"},
+        "M2 Money Supply":    {"actual": 2.6,    "previous": 2.4,    "forecast": 2.5,    "date": "2026-05-07", "impact": "Low"},
     },
     # ── CHF  target score ≈ +1–2  (NEUTRAL/SLIGHT BULLISH — deflation risk, but large surpluses)
     "CHF": {
@@ -524,6 +555,10 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Budget Balance":     {"actual": 0.3,    "previous": -0.1,   "forecast": 0.0,    "date": "2026-04-01", "impact": "Low"},
         "Building Permits":   {"actual": 2.8,    "previous": 2.9,    "forecast": 3.0,    "date": "2026-04-29", "impact": "Low"},
         "Business Confidence":{"actual": -0.3,   "previous": -0.8,   "forecast": -0.5,   "date": "2026-04-28", "impact": "Low"},
+        "Core CPI":           {"actual": 0.7,    "previous": 0.5,    "forecast": 0.5,    "date": "2026-05-05", "impact": "Medium"},
+        "Employment Change":  {"actual": 4.0,    "previous": 6.0,    "forecast": 5.0,    "date": "2026-03-10", "impact": "Low"},
+        "Industrial Production":{"actual": 0.6,  "previous": 0.3,    "forecast": 0.4,    "date": "2026-05-12", "impact": "Low"},
+        "M2 Money Supply":    {"actual": 1.5,    "previous": 1.2,    "forecast": 1.3,    "date": "2026-04-28", "impact": "Low"},
     },
     # ── NZD  target score ≈ -5  (SLIGHT BEARISH — cutting, CA deficit, weak consumer)
     "NZD": {
@@ -543,6 +578,10 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Budget Balance":     {"actual": -3.1,   "previous": -2.8,   "forecast": -2.9,   "date": "2026-04-01", "impact": "Low"},
         "Building Permits":   {"actual": 2.1,    "previous": 2.3,    "forecast": 2.3,    "date": "2026-04-30", "impact": "Low"},
         "Business Confidence":{"actual": 14.5,   "previous": 18.3,   "forecast": 17.0,   "date": "2026-04-23", "impact": "Low"},
+        "Core CPI":           {"actual": 2.1,    "previous": 1.9,    "forecast": 2.0,    "date": "2026-04-17", "impact": "High"},
+        "Employment Change":  {"actual": -4.0,   "previous": 8.0,    "forecast": 5.0,    "date": "2026-05-05", "impact": "High"},
+        "Industrial Production":{"actual": -0.1, "previous": 0.3,    "forecast": 0.2,    "date": "2026-04-28", "impact": "Low"},
+        "M2 Money Supply":    {"actual": 2.8,    "previous": 2.5,    "forecast": 2.7,    "date": "2026-04-14", "impact": "Low"},
     },
 }
 
@@ -703,6 +742,17 @@ def fetch_fred_indicators(api_key: str) -> dict:
                 result[indicator] = {
                     "actual":   round((curr - prev)  / max(abs(prev),  0.001) * 100, 2),
                     "previous": round((prev - prev2) / max(abs(prev2), 0.001) * 100, 2),
+                    "date": obs[0]["date"], "source": "FRED",
+                }
+
+            elif mode == "mom_abs":
+                if len(obs) < 2:
+                    continue
+                curr = float(obs[0]["value"]); prev_v = float(obs[1]["value"])
+                prev2 = float(obs[2]["value"]) if len(obs) > 2 else prev_v
+                result[indicator] = {
+                    "actual":   round(curr - prev_v, 0),
+                    "previous": round(prev_v - prev2, 0),
                     "date": obs[0]["date"], "source": "FRED",
                 }
 
@@ -1042,158 +1092,6 @@ def fetch_fundamental_scores() -> dict[str, float]:
     }
 
 
-# ╔══════════════════════════════════════════════════════════════════════════════
-# ║  FOREXFACTORY CALENDAR  (CDN URLs — thisweek + nextweek + extended)
-# ╚══════════════════════════════════════════════════════════════════════════════
-
-# Broad keyword → currency map used ONLY for calendar event matching.
-# Checked against both the "country" field and the event "title" (case-insensitive).
-_CALENDAR_CCY_KEYWORDS: dict[str, list[str]] = {
-    "USD": ["usd", "us", "united states", "federal reserve", "fed", "fomc", "powell"],
-    "EUR": ["eur", "euro", "european", "ecb", "eurozone", "euro zone", "lagarde"],
-    "GBP": ["gbp", "british", "uk", "united kingdom", "boe", "bank of england", "bailey"],
-    "JPY": ["jpy", "japanese", "japan", "boj", "bank of japan", "ueda"],
-    "AUD": ["aud", "australian", "australia", "rba", "reserve bank of australia"],
-    "CAD": ["cad", "canadian", "canada", "boc", "bank of canada", "macklem"],
-    "CHF": ["chf", "swiss", "switzerland", "snb", "swiss national bank"],
-    "NZD": ["nzd", "new zealand", "rbnz", "reserve bank of new zealand"],
-}
-
-def _resolve_calendar_ccy(country: str, title: str) -> str | None:
-    """
-    Resolve a currency code for a calendar event.
-    1. Exact match against COUNTRY_TO_CURRENCY (fast path).
-    2. Direct currency code (e.g. "USD").
-    3. Keyword scan of country + title against _CALENDAR_CCY_KEYWORDS.
-    Returns None if no match found.
-    """
-    ccy = COUNTRY_TO_CURRENCY.get(country) or (country if country in SUPPORTED_CURRENCIES else None)
-    if ccy:
-        return ccy
-    haystack = (country + " " + title).lower()
-    for ccy_code, keywords in _CALENDAR_CCY_KEYWORDS.items():
-        if any(kw in haystack for kw in keywords):
-            return ccy_code
-    return None
-
-_FF_HDR_JSON = {
-    "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept":          "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer":         "https://www.forexfactory.com/",
-    "Origin":          "https://www.forexfactory.com",
-}
-_FF_HDR_XML = {
-    "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept":          "application/xml, text/xml, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer":         "https://www.forexfactory.com/",
-}
-_FF_ENDPOINTS = [
-    ("json", "https://nfs.faireconomy.media/ff_calendar_thisweek.json"),
-    ("json", "https://nfs.faireconomy.media/ff_calendar_nextweek.json"),
-    ("json", "https://nfs.faireconomy.media/ff_calendar_month.json"),
-    ("xml",  "https://cdn-nfs.faireconomy.media/ff_calendar_thisweek.xml"),
-    ("xml",  "https://cdn-nfs.faireconomy.media/ff_calendar_nextweek.xml"),
-]
-
-
-def _probe_ff_status() -> dict[str, str]:
-    """
-    Non-cached: hit every FF endpoint once and return status codes/errors.
-    Used for debug display in the UI when the calendar is empty.
-    """
-    results: dict[str, str] = {}
-    for fmt, url in _FF_ENDPOINTS:
-        hdr = _FF_HDR_JSON if fmt == "json" else _FF_HDR_XML
-        slug = url.split("/")[-1]
-        try:
-            r = requests.get(url, timeout=6, headers=hdr)
-            results[slug] = str(r.status_code)
-        except Exception as e:
-            results[slug] = f"ERR:{type(e).__name__}"
-    return results
-
-
-@st.cache_data(ttl=TTL_FF_CALENDAR, show_spinner=False)
-def fetch_ff_calendar() -> pd.DataFrame:
-    """
-    Fetch ForexFactory calendar.
-    Layer 1: JSON (nfs.faireconomy.media) — thisweek + nextweek
-    Layer 2: XML (cdn-nfs.faireconomy.media) — thisweek + nextweek
-    Returns empty DataFrame if all fail; caller falls back to static calendar.
-    """
-    rows: list[dict] = []
-
-    def _append_json(data: list) -> None:
-        for ev in data:
-            title       = str(ev.get("title") or ev.get("name") or "")
-            country_raw = str(ev.get("country", ""))
-            ccy         = _resolve_calendar_ccy(country_raw, title)
-            if not ccy: continue
-            impact_raw  = str(ev.get("impact") or "Low").capitalize()
-            if impact_raw in ("Holiday", "Low"): continue   # keep only High/Medium
-            # Use canonical indicator name when available; fall back to raw title
-            ind = normalize_indicator(title) or title
-            rows.append({
-                "currency": ccy, "indicator": ind, "title": title,
-                "date":     pd.to_datetime(ev.get("date"), errors="coerce"),
-                "impact":   impact_raw,
-                "actual":   _parse_numeric(str(ev.get("actual")   or "")),
-                "forecast": _parse_numeric(str(ev.get("forecast") or "")),
-                "previous": _parse_numeric(str(ev.get("previous") or "")),
-            })
-
-    def _append_xml(content: bytes) -> None:
-        try: root = ET.fromstring(content)
-        except Exception: return
-        for event in root.findall("event"):
-            def _t(tag: str) -> str:
-                el = event.find(tag)
-                return (el.text or "").strip() if el is not None else ""
-            title      = _t("title")
-            impact_raw = _t("impact").capitalize() or "Low"
-            if impact_raw in ("Holiday", "Low"): continue   # keep only High/Medium
-            ccy = _resolve_calendar_ccy(_t("country"), title)
-            if not ccy: continue
-            ind = normalize_indicator(title) or title
-            rows.append({
-                "currency": ccy, "indicator": ind, "title": title,
-                "date":     pd.to_datetime(_t("date"), errors="coerce"),
-                "impact":   impact_raw,
-                "actual":   _parse_numeric(_t("actual")),
-                "forecast": _parse_numeric(_t("forecast")),
-                "previous": _parse_numeric(_t("previous")),
-            })
-
-    for fmt, url in _FF_ENDPOINTS:
-        hdr = _FF_HDR_JSON if fmt == "json" else _FF_HDR_XML
-        try:
-            r = requests.get(url, timeout=10, headers=hdr)
-            if r.status_code == 200:
-                if fmt == "json":
-                    data = r.json()
-                    if isinstance(data, list) and data:
-                        _append_json(data)
-                else:
-                    _append_xml(r.content)
-        except Exception:
-            pass
-        time.sleep(0.08)
-
-    if not rows:
-        return pd.DataFrame(columns=[
-            "currency", "indicator", "title", "date", "impact",
-            "actual", "forecast", "previous",
-        ])
-    df = pd.DataFrame(rows)
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
-    # Strip timezone if FF returns tz-aware timestamps (e.g. UTC from JSON)
-    if df["date"].dt.tz is not None:
-        df["date"] = df["date"].dt.tz_localize(None)
-    return df.drop_duplicates(subset=["currency", "title", "date"])
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════
@@ -1202,16 +1100,14 @@ def fetch_ff_calendar() -> pd.DataFrame:
 
 def build_indicators_table(
     currency: str,
-    ff_df: pd.DataFrame,
     official: dict | None = None,
 ) -> tuple[pd.DataFrame, str]:
     """
-    Build the 8-row indicators table.
-    Priority: official API (FRED/ECB) > ForexFactory > static fallback.
+    Build the indicators table.
+    Priority: official API (FRED/ECB/BoE/TE) > static fallback.
     Always returns a complete table — never empty.
     Returns (df, source_label).
     """
-    now     = pd.Timestamp.today().normalize()
     sources_used: set[str] = set()
     result_rows: list[dict] = []
 
@@ -1225,33 +1121,9 @@ def build_indicators_table(
         impact   = fb.get("impact", "Low")
         source   = "static"
 
-        # D4 support: previous period's forecast (populated from FF row[1] when available)
         prev_forecast = None
 
-        # Layer 2: ForexFactory live data (latest released row)
-        if not ff_df.empty:
-            sub = ff_df[
-                (ff_df["currency"] == currency) &
-                (ff_df["indicator"] == ind) &
-                (ff_df["date"] <= now)
-            ].dropna(subset=["actual"]).sort_values("date", ascending=False)
-            if not sub.empty:
-                row      = sub.iloc[0]
-                actual   = row["actual"]
-                previous = row.get("previous", previous)
-                forecast = row.get("forecast", forecast)
-                date_val = row["date"]
-                impact   = row.get("impact", impact)
-                source   = "ForexFactory"
-                # Second most-recent row: its forecast = previous period's consensus
-                if len(sub) >= 2:
-                    _pf = sub.iloc[1].get("forecast")
-                    try:
-                        prev_forecast = float(_pf) if _pf is not None else None
-                    except (TypeError, ValueError):
-                        prev_forecast = None
-
-        # Layer 3: official API override (FRED / ECB)
+        # Layer 2: official API override (FRED / ECB / BoE / TE)
         if official and ind in official:
             off = official[ind]
             if off.get("actual") is not None:
@@ -1293,152 +1165,13 @@ def build_indicators_table(
     live_apis = sources_used & {"FRED", "ECB", "BoE", "TE"}
     if live_apis:
         api_str = "/".join(sorted(live_apis))
-        label = f"Live ({api_str} + FF)" if "ForexFactory" in sources_used else f"Live ({api_str})"
-    elif "ForexFactory" in sources_used:
-        label = "Live (ForexFactory)"
+        label = f"Live ({api_str})"
     else:
         label = "Static (May 2026)"
 
     return df, label
 
 
-# ── Static calendar fallback  (HIGH & MEDIUM impact, May–Aug 2026) ────────────
-_STATIC_CALENDAR_EVENTS: list[dict] = [
-    # ── USD ───────────────────────────────────────────────────────────────────
-    {"currency":"USD","indicator":"Retail Sales",      "title":"Retail Sales m/m",         "date":"2026-05-22","impact":"Medium","forecast": 0.3,   "previous": 0.1  },
-    {"currency":"USD","indicator":"GDP Growth",        "title":"GDP Growth Rate QoQ Prelim","date":"2026-05-28","impact":"High",  "forecast": 2.7,   "previous": 2.8  },
-    {"currency":"USD","indicator":"Manufacturing PMI", "title":"ISM Manufacturing PMI",     "date":"2026-06-01","impact":"Medium","forecast":50.0,   "previous":49.8  },
-    {"currency":"USD","indicator":"Services PMI",      "title":"ISM Services PMI",          "date":"2026-06-03","impact":"Medium","forecast":51.5,   "previous":51.2  },
-    {"currency":"USD","indicator":"Unemployment Rate", "title":"Unemployment Rate",         "date":"2026-06-05","impact":"High",  "forecast": 4.0,   "previous": 4.0  },
-    {"currency":"USD","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-06-10","impact":"High",  "forecast": 3.3,   "previous": 3.4  },
-    {"currency":"USD","indicator":"Interest Rate",     "title":"Fed Funds Rate",            "date":"2026-06-18","impact":"High",  "forecast": 4.50,  "previous": 4.50 },
-    {"currency":"USD","indicator":"Retail Sales",      "title":"Retail Sales m/m",         "date":"2026-06-16","impact":"Medium","forecast": 0.2,   "previous": 0.3  },
-    {"currency":"USD","indicator":"GDP Growth",        "title":"GDP Growth Rate QoQ Final", "date":"2026-06-25","impact":"High",  "forecast": 2.8,   "previous": 2.8  },
-    {"currency":"USD","indicator":"Manufacturing PMI", "title":"ISM Manufacturing PMI",     "date":"2026-07-01","impact":"Medium","forecast":50.2,   "previous":50.0  },
-    {"currency":"USD","indicator":"Unemployment Rate", "title":"Unemployment Rate",         "date":"2026-07-02","impact":"High",  "forecast": 3.9,   "previous": 4.0  },
-    {"currency":"USD","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-07-14","impact":"High",  "forecast": 3.2,   "previous": 3.3  },
-    {"currency":"USD","indicator":"Retail Sales",      "title":"Retail Sales m/m",         "date":"2026-07-16","impact":"Medium","forecast": 0.2,   "previous": 0.2  },
-    {"currency":"USD","indicator":"Interest Rate",     "title":"Fed Funds Rate",            "date":"2026-07-29","impact":"High",  "forecast": 4.25,  "previous": 4.50 },
-    {"currency":"USD","indicator":"GDP Growth",        "title":"GDP Growth Rate QoQ Adv",   "date":"2026-07-30","impact":"High",  "forecast": 2.9,   "previous": 2.8  },
-    {"currency":"USD","indicator":"Manufacturing PMI", "title":"ISM Manufacturing PMI",     "date":"2026-08-03","impact":"Medium","forecast":50.5,   "previous":50.2  },
-    {"currency":"USD","indicator":"Unemployment Rate", "title":"Unemployment Rate",         "date":"2026-08-07","impact":"High",  "forecast": 3.9,   "previous": 3.9  },
-    {"currency":"USD","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-08-12","impact":"High",  "forecast": 3.1,   "previous": 3.2  },
-    # ── EUR ───────────────────────────────────────────────────────────────────
-    {"currency":"EUR","indicator":"Manufacturing PMI", "title":"Manufacturing PMI",         "date":"2026-06-01","impact":"Medium","forecast":48.5,   "previous":48.1  },
-    {"currency":"EUR","indicator":"Services PMI",      "title":"Services PMI",              "date":"2026-06-03","impact":"Medium","forecast":50.6,   "previous":50.4  },
-    {"currency":"EUR","indicator":"CPI y/y",           "title":"CPI Flash y/y",             "date":"2026-06-04","impact":"High",  "forecast": 1.8,   "previous": 1.9  },
-    {"currency":"EUR","indicator":"Interest Rate",     "title":"ECB Rate Decision",         "date":"2026-06-05","impact":"High",  "forecast": 2.00,  "previous": 2.25 },
-    {"currency":"EUR","indicator":"GDP Growth",        "title":"GDP Growth Rate QoQ",       "date":"2026-06-30","impact":"High",  "forecast": 0.9,   "previous": 0.8  },
-    {"currency":"EUR","indicator":"CPI y/y",           "title":"CPI Flash y/y",             "date":"2026-07-02","impact":"High",  "forecast": 1.8,   "previous": 1.8  },
-    {"currency":"EUR","indicator":"Manufacturing PMI", "title":"Manufacturing PMI",         "date":"2026-07-01","impact":"Medium","forecast":48.8,   "previous":48.5  },
-    {"currency":"EUR","indicator":"Interest Rate",     "title":"ECB Rate Decision",         "date":"2026-07-24","impact":"High",  "forecast": 2.00,  "previous": 2.00 },
-    {"currency":"EUR","indicator":"CPI y/y",           "title":"CPI Flash y/y",             "date":"2026-08-04","impact":"High",  "forecast": 1.9,   "previous": 1.8  },
-    {"currency":"EUR","indicator":"GDP Growth",        "title":"GDP Growth Rate QoQ",       "date":"2026-08-14","impact":"High",  "forecast": 1.0,   "previous": 0.9  },
-    # ── GBP ───────────────────────────────────────────────────────────────────
-    {"currency":"GBP","indicator":"Manufacturing PMI", "title":"Manufacturing PMI",         "date":"2026-06-01","impact":"Medium","forecast":46.5,   "previous":46.1  },
-    {"currency":"GBP","indicator":"Services PMI",      "title":"Services PMI",              "date":"2026-06-03","impact":"Medium","forecast":52.5,   "previous":52.3  },
-    {"currency":"GBP","indicator":"GDP Growth",        "title":"GDP m/m",                   "date":"2026-06-12","impact":"High",  "forecast": 0.3,   "previous": 1.4  },
-    {"currency":"GBP","indicator":"Unemployment Rate", "title":"Unemployment Rate",         "date":"2026-06-16","impact":"Medium","forecast": 4.7,   "previous": 4.7  },
-    {"currency":"GBP","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-06-17","impact":"High",  "forecast": 3.0,   "previous": 3.2  },
-    {"currency":"GBP","indicator":"Interest Rate",     "title":"BOE Rate Decision",         "date":"2026-06-18","impact":"High",  "forecast": 4.00,  "previous": 4.25 },
-    {"currency":"GBP","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-07-15","impact":"High",  "forecast": 2.9,   "previous": 3.0  },
-    {"currency":"GBP","indicator":"Manufacturing PMI", "title":"Manufacturing PMI",         "date":"2026-07-01","impact":"Medium","forecast":46.8,   "previous":46.5  },
-    {"currency":"GBP","indicator":"GDP Growth",        "title":"GDP m/m",                   "date":"2026-08-12","impact":"High",  "forecast": 0.4,   "previous": 0.3  },
-    {"currency":"GBP","indicator":"Interest Rate",     "title":"BOE Rate Decision",         "date":"2026-08-06","impact":"High",  "forecast": 3.75,  "previous": 4.00 },
-    # ── JPY ───────────────────────────────────────────────────────────────────
-    {"currency":"JPY","indicator":"GDP Growth",        "title":"GDP Growth Rate QoQ Prelim","date":"2026-06-08","impact":"High",  "forecast": 0.1,   "previous":-0.1  },
-    {"currency":"JPY","indicator":"Interest Rate",     "title":"BOJ Rate Decision",         "date":"2026-06-17","impact":"High",  "forecast": 0.50,  "previous": 0.50 },
-    {"currency":"JPY","indicator":"CPI y/y",           "title":"National CPI y/y",          "date":"2026-06-19","impact":"High",  "forecast": 2.6,   "previous": 2.8  },
-    {"currency":"JPY","indicator":"CPI y/y",           "title":"National CPI y/y",          "date":"2026-07-24","impact":"High",  "forecast": 2.5,   "previous": 2.6  },
-    {"currency":"JPY","indicator":"Interest Rate",     "title":"BOJ Rate Decision",         "date":"2026-07-30","impact":"High",  "forecast": 0.75,  "previous": 0.50 },
-    {"currency":"JPY","indicator":"GDP Growth",        "title":"GDP Growth Rate QoQ Final", "date":"2026-08-10","impact":"High",  "forecast": 0.2,   "previous": 0.1  },
-    {"currency":"JPY","indicator":"CPI y/y",           "title":"National CPI y/y",          "date":"2026-08-21","impact":"High",  "forecast": 2.5,   "previous": 2.5  },
-    # ── AUD ───────────────────────────────────────────────────────────────────
-    {"currency":"AUD","indicator":"Interest Rate",     "title":"RBA Rate Decision",         "date":"2026-06-02","impact":"High",  "forecast": 3.60,  "previous": 3.85 },
-    {"currency":"AUD","indicator":"GDP Growth",        "title":"GDP Growth Rate QoQ",       "date":"2026-06-04","impact":"High",  "forecast": 1.4,   "previous": 1.3  },
-    {"currency":"AUD","indicator":"Unemployment Rate", "title":"Unemployment Rate",         "date":"2026-06-18","impact":"High",  "forecast": 4.2,   "previous": 4.2  },
-    {"currency":"AUD","indicator":"Interest Rate",     "title":"RBA Rate Decision",         "date":"2026-07-07","impact":"High",  "forecast": 3.60,  "previous": 3.60 },
-    {"currency":"AUD","indicator":"Unemployment Rate", "title":"Unemployment Rate",         "date":"2026-07-16","impact":"High",  "forecast": 4.2,   "previous": 4.2  },
-    {"currency":"AUD","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-07-29","impact":"High",  "forecast": 2.9,   "previous": 3.2  },
-    {"currency":"AUD","indicator":"Interest Rate",     "title":"RBA Rate Decision",         "date":"2026-08-04","impact":"High",  "forecast": 3.35,  "previous": 3.60 },
-    {"currency":"AUD","indicator":"Unemployment Rate", "title":"Unemployment Rate",         "date":"2026-08-20","impact":"High",  "forecast": 4.3,   "previous": 4.2  },
-    # ── CAD ───────────────────────────────────────────────────────────────────
-    {"currency":"CAD","indicator":"GDP Growth",        "title":"GDP Growth Rate m/m",       "date":"2026-05-29","impact":"High",  "forecast": 1.5,   "previous": 1.5  },
-    {"currency":"CAD","indicator":"Interest Rate",     "title":"BOC Rate Decision",         "date":"2026-06-04","impact":"High",  "forecast": 2.50,  "previous": 2.75 },
-    {"currency":"CAD","indicator":"Unemployment Rate", "title":"Unemployment Rate",         "date":"2026-06-05","impact":"High",  "forecast": 7.0,   "previous": 6.9  },
-    {"currency":"CAD","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-06-16","impact":"High",  "forecast": 2.6,   "previous": 2.7  },
-    {"currency":"CAD","indicator":"Interest Rate",     "title":"BOC Rate Decision",         "date":"2026-07-15","impact":"High",  "forecast": 2.50,  "previous": 2.50 },
-    {"currency":"CAD","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-07-21","impact":"High",  "forecast": 2.5,   "previous": 2.6  },
-    {"currency":"CAD","indicator":"GDP Growth",        "title":"GDP Growth Rate m/m",       "date":"2026-07-31","impact":"High",  "forecast": 1.6,   "previous": 1.5  },
-    {"currency":"CAD","indicator":"Unemployment Rate", "title":"Unemployment Rate",         "date":"2026-08-07","impact":"High",  "forecast": 7.1,   "previous": 7.0  },
-    {"currency":"CAD","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-08-18","impact":"High",  "forecast": 2.4,   "previous": 2.5  },
-    # ── CHF ───────────────────────────────────────────────────────────────────
-    {"currency":"CHF","indicator":"GDP Growth",        "title":"GDP Growth Rate QoQ",       "date":"2026-05-28","impact":"Medium","forecast": 0.7,   "previous": 0.6  },
-    {"currency":"CHF","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-06-04","impact":"Medium","forecast": 0.4,   "previous": 0.3  },
-    {"currency":"CHF","indicator":"Interest Rate",     "title":"SNB Rate Decision",         "date":"2026-06-18","impact":"High",  "forecast": 0.00,  "previous": 0.00 },
-    {"currency":"CHF","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-07-02","impact":"Medium","forecast": 0.5,   "previous": 0.4  },
-    {"currency":"CHF","indicator":"GDP Growth",        "title":"GDP Growth Rate QoQ",       "date":"2026-08-27","impact":"Medium","forecast": 0.8,   "previous": 0.7  },
-    # ── NZD ───────────────────────────────────────────────────────────────────
-    {"currency":"NZD","indicator":"Interest Rate",     "title":"RBNZ Rate Decision",        "date":"2026-05-27","impact":"High",  "forecast": 3.25,  "previous": 3.50 },
-    {"currency":"NZD","indicator":"GDP Growth",        "title":"GDP Growth Rate QoQ",       "date":"2026-06-18","impact":"High",  "forecast": 0.8,   "previous": 0.7  },
-    {"currency":"NZD","indicator":"Interest Rate",     "title":"RBNZ Rate Decision",        "date":"2026-07-08","impact":"High",  "forecast": 3.00,  "previous": 3.25 },
-    {"currency":"NZD","indicator":"CPI y/y",           "title":"CPI y/y",                   "date":"2026-07-15","impact":"High",  "forecast": 2.4,   "previous": 2.5  },
-    {"currency":"NZD","indicator":"Unemployment Rate", "title":"Unemployment Rate",         "date":"2026-08-05","impact":"High",  "forecast": 5.2,   "previous": 5.1  },
-]
-
-
-def _generate_static_calendar() -> pd.DataFrame:
-    """Convert static event list to DataFrame with same schema as FF calendar."""
-    rows = []
-    for ev in _STATIC_CALENDAR_EVENTS:
-        rows.append({
-            "currency":  ev["currency"],
-            "indicator": ev["indicator"],
-            "title":     ev["title"],
-            "date":      pd.to_datetime(ev["date"]),
-            "impact":    ev["impact"],
-            "actual":    None,
-            "forecast":  ev.get("forecast"),
-            "previous":  ev.get("previous"),
-        })
-    return pd.DataFrame(rows)
-
-
-def build_calendar_view(ff_df: pd.DataFrame, currency: str) -> pd.DataFrame:
-    """
-    Past 2 weeks + next 14 weeks — HIGH and MEDIUM impact only, sorted ascending.
-    Falls back to _generate_static_calendar() when ff_df is empty.
-    """
-    now       = pd.Timestamp.today().normalize()
-    # Start from Monday of the current week so a full trading week is always visible
-    lookback  = now - pd.Timedelta(days=now.dayofweek)
-    lookahead = now + pd.Timedelta(weeks=14)
-
-    source = ff_df if not ff_df.empty else _generate_static_calendar()
-
-    # Ensure tz-naive for comparison
-    src_dates = source["date"]
-    if hasattr(src_dates, "dt") and src_dates.dt.tz is not None:
-        source = source.copy()
-        source["date"] = src_dates.dt.tz_localize(None)
-
-    sub = source[
-        (source["currency"] == currency) &
-        (source["date"] >= lookback) &
-        (source["date"] <= lookahead) &
-        (source["impact"].isin(["High", "Medium"]))
-    ].copy()
-    if sub.empty:
-        return pd.DataFrame()
-
-    sub["date"]        = pd.to_datetime(sub["date"])
-    sub                = sub.sort_values("date", ascending=True)
-    sub["days_until"]  = (sub["date"] - now).dt.days
-    sub["is_upcoming"] = sub["date"] > now
-    return sub[[
-        "date","indicator","title","impact","actual","forecast","previous",
-        "days_until","is_upcoming",
-    ]].reset_index(drop=True)
 
 
 def calc_bias_score(indicators_df: pd.DataFrame, currency: str) -> dict:
@@ -1580,6 +1313,29 @@ def calc_bias_score(indicators_df: pd.DataFrame, currency: str) -> dict:
             if a >= -10.0: return  0.2
             if a >= -20.0: return -0.6
             return -1.0
+        if ind == "Core CPI":
+            crit, tgt, acc, crit_hi = _CPI_CFG.get(currency, (0.5, 2.0, 3.0, 5.0))
+            if a < crit:             return -1.0
+            if abs(a - tgt) <= 0.3:  return  1.0
+            if a <= acc:             return  0.2
+            if a <= crit_hi:         return -0.6
+            return -1.0
+        if ind == "Employment Change":
+            if a > 200:  return  1.0
+            if a > 100:  return  0.5
+            if a > 0:    return  0.2
+            if a > -50:  return -0.6
+            return -1.0
+        if ind == "Industrial Production":
+            if a > 0.5:   return  1.0
+            if a >= 0.0:  return  0.2
+            if a >= -0.5: return -0.6
+            return -1.0
+        if ind == "M2 Money Supply":
+            if a > 5.0:  return -0.3
+            if a > 2.0:  return  0.5
+            if a > 0.0:  return  0.2
+            return -0.6
         return 0.0
 
     # ── D2: Forecast quality → -1.0 to +1.0 ──────────────────────────────────
@@ -1654,8 +1410,8 @@ def calc_bias_score(indicators_df: pd.DataFrame, currency: str) -> dict:
     if   final >  0.60: level, lc = "STRONG BULLISH", "#00a36c"
     elif final >  0.30: level, lc = "SLIGHT BULLISH", C["green"]
     elif final >  0.10: level, lc = "MILD BULLISH",   "#4ecb9e"
-    elif final >= -0.10: level, lc = "NEUTRAL",        C["muted"]
-    elif final >= -0.30: level, lc = "MILD BEARISH",   C["yellow"]
+    elif final >= 0.0:  level, lc = "MILD BULLISH",   "#4ecb9e"
+    elif final > -0.30: level, lc = "MILD BEARISH",   C["yellow"]
     elif final >= -0.60: level, lc = "SLIGHT BEARISH", "#f08080"
     else:                level, lc = "STRONG BEARISH", C["red"]
 
@@ -1666,6 +1422,8 @@ def calc_bias_score(indicators_df: pd.DataFrame, currency: str) -> dict:
         "Services PMI": "SvcPMI",   "Trade Balance": "Trade","Current Account": "CA",
         "Retail Sales": "Retail",   "Consumer Confidence": "ConsConf",
         "PPI": "PPI",               "Government Debt": "GovDebt",
+        "Core CPI": "CoreCPI", "Employment Change": "EmpChg",
+        "Industrial Production": "IndProd", "M2 Money Supply": "M2",
     }
     scores: list[dict] = []
     for det in details:
@@ -1724,6 +1482,10 @@ _D_THRESHOLDS: dict[str, tuple[float, float]] = {
     "Budget Balance":      (0.30, 0.80),
     "Building Permits":    (20.0, 50.0),
     "Business Confidence": (2.00, 5.00),
+    "Core CPI":              (0.05, 0.19),
+    "Employment Change":     (50.0, 150.0),
+    "Industrial Production": (0.20, 0.50),
+    "M2 Money Supply":       (0.50, 1.50),
 }
 
 
@@ -1791,6 +1553,27 @@ def _d1_level(ind: str, val, currency: str = "USD") -> tuple[str, str]:
         if v > 5.0:    return "STRONG",    C["green"]
         if v >= -10.0: return "NORMAL",    C["muted"]
         if v >= -20.0: return "WEAK",      C["yellow"]
+        return             "CRITICAL",     C["red"]
+    if ind == "Core CPI":
+        if v < 1.0:    return "CRITICAL",  C["red"]
+        if v < 2.0:    return "WEAK",      C["yellow"]
+        if v <= 2.5:   return "STRONG",    C["green"]
+        if v <= 3.5:   return "NORMAL",    C["muted"]
+        return             "WEAK",         C["yellow"]
+    if ind == "Employment Change":
+        if v > 200:    return "STRONG",    C["green"]
+        if v > 100:    return "NORMAL",    C["muted"]
+        if v > 0:      return "WEAK",      C["yellow"]
+        return             "CRITICAL",     C["red"]
+    if ind == "Industrial Production":
+        if v > 0.5:    return "STRONG",    C["green"]
+        if v >= 0.0:   return "NORMAL",    C["muted"]
+        if v >= -0.5:  return "WEAK",      C["yellow"]
+        return             "CRITICAL",     C["red"]
+    if ind == "M2 Money Supply":
+        if v > 5.0:    return "WEAK",      C["yellow"]
+        if v > 1.0:    return "STRONG",    C["green"]
+        if v >= 0.0:   return "NORMAL",    C["muted"]
         return             "CRITICAL",     C["red"]
     return "NORMAL", C["muted"]
 
@@ -1942,7 +1725,7 @@ def render_bias_panel(currency: str, bias: dict, source_label: str) -> str:
   <div style='display:flex;justify-content:space-between;font-size:9px;
               font-family:monospace;color:{_cm};margin-bottom:10px;'>
     <span>STR. BEARISH</span><span>SLT. BEARISH</span>
-    <span>NEUTRAL</span><span>SLT. BULLISH</span><span>STR. BULLISH</span>
+    <span>M. BEARISH</span><span>SLT. BULLISH</span><span>STR. BULLISH</span>
   </div>
   <!-- Dimension grid: D1/D2/D3/D4 -->
   {dim_grid}
@@ -1971,8 +1754,6 @@ def render_indicators_table(
         shape = "◎" if src == "static" else "●"
         if src in ("FRED", "ECB", "BoE", "TE"):
             note = f"Live · {src} · {'fresh' if age < TTL_INDICATORS else 'stale'}"
-        elif src == "ForexFactory":
-            note = f"Live · FF · {'fresh' if age < TTL_FF_CALENDAR else 'stale'}"
         else:
             note = "Static fallback"
         return f"<span title='{note}' style='color:{dot_color};font-size:9px;'>{shape}</span>"
@@ -2077,20 +1858,20 @@ def render_indicators_table(
             except (TypeError, ValueError):
                 _fv = None; _av = None
             if _fv is None:
-                d2_label, d2_lc = "NEUTRAL", C["muted"]
+                d2_label, d2_lc = "MIXED", C["muted"]
             elif _fv >= 0 and d2_raw in ("STRONG", "NORMAL"):
                 d2_label, d2_lc = "BULLISH", C["green"]
             elif _av is not None and _fv > _av and _fv >= -20:
-                # Negative but improving vs actual — NEUTRAL (spec: "improving but still bad")
-                d2_label, d2_lc = "NEUTRAL", C["muted"]
+                # Negative but improving vs actual — still bearish context
+                d2_label, d2_lc = "BEARISH", C["yellow"]
             elif _fv < -10 or (_av is not None and _fv <= _av):
                 d2_label, d2_lc = "BEARISH", C["red"]
             else:
-                d2_label, d2_lc = "NEUTRAL", C["muted"]
+                d2_label, d2_lc = "MIXED", C["muted"]
         else:
             d2_label = (
                 "BULLISH" if d2_raw in ("STRONG", "NORMAL") else
-                "BEARISH" if d2_raw == "CRITICAL" else "NEUTRAL"
+                "BEARISH" if d2_raw == "CRITICAL" else "MIXED"
             )
             d2_lc = C["green"] if d2_label == "BULLISH" else C["red"] if d2_label == "BEARISH" else C["muted"]
         # D3 — beat/miss intensity
@@ -2167,57 +1948,6 @@ def render_indicators_table(
     )
 
 
-def render_calendar_table(calendar_df: pd.DataFrame) -> str:
-    if calendar_df.empty:
-        return _empty_state("⚠ No calendar data loaded — ForexFactory may be unreachable")
-
-    cols = ["Date", "Event", "Actual", "Forecast", "Previous", "Impact"]
-    hdr  = (
-        f"<tr style='border-bottom:1px solid {C['border']};'>"
-        + "".join(
-            f"<th style='padding:7px 10px;font-size:10px;color:{C['muted']};"
-            f"font-family:monospace;text-transform:uppercase;letter-spacing:1px;"
-            f"font-weight:600;text-align:left;'>{h}</th>" for h in cols
-        ) + "</tr>"
-    )
-
-    body = ""
-    for _, row in calendar_df.iterrows():
-        days       = int(row.get("days_until", 99))
-        is_upcoming= bool(row.get("is_upcoming", True))
-        soon       = 0 < days <= 7
-        row_bg     = C["teal_dim"] if soon else "transparent"
-        date_color = C["teal"] if soon else (C["muted"] if is_upcoming else C["text"])
-
-        try:
-            date_str = pd.Timestamp(row["date"]).strftime("%a %d %b")
-        except Exception:
-            date_str = "—"
-        ind_name = str(row.get("title") or row.get("indicator") or "—")
-
-        body += (
-            f"<tr style='border-bottom:1px solid {C['border']};background:{row_bg};'>"
-            f"<td style='padding:7px 10px;font-size:11px;color:{date_color};"
-            f"font-family:monospace;white-space:nowrap;'>{date_str}</td>"
-            f"<td style='padding:7px 10px;font-size:11px;color:{C['text']};"
-            f"font-family:monospace;'>{ind_name}</td>"
-            f"<td style='padding:7px 10px;font-size:11px;color:{C['text']};"
-            f"font-family:monospace;'>{_fmt(row.get('actual'))}</td>"
-            f"<td style='padding:7px 10px;font-size:11px;color:{C['muted']};"
-            f"font-family:monospace;'>{_fmt(row.get('forecast'))}</td>"
-            f"<td style='padding:7px 10px;font-size:11px;color:{C['muted']};"
-            f"font-family:monospace;'>{_fmt(row.get('previous'))}</td>"
-            f"<td style='padding:7px 10px;'>{_impact_pill(row['impact'])}</td>"
-            f"</tr>"
-        )
-
-    return (
-        f"<div style='background:{C['card']};border:1px solid {C['border']};"
-        f"border-radius:10px;max-height:400px;overflow-y:auto;'>"
-        f"<table style='width:100%;border-collapse:collapse;'>"
-        f"<thead>{hdr}</thead><tbody>{body}</tbody>"
-        f"</table></div>"
-    )
 
 
 @st.cache_data(ttl=TTL_NEWS_CTX, show_spinner=False)
@@ -2359,6 +2089,28 @@ def calc_4d_bias(
                 return 0.5 if v > prev else -0.5
             return 0.0
 
+        if ind == "Core CPI":
+            if abs(v - 2.0) <= 0.5: return  1.0
+            if v > 3.0:  return max(-2.0, -1.0 - (v - 3.0) * 0.25)
+            if v < 1.0:  return max(-2.5, -1.5 - (1.0 - v))
+            return 0.3
+        if ind == "Employment Change":
+            if v > 200:  return  2.0
+            if v > 100:  return  1.0
+            if v > 0:    return  0.5
+            if v > -50:  return -1.0
+            return -2.0
+        if ind == "Industrial Production":
+            if v > 0.5:  return  1.5
+            if v >= 0:   return  0.5
+            if v >= -0.5: return -0.5
+            return -1.5
+        if ind == "M2 Money Supply":
+            if v > 5.0:  return -0.5
+            if v > 2.0:  return  0.5
+            if v > 0.0:  return  0.3
+            return -0.5
+
         return 0.0
 
     d1_num, d1_den = 0.0, 0.0
@@ -2389,7 +2141,8 @@ def calc_4d_bias(
     # ── Classification (new 5-level thresholds, scale −3 to +3) ──────────────
     if   final >= 2.0:  level, lc = "STRONG BULLISH", "#00a36c"
     elif final >= 0.8:  level, lc = "SLIGHT BULLISH", C["green"]
-    elif final >= -0.7: level, lc = "NEUTRAL",         C["muted"]
+    elif final >= 0.0:  level, lc = "MILD BULLISH",   "#4ecb9e"
+    elif final > -0.7:  level, lc = "MILD BEARISH",   C["yellow"]
     elif final >= -2.0: level, lc = "SLIGHT BEARISH",  "#f08080"
     else:               level, lc = "STRONG BEARISH",  C["red"]
 
@@ -2401,6 +2154,100 @@ def calc_4d_bias(
 
 # NOTE: Pair divergence panel removed from Macro Dashboard.
 # It will be part of Module 4 (Correlation / Geo Scanner).
+
+
+def render_all_currencies_overview(selected_ccy: str) -> str:
+    """
+    Build the All Currencies Bias panel using cached session_state scores.
+    Shows all 8 currencies ranked strongest → weakest with color-coded bias labels.
+    Falls back to static-only scores if session_state not populated.
+    """
+    rows_data = []
+    for ccy in SUPPORTED_CURRENCIES:
+        cached = st.session_state.get(f"macro_scores_{ccy}")
+        if cached and cached.get("fmt") == "4d":
+            total = cached["total"]
+            level = cached["level"]
+        else:
+            static_rows = []
+            for ind in INDICATOR_ORDER:
+                fb = STATIC_INDICATORS.get(ccy, {}).get(ind, {})
+                if fb:
+                    static_rows.append({
+                        "indicator": ind,
+                        "actual":   fb.get("actual"),
+                        "previous": fb.get("previous"),
+                        "forecast": fb.get("forecast"),
+                        "impact":   fb.get("impact", "Low"),
+                    })
+            if static_rows:
+                import pandas as _pd
+                tmp_df = _pd.DataFrame(static_rows)
+                _b = calc_bias_score(tmp_df, ccy)
+                total = _b["total"]
+                level = _b["level"]
+            else:
+                total = 0.0
+                level = "MILD BEARISH"
+        rows_data.append({"ccy": ccy, "total": total, "level": level})
+
+    rows_data.sort(key=lambda x: x["total"], reverse=True)
+
+    _LEVEL_COLOR = {
+        "STRONG BULLISH": "#00a36c",
+        "SLIGHT BULLISH": C["green"],
+        "MILD BULLISH":   "#4ecb9e",
+        "MILD BEARISH":   C["yellow"],
+        "SLIGHT BEARISH": "#f08080",
+        "STRONG BEARISH": C["red"],
+    }
+
+    rows_html = ""
+    for item in rows_data:
+        ccy   = item["ccy"]
+        total = item["total"]
+        level = item["level"]
+        lc    = _LEVEL_COLOR.get(level, C["muted"])
+        flag  = CURRENCY_FLAG.get(ccy, "")
+        sign  = "+" if total > 0 else ""
+        is_selected = ccy == selected_ccy
+        bg    = C["teal_bg"] if is_selected else "transparent"
+        border = f"border-left:3px solid {lc};" if not is_selected else f"border-left:3px solid {C['teal']};"
+
+        bar_pct = max(2.0, min(98.0, (total + 1.0) / 2.0 * 100))
+        bar_color = lc
+
+        rows_html += (
+            f"<div style='padding:10px 12px;border-bottom:1px solid {C['border']};background:{bg};{border}'>"
+            f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;'>"
+            f"<div style='display:flex;align-items:center;gap:8px;'>"
+            f"<span style='font-size:16px;'>{flag}</span>"
+            f"<span style='font-size:13px;font-weight:800;color:{C['text']};font-family:monospace;'>{ccy}</span>"
+            + (f"<span style=\"font-size:8px;color:{C['teal']};font-family:monospace;font-weight:700;margin-left:4px;\">◆ SELECTED</span>" if is_selected else "")
+            + f"</div>"
+            f"<div style='text-align:right;'>"
+            f"<span style='font-size:11px;font-weight:800;color:{lc};font-family:monospace;'>{sign}{total:.2f}</span>"
+            f"</div>"
+            f"</div>"
+            f"<div style='display:flex;align-items:center;gap:8px;'>"
+            f"<div style='flex:1;height:4px;border-radius:2px;background:{C['dim']};'>"
+            f"<div style='height:4px;border-radius:2px;background:{bar_color};width:{bar_pct:.0f}%;'></div>"
+            f"</div>"
+            f"<span style='font-size:8px;font-family:monospace;font-weight:700;color:{lc};"
+            f"letter-spacing:0.5px;white-space:nowrap;'>{level}</span>"
+            f"</div>"
+            f"</div>"
+        )
+
+    return (
+        f"<div style='background:{C['card']};border:1px solid {C['border']};border-radius:10px;overflow:hidden;'>"
+        f"<div style='padding:10px 14px;border-bottom:1px solid {C['border']};'>"
+        f"<div style='font-size:9px;color:{C['muted']};font-family:monospace;letter-spacing:2px;text-transform:uppercase;'>Currency Bias Ranking</div>"
+        f"</div>"
+        f"{rows_html}"
+        f"<div style='padding:6px 12px;font-size:9px;color:{C['muted']};font-family:monospace;border-top:1px solid {C['border']};'>Score range: −1.0 to +1.0 · Navigate currencies above to update</div>"
+        f"</div>"
+    )
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════
@@ -2502,7 +2349,6 @@ def main():
 
     # Auto-rerun every AUTO_RERUN_INTERVAL seconds — clears fast-moving caches
     if _now - st.session_state.last_refresh_ts > AUTO_RERUN_INTERVAL:
-        fetch_ff_calendar.clear()
         fetch_news_context_scores.clear()
         fetch_fundamental_scores.clear()
         fetch_d3_d4_news.clear()
@@ -2521,7 +2367,7 @@ def main():
             f"font-family:monospace;letter-spacing:-0.5px;'>ECONOMIC BIAS ENGINE</div>"
             f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
             f"letter-spacing:1px;margin-top:3px;'>"
-            f"4-Dimensional Currency Bias · Indicators · Calendar</div></div>",
+            f"20 Indicators · 4D Scoring · Live Data · No Neutral</div></div>",
             unsafe_allow_html=True,
         )
 
@@ -2554,13 +2400,7 @@ def main():
 
     st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
 
-    # ── Data fetch — indicators & calendar ────────────────────────────────────
-    with st.spinner("⏳ Loading calendar data from ForexFactory…"):
-        ff_df = fetch_ff_calendar()
-
-    ff_ok    = not ff_df.empty
-    ff_rows  = len(ff_df[ff_df["currency"] == currency]) if ff_ok else 0
-
+    # ── Data fetch — indicators ───────────────────────────────────────────────
     # Official API data
     official: dict = {}
     with st.spinner("⏳ Fetching official API data…"):
@@ -2582,45 +2422,7 @@ def main():
                 if boe_rate:
                     official["Interest Rate"] = boe_rate
 
-    indicators_df, ind_source = build_indicators_table(currency, ff_df, official)
-    calendar_df               = build_calendar_view(ff_df, currency)
-
-    # ── Release-triggered cache invalidation ──────────────────────────────────
-    # If any event releases today and we haven't already refreshed for it, force
-    # a fresh fetch of all indicator sources so new actuals appear immediately.
-    if not calendar_df.empty:
-        today_events = frozenset(
-            calendar_df[calendar_df["days_until"] == 0]["indicator"].dropna()
-        )
-        already_refreshed = st.session_state.release_refreshed_events
-        new_releases = today_events - already_refreshed
-        if new_releases and (_now - st.session_state.last_refresh_ts > 60):
-            fetch_ff_calendar.clear()
-            fetch_fred_indicators.clear()
-            fetch_ecb_rate.clear()
-            fetch_ecb_cpi.clear()
-            fetch_boe_rate.clear()
-            fetch_te_indicators.clear()
-            fetch_fundamental_scores.clear()
-            fetch_news_context_scores.clear()
-            fetch_d3_d4_news.clear()
-            st.session_state.last_refresh_ts = _now
-            st.session_state.release_refreshed_events = today_events
-            st.rerun()
-        # Always keep the set current for today
-        st.session_state.release_refreshed_events = (
-            already_refreshed | today_events
-        )
-
-    # Upcoming flag
-    upcoming_set = set()
-    if not calendar_df.empty:
-        upcoming_set = set(
-            calendar_df[
-                (calendar_df["days_until"] > 0) & (calendar_df["days_until"] <= 7)
-            ]["indicator"].dropna()
-        )
-    indicators_df["upcoming"] = indicators_df["indicator"].isin(upcoming_set)
+    indicators_df, ind_source = build_indicators_table(currency, official)
 
     bias = calc_bias_score(indicators_df, currency)
 
@@ -2664,16 +2466,10 @@ def main():
     st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
 
     # ── Status bar + manual refresh button ────────────────────────────────────
-    upcoming_count = len(calendar_df[
-        (calendar_df["days_until"] > 0) & (calendar_df["days_until"] <= 7)
-    ]) if not calendar_df.empty else 0
-
     age_secs   = int(_now - st.session_state.last_refresh_ts)
     age_str    = f"{age_secs // 60}m {age_secs % 60}s ago" if age_secs >= 60 else f"{age_secs}s ago"
     status_parts = [
         f"{CURRENCY_FLAG.get(currency,'')} {currency}",
-        f"{ff_rows} FF events" if ff_ok else "static calendar",
-        f"{upcoming_count} events in 7 days",
         f"Source: {ind_source}",
         f"Last updated: {age_str}",
     ]
@@ -2688,7 +2484,6 @@ def main():
         )
     with col_btn:
         if st.button("🔄", key="manual_refresh", help="Clear all caches and reload data"):
-            fetch_ff_calendar.clear()
             fetch_fred_indicators.clear()
             fetch_ecb_rate.clear()
             fetch_ecb_cpi.clear()
@@ -2698,7 +2493,6 @@ def main():
             fetch_news_context_scores.clear()
             fetch_d3_d4_news.clear()
             st.session_state.last_refresh_ts = time.time()
-            st.session_state.release_refreshed_events = set()
             st.rerun()
 
     # ── Two-column layout ─────────────────────────────────────────────────────
@@ -2723,20 +2517,10 @@ def main():
             unsafe_allow_html=True,
         )
 
-    # RIGHT — Calendar + News
+    # RIGHT — All Currencies Bias Ranking
     with col_right:
-        # Calendar
-        st.markdown(
-            _section_header("Economic Calendar — Next 3 Months"),
-            unsafe_allow_html=True,
-        )
-        if not ff_ok:
-            st.markdown(
-                f"<div style='font-size:10px;color:{C['muted']};font-family:monospace;"
-                f"margin-bottom:6px;'>⚠ Calendar unavailable — all sources blocked</div>",
-                unsafe_allow_html=True,
-            )
-        st.markdown(render_calendar_table(calendar_df), unsafe_allow_html=True)
+        st.markdown(_section_header("All Currencies — Bias Ranking"), unsafe_allow_html=True)
+        st.markdown(render_all_currencies_overview(currency), unsafe_allow_html=True)
 
     # ── Footer ─────────────────────────────────────────────────────────────────
     st.markdown(
