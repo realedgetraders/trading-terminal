@@ -78,7 +78,7 @@ CURRENCY_FLAG = {
 }
 # ── Indicator normalisation (longest-key-first) ───────────────────────────────
 _RAW_IND_MAP: dict[str, str] = {
-    "consumer price index":   "CPI y/y",
+    "consumer price index":   "CPI m/m",
     "consumer confidence":    "Consumer Confidence",
     "consumer sentiment":     "Consumer Confidence",
     "business confidence":    "Business Confidence",
@@ -121,14 +121,14 @@ _RAW_IND_MAP: dict[str, str] = {
     "ifo":                    "Business Confidence",
     "zew":                    "Business Confidence",
     "gdp":                    "GDP Growth",
-    "cpi":                    "CPI y/y",
+    "cpi":                    "CPI m/m",
     "ppi":                    "PPI",
 }
 INDICATOR_MAP: list[tuple[str, str]] = sorted(
     _RAW_IND_MAP.items(), key=lambda x: len(x[0]), reverse=True
 )
 LOWER_IS_BETTER: dict[str, bool] = {
-    "CPI y/y": False, "Interest Rate": False, "GDP Growth": False,
+    "CPI m/m": False, "Interest Rate": False, "GDP Growth": False,
     "Unemployment Rate": True, "Manufacturing PMI": False, "Services PMI": False,
     "Trade Balance": False, "Retail Sales": False,
     "Current Account": False, "Wage Growth": False, "PPI": False,
@@ -139,7 +139,7 @@ LOWER_IS_BETTER: dict[str, bool] = {
 }
 INDICATOR_ORDER = [
     # Core — scored
-    "CPI y/y", "Interest Rate", "GDP Growth", "Unemployment Rate",
+    "CPI m/m", "Interest Rate", "GDP Growth", "Unemployment Rate",
     "Manufacturing PMI", "Services PMI", "Trade Balance", "Retail Sales",
     "Current Account", "Wage Growth", "PPI", "Consumer Confidence",
     "Government Debt", "Core CPI", "Employment Change", "Industrial Production",
@@ -152,7 +152,7 @@ INDICATOR_ORDER = [
 FRED_BASE   = "https://api.stlouisfed.org/fred/series/observations"
 FRED_SERIES = {
     # Core macro — high priority
-    "CPI y/y":           ("CPIAUCSL",        "yoy"),     # CPI All Items — y/y computed
+    "CPI m/m":           ("CPIAUCSL",        "mom"),     # CPI All Items — m/m computed
     "Interest Rate":     ("FEDFUNDS",         "latest"),  # Effective Fed Funds Rate
     "GDP Growth":        ("A191RL1Q225SBEA",  "latest"),  # Real GDP % change QoQ
     "Unemployment Rate": ("UNRATE",           "latest"),  # Civilian unemployment rate
@@ -161,7 +161,7 @@ FRED_SERIES = {
     "Trade Balance":     ("BOPGSTB",          "latest"),  # Goods & services trade balance ($B)
     "Wage Growth":       ("CES0500000003",    "yoy"),     # Avg hourly earnings — y/y computed
     # New indicators
-    "Core CPI":             ("CPILFESL",        "yoy"),
+    "Core CPI":             ("CPILFESL",        "mom"),
     "Employment Change":    ("PAYEMS",          "mom_abs"),
     "Industrial Production":("INDPRO",          "mom"),
     "M2 Money Supply":      ("M2SL",            "yoy"),
@@ -176,7 +176,7 @@ _FRED_KEY_VALID = bool(
 # ── ECB API config ────────────────────────────────────────────────────────────
 ECB_BASE         = "https://data-api.ecb.europa.eu/service/data"
 ECB_RATE_URL     = "https://data-api.ecb.europa.eu/service/data/FM/B.U2.EUR.RT0.ILM.MR.INP?format=csvdata"
-ECB_CPI_URL      = "https://data-api.ecb.europa.eu/service/data/ICP/M.U2.N.000000.4.ANR?format=csvdata"
+ECB_CPI_URL      = "https://data-api.ecb.europa.eu/service/data/ICP/M.U2.N.000000.4.GPC?format=csvdata"
 _BOE_FROM_YEAR  = datetime.today().year - 2
 _BOE_TO_YEAR    = datetime.today().year
 BOE_RATE_URL    = (
@@ -205,9 +205,9 @@ _TE_HEADERS = {
 }
 # TE row-name fragments → internal indicator key (case-insensitive substring match)
 _TE_ROW_MAP: list[tuple[str, str]] = [
-    ("inflation rate",      "CPI y/y"),
-    ("cpi",                 "CPI y/y"),
-    ("consumer price",      "CPI y/y"),
+    ("inflation rate",      "CPI m/m"),
+    ("cpi",                 "CPI m/m"),
+    ("consumer price",      "CPI m/m"),
     ("interest rate",       "Interest Rate"),
     ("gdp growth rate",     "GDP Growth"),
     ("gdp growth",          "GDP Growth"),
@@ -403,7 +403,7 @@ _CB_DOVE_KW: tuple[str, ...] = (
 STATIC_INDICATORS: dict[str, dict[str, dict]] = {
     # ── USD  target score ≈ +5  (SLIGHT BULLISH — high rates, solid growth, wage inflation)
     "USD": {
-        "CPI y/y":            {"actual": 3.4,    "previous": 3.5,    "forecast": 3.4,    "date": "2026-05-13", "impact": "High"},
+        "CPI m/m":            {"actual": 0.4,    "previous": 0.3,    "forecast": 0.3,    "date": "2026-05-13", "impact": "High"},
         "Interest Rate":      {"actual": 4.50,   "previous": 4.25,   "forecast": 4.50,   "date": "2026-05-07", "impact": "High"},
         "GDP Growth":         {"actual": 2.8,    "previous": 2.4,    "forecast": 2.6,    "date": "2026-04-30", "impact": "High"},
         "Unemployment Rate":  {"actual": 4.0,    "previous": 4.2,    "forecast": 4.0,    "date": "2026-05-02", "impact": "High"},
@@ -419,14 +419,14 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Budget Balance":     {"actual": -5.8,   "previous": -6.1,   "forecast": -6.0,   "date": "2026-04-15", "impact": "Low"},
         "Building Permits":   {"actual": 1482.0, "previous": 1465.0, "forecast": 1460.0, "date": "2026-05-16", "impact": "Medium"},
         "Business Confidence":{"actual": 52.3,   "previous": 50.1,   "forecast": 50.5,   "date": "2026-05-15", "impact": "Low"},
-        "Core CPI":           {"actual": 3.6,    "previous": 3.5,    "forecast": 3.5,    "date": "2026-05-13", "impact": "High"},
+        "Core CPI":           {"actual": 0.3,    "previous": 0.4,    "forecast": 0.3,    "date": "2026-05-13", "impact": "High"},
         "Employment Change":  {"actual": 177.0,  "previous": 142.0,  "forecast": 155.0,  "date": "2026-05-02", "impact": "High"},
         "Industrial Production":{"actual": 0.3,  "previous": 0.1,    "forecast": 0.2,    "date": "2026-05-15", "impact": "Medium"},
         "M2 Money Supply":    {"actual": 3.8,    "previous": 3.5,    "forecast": 3.6,    "date": "2026-05-07", "impact": "Low"},
     },
     # ── EUR  target score ≈ -2  (SLIGHT BEARISH — cutting cycle, soft PMI, below-target CPI)
     "EUR": {
-        "CPI y/y":            {"actual": 1.9,    "previous": 2.2,    "forecast": 2.1,    "date": "2026-05-06", "impact": "High"},
+        "CPI m/m":            {"actual": 0.2,    "previous": 0.2,    "forecast": 0.2,    "date": "2026-05-06", "impact": "High"},
         "Interest Rate":      {"actual": 2.25,   "previous": 2.50,   "forecast": 2.25,   "date": "2026-04-17", "impact": "High"},
         "GDP Growth":         {"actual": 0.8,    "previous": 0.6,    "forecast": 0.9,    "date": "2026-04-30", "impact": "High"},
         "Unemployment Rate":  {"actual": 6.2,    "previous": 6.3,    "forecast": 6.2,    "date": "2026-04-30", "impact": "Medium"},
@@ -442,14 +442,14 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Budget Balance":     {"actual": -3.2,   "previous": -3.5,   "forecast": -3.3,   "date": "2026-04-01", "impact": "Low"},
         "Building Permits":   {"actual": 92.3,   "previous": 95.1,   "forecast": 94.0,   "date": "2026-05-12", "impact": "Low"},
         "Business Confidence":{"actual": 98.5,   "previous": 99.2,   "forecast": 99.5,   "date": "2026-05-20", "impact": "Low"},
-        "Core CPI":           {"actual": 1.7,    "previous": 1.9,    "forecast": 1.8,    "date": "2026-05-06", "impact": "High"},
+        "Core CPI":           {"actual": 0.2,    "previous": 0.2,    "forecast": 0.2,    "date": "2026-05-06", "impact": "High"},
         "Employment Change":  {"actual": 140.0,  "previous": 120.0,  "forecast": 130.0,  "date": "2026-04-30", "impact": "Medium"},
         "Industrial Production":{"actual": -0.2, "previous": 0.1,    "forecast": 0.2,    "date": "2026-04-14", "impact": "Medium"},
         "M2 Money Supply":    {"actual": 2.1,    "previous": 1.9,    "forecast": 2.0,    "date": "2026-04-25", "impact": "Low"},
     },
     # ── GBP  target score ≈ -4  (SLIGHT BEARISH — stagflation, cutting, weak manufacturing)
     "GBP": {
-        "CPI y/y":            {"actual": 3.2,    "previous": 3.0,    "forecast": 3.1,    "date": "2026-05-21", "impact": "High"},
+        "CPI m/m":            {"actual": 0.3,    "previous": 0.4,    "forecast": 0.3,    "date": "2026-05-21", "impact": "High"},
         "Interest Rate":      {"actual": 4.25,   "previous": 4.50,   "forecast": 4.25,   "date": "2026-05-08", "impact": "High"},
         "GDP Growth":         {"actual": 1.4,    "previous": 1.1,    "forecast": 1.2,    "date": "2026-05-13", "impact": "High"},
         "Unemployment Rate":  {"actual": 4.7,    "previous": 4.5,    "forecast": 4.5,    "date": "2026-05-13", "impact": "Medium"},
@@ -465,14 +465,14 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Budget Balance":     {"actual": -4.3,   "previous": -4.8,   "forecast": -4.5,   "date": "2026-04-22", "impact": "Low"},
         "Building Permits":   {"actual": 178.0,  "previous": 185.0,  "forecast": 182.0,  "date": "2026-05-12", "impact": "Low"},
         "Business Confidence":{"actual": 48.2,   "previous": 49.1,   "forecast": 49.5,   "date": "2026-05-19", "impact": "Low"},
-        "Core CPI":           {"actual": 3.5,    "previous": 3.1,    "forecast": 3.3,    "date": "2026-05-21", "impact": "High"},
+        "Core CPI":           {"actual": 0.3,    "previous": 0.3,    "forecast": 0.3,    "date": "2026-05-21", "impact": "High"},
         "Employment Change":  {"actual": -5.0,   "previous": 18.0,   "forecast": 10.0,   "date": "2026-05-13", "impact": "Medium"},
         "Industrial Production":{"actual": -0.5, "previous": 0.2,    "forecast": 0.1,    "date": "2026-05-09", "impact": "Medium"},
         "M2 Money Supply":    {"actual": 1.8,    "previous": 1.5,    "forecast": 1.7,    "date": "2026-04-28", "impact": "Low"},
     },
     # ── JPY  target score ≈ 0–1  (NEUTRAL — pause after hike, trade deficit, CA surplus)
     "JPY": {
-        "CPI y/y":            {"actual": 2.8,    "previous": 2.8,    "forecast": 2.7,    "date": "2026-04-25", "impact": "High"},
+        "CPI m/m":            {"actual": 0.3,    "previous": 0.3,    "forecast": 0.3,    "date": "2026-04-25", "impact": "High"},
         "Interest Rate":      {"actual": 0.50,   "previous": 0.50,   "forecast": 0.50,   "date": "2026-05-01", "impact": "High"},
         "GDP Growth":         {"actual": -0.1,   "previous": 0.4,    "forecast": 0.2,    "date": "2026-05-15", "impact": "High"},
         "Unemployment Rate":  {"actual": 2.5,    "previous": 2.4,    "forecast": 2.5,    "date": "2026-05-02", "impact": "Low"},
@@ -488,14 +488,14 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Budget Balance":     {"actual": -5.5,   "previous": -5.8,   "forecast": -5.6,   "date": "2026-04-01", "impact": "Low"},
         "Building Permits":   {"actual": 73.5,   "previous": 71.2,   "forecast": 72.0,   "date": "2026-04-30", "impact": "Low"},
         "Business Confidence":{"actual": 13.0,   "previous": 11.0,   "forecast": 11.0,   "date": "2026-04-01", "impact": "Medium"},
-        "Core CPI":           {"actual": 2.4,    "previous": 2.1,    "forecast": 2.2,    "date": "2026-04-25", "impact": "High"},
+        "Core CPI":           {"actual": 0.2,    "previous": 0.2,    "forecast": 0.2,    "date": "2026-04-25", "impact": "High"},
         "Employment Change":  {"actual": 18.0,   "previous": 22.0,   "forecast": 20.0,   "date": "2026-05-02", "impact": "Low"},
         "Industrial Production":{"actual": 0.2,  "previous": -0.4,   "forecast": 0.3,    "date": "2026-04-30", "impact": "Medium"},
         "M2 Money Supply":    {"actual": 1.2,    "previous": 1.0,    "forecast": 1.1,    "date": "2026-04-28", "impact": "Low"},
     },
     # ── AUD  target score ≈ +3  (SLIGHT BULLISH — trade surplus, rate cycle bottoming)
     "AUD": {
-        "CPI y/y":            {"actual": 3.2,    "previous": 3.8,    "forecast": 3.3,    "date": "2026-04-30", "impact": "High"},
+        "CPI m/m":            {"actual": 0.3,    "previous": 0.3,    "forecast": 0.3,    "date": "2026-04-30", "impact": "High"},
         "Interest Rate":      {"actual": 3.85,   "previous": 4.10,   "forecast": 3.85,   "date": "2026-05-06", "impact": "High"},
         "GDP Growth":         {"actual": 1.3,    "previous": 1.5,    "forecast": 1.4,    "date": "2026-06-04", "impact": "High"},
         "Unemployment Rate":  {"actual": 4.2,    "previous": 4.1,    "forecast": 4.2,    "date": "2026-05-15", "impact": "High"},
@@ -511,14 +511,14 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Budget Balance":     {"actual": -0.8,   "previous": -1.2,   "forecast": -1.0,   "date": "2026-04-01", "impact": "Low"},
         "Building Permits":   {"actual": 15.2,   "previous": 14.8,   "forecast": 14.9,   "date": "2026-05-07", "impact": "Low"},
         "Business Confidence":{"actual": 5.0,    "previous": 3.0,    "forecast": 3.5,    "date": "2026-05-12", "impact": "Low"},
-        "Core CPI":           {"actual": 2.9,    "previous": 3.3,    "forecast": 3.0,    "date": "2026-04-30", "impact": "High"},
+        "Core CPI":           {"actual": 0.2,    "previous": 0.3,    "forecast": 0.2,    "date": "2026-04-30", "impact": "High"},
         "Employment Change":  {"actual": 38.0,   "previous": 52.0,   "forecast": 25.0,   "date": "2026-05-15", "impact": "High"},
         "Industrial Production":{"actual": 0.4,  "previous": 0.2,    "forecast": 0.3,    "date": "2026-05-13", "impact": "Low"},
         "M2 Money Supply":    {"actual": 5.2,    "previous": 4.8,    "forecast": 5.0,    "date": "2026-04-28", "impact": "Low"},
     },
     # ── CAD  target score ≈ -4  (SLIGHT BEARISH — cutting, rising unemployment, weak PMI)
     "CAD": {
-        "CPI y/y":            {"actual": 2.7,    "previous": 2.3,    "forecast": 2.6,    "date": "2026-05-20", "impact": "High"},
+        "CPI m/m":            {"actual": 0.2,    "previous": 0.2,    "forecast": 0.2,    "date": "2026-05-20", "impact": "High"},
         "Interest Rate":      {"actual": 2.75,   "previous": 3.00,   "forecast": 2.75,   "date": "2026-04-16", "impact": "High"},
         "GDP Growth":         {"actual": 1.5,    "previous": 1.6,    "forecast": 1.6,    "date": "2026-05-29", "impact": "High"},
         "Unemployment Rate":  {"actual": 6.9,    "previous": 6.7,    "forecast": 6.8,    "date": "2026-05-09", "impact": "High"},
@@ -534,14 +534,14 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Budget Balance":     {"actual": -1.5,   "previous": -1.8,   "forecast": -1.6,   "date": "2026-04-01", "impact": "Low"},
         "Building Permits":   {"actual": 238.0,  "previous": 253.0,  "forecast": 248.0,  "date": "2026-05-14", "impact": "Medium"},
         "Business Confidence":{"actual": -15.0,  "previous": -12.0,  "forecast": -11.0,  "date": "2026-05-06", "impact": "Low"},
-        "Core CPI":           {"actual": 2.4,    "previous": 2.2,    "forecast": 2.3,    "date": "2026-05-20", "impact": "High"},
+        "Core CPI":           {"actual": 0.2,    "previous": 0.2,    "forecast": 0.2,    "date": "2026-05-20", "impact": "High"},
         "Employment Change":  {"actual": -33.0,  "previous": 32.0,   "forecast": 20.0,   "date": "2026-05-09", "impact": "High"},
         "Industrial Production":{"actual": -0.3, "previous": 0.1,    "forecast": 0.2,    "date": "2026-05-14", "impact": "Medium"},
         "M2 Money Supply":    {"actual": 2.6,    "previous": 2.4,    "forecast": 2.5,    "date": "2026-05-07", "impact": "Low"},
     },
     # ── CHF  target score ≈ +1–2  (NEUTRAL/SLIGHT BULLISH — deflation risk, but large surpluses)
     "CHF": {
-        "CPI y/y":            {"actual": 0.6,    "previous": 0.3,    "forecast": 0.4,    "date": "2026-05-05", "impact": "Medium"},
+        "CPI m/m":            {"actual": 0.1,    "previous": 0.1,    "forecast": 0.1,    "date": "2026-05-05", "impact": "Medium"},
         "Interest Rate":      {"actual": 0.00,   "previous": 0.00,   "forecast": 0.00,   "date": "2026-03-20", "impact": "High"},
         "GDP Growth":         {"actual": 0.5,    "previous": 0.2,    "forecast": 0.4,    "date": "2026-05-28", "impact": "Medium"},
         "Unemployment Rate":  {"actual": 2.8,    "previous": 2.9,    "forecast": 3.0,    "date": "2026-05-07", "impact": "Low"},
@@ -557,14 +557,14 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Budget Balance":     {"actual": 0.3,    "previous": -0.1,   "forecast": 0.0,    "date": "2026-04-01", "impact": "Low"},
         "Building Permits":   {"actual": 2.8,    "previous": 2.9,    "forecast": 3.0,    "date": "2026-04-29", "impact": "Low"},
         "Business Confidence":{"actual": -0.3,   "previous": -0.8,   "forecast": -0.5,   "date": "2026-04-28", "impact": "Low"},
-        "Core CPI":           {"actual": 0.7,    "previous": 0.5,    "forecast": 0.5,    "date": "2026-05-05", "impact": "Medium"},
+        "Core CPI":           {"actual": 0.1,    "previous": 0.1,    "forecast": 0.1,    "date": "2026-05-05", "impact": "Medium"},
         "Employment Change":  {"actual": 4.0,    "previous": 6.0,    "forecast": 5.0,    "date": "2026-03-10", "impact": "Low"},
         "Industrial Production":{"actual": 0.6,  "previous": 0.3,    "forecast": 0.4,    "date": "2026-05-12", "impact": "Low"},
         "M2 Money Supply":    {"actual": 1.5,    "previous": 1.2,    "forecast": 1.3,    "date": "2026-04-28", "impact": "Low"},
     },
     # ── NZD  target score ≈ -5  (SLIGHT BEARISH — cutting, CA deficit, weak consumer)
     "NZD": {
-        "CPI y/y":            {"actual": 2.5,    "previous": 2.2,    "forecast": 2.4,    "date": "2026-04-17", "impact": "High"},
+        "CPI m/m":            {"actual": 0.2,    "previous": 0.2,    "forecast": 0.2,    "date": "2026-04-17", "impact": "High"},
         "Interest Rate":      {"actual": 3.50,   "previous": 3.75,   "forecast": 3.50,   "date": "2026-04-09", "impact": "High"},
         "GDP Growth":         {"actual": 0.7,    "previous": 0.6,    "forecast": 0.8,    "date": "2026-06-18", "impact": "High"},
         "Unemployment Rate":  {"actual": 5.1,    "previous": 5.0,    "forecast": 5.0,    "date": "2026-05-05", "impact": "High"},
@@ -580,10 +580,163 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Budget Balance":     {"actual": -3.1,   "previous": -2.8,   "forecast": -2.9,   "date": "2026-04-01", "impact": "Low"},
         "Building Permits":   {"actual": 2.1,    "previous": 2.3,    "forecast": 2.3,    "date": "2026-04-30", "impact": "Low"},
         "Business Confidence":{"actual": 14.5,   "previous": 18.3,   "forecast": 17.0,   "date": "2026-04-23", "impact": "Low"},
-        "Core CPI":           {"actual": 2.1,    "previous": 1.9,    "forecast": 2.0,    "date": "2026-04-17", "impact": "High"},
+        "Core CPI":           {"actual": 0.2,    "previous": 0.2,    "forecast": 0.2,    "date": "2026-04-17", "impact": "High"},
         "Employment Change":  {"actual": -4.0,   "previous": 8.0,    "forecast": 5.0,    "date": "2026-05-05", "impact": "High"},
         "Industrial Production":{"actual": -0.1, "previous": 0.3,    "forecast": 0.2,    "date": "2026-04-28", "impact": "Low"},
         "M2 Money Supply":    {"actual": 2.8,    "previous": 2.5,    "forecast": 2.7,    "date": "2026-04-14", "impact": "Low"},
+    },
+}
+
+
+# ╔══════════════════════════════════════════════════════════════════════════════
+# ║  6-MONTH STATIC HISTORY  (Dec 2025 → May 2026, index 0=oldest, 5=latest)
+# ║  Used for cross-currency G8 relative scoring.
+# ║  Latest value (index 5) matches STATIC_INDICATORS "actual".
+# ╚══════════════════════════════════════════════════════════════════════════════
+STATIC_HISTORY: dict[str, dict[str, list[float]]] = {
+    "USD": {
+        "CPI m/m":          [0.4, 0.5, 0.2, 0.1, 0.3, 0.4],
+        "Interest Rate":    [4.25, 4.25, 4.50, 4.50, 4.50, 4.50],
+        "GDP Growth":       [2.4, 2.4, 2.8, 2.8, 2.8, 2.8],
+        "Unemployment Rate":[4.2, 4.1, 4.0, 4.1, 4.0, 4.0],
+        "Manufacturing PMI":[49.7, 51.2, 52.7, 49.0, 50.2, 49.8],
+        "Services PMI":     [56.1, 52.9, 51.0, 54.4, 50.8, 51.2],
+        "Retail Sales":     [0.4, -0.9, 0.2, 1.4, -0.2, 0.1],
+        "Wage Growth":      [4.1, 4.1, 4.0, 4.0, 4.1, 4.5],
+        "Trade Balance":    [-78.9, -131.4, -122.7, -140.5, -64.5, -61.1],
+        "Core CPI":         [0.3, 0.4, 0.4, 0.1, 0.3, 0.3],
+        "Employment Change":[227, 256, 117, 228, 142, 177],
+        "Industrial Production":[-0.1, 0.5, -0.8, -0.3, 0.1, 0.3],
+        "M2 Money Supply":  [3.5, 3.5, 3.6, 3.6, 3.8, 3.8],
+        "Consumer Confidence":[110.7, 104.1, 98.3, 92.9, 85.7, 82.0],
+        "Government Debt":  [122.0, 122.0, 123.0, 123.0, 124.0, 124.0],
+        "PPI":              [0.3, 0.5, 0.0, -0.4, -0.5, 0.2],
+    },
+    "EUR": {
+        "CPI m/m":          [0.3, 0.2, -0.1, 0.0, 0.2, 0.2],
+        "Interest Rate":    [3.00, 2.75, 2.75, 2.50, 2.50, 2.25],
+        "GDP Growth":       [1.2, 1.2, 1.7, 1.7, 1.7, 1.7],
+        "Unemployment Rate":[6.3, 6.2, 6.2, 6.1, 6.1, 6.2],
+        "Manufacturing PMI":[45.1, 46.6, 47.6, 48.7, 49.0, 49.4],
+        "Services PMI":     [51.6, 51.3, 50.6, 51.0, 50.3, 50.1],
+        "Retail Sales":     [-0.1, 0.3, 0.0, 0.3, 0.2, 0.1],
+        "Wage Growth":      [4.1, 4.2, 3.8, 3.6, 3.3, 3.1],
+        "Trade Balance":    [8.5, 16.3, 10.5, 18.0, 20.5, 8.5],
+        "Core CPI":         [0.0, 0.3, 0.1, 0.3, 0.3, 0.2],
+        "Employment Change":[300, 280, 220, 180, 190, 210],
+        "Industrial Production":[-1.1, 0.5, 0.7, -1.8, 0.5, 0.4],
+        "M2 Money Supply":  [3.7, 3.8, 4.0, 3.9, 3.9, 4.1],
+        "Consumer Confidence":[-14.2, -14.2, -13.3, -16.5, -16.7, -18.0],
+        "Government Debt":  [89.5, 89.5, 90.0, 90.0, 90.8, 91.0],
+        "PPI":              [0.0, 0.2, 0.0, 0.1, 0.0, 0.1],
+    },
+    "GBP": {
+        "CPI m/m":          [0.3, 0.3, 0.5, 0.2, 0.4, 0.3],
+        "Interest Rate":    [4.75, 4.75, 4.50, 4.50, 4.25, 4.25],
+        "GDP Growth":       [0.5, 0.5, 1.1, 1.1, 1.6, 1.6],
+        "Unemployment Rate":[4.3, 4.4, 4.4, 4.5, 4.5, 4.5],
+        "Manufacturing PMI":[47.3, 48.3, 46.9, 44.9, 45.4, 46.0],
+        "Services PMI":     [51.1, 51.0, 51.0, 52.5, 49.9, 50.3],
+        "Retail Sales":     [-0.6, 0.0, 1.0, -0.4, 0.4, -0.3],
+        "Wage Growth":      [6.0, 5.9, 5.8, 5.6, 5.3, 5.0],
+        "Trade Balance":    [-5.1, -3.7, -4.5, -3.8, -3.7, -5.1],
+        "Core CPI":         [0.5, 0.6, 0.4, 0.5, 0.3, 0.3],
+        "Employment Change":[ 76, 73, 27, -25, -50, -72],
+        "Industrial Production":[0.5, 0.7, -0.6, 0.2, 0.8, 0.4],
+        "M2 Money Supply":  [3.0, 3.1, 3.2, 3.3, 3.2, 3.1],
+        "Consumer Confidence":[-17.0, -22.0, -20.0, -18.0, -23.0, -20.0],
+        "Government Debt":  [98.5, 99.0, 99.5, 100.0, 100.5, 101.0],
+        "PPI":              [0.2, 0.1, 0.2, -0.1, 0.1, 0.2],
+    },
+    "JPY": {
+        "CPI m/m":          [0.4, 0.4, 0.3, 0.2, 0.3, 0.3],
+        "Interest Rate":    [0.25, 0.25, 0.50, 0.50, 0.75, 0.75],
+        "GDP Growth":       [1.0, 1.0, 1.2, 1.2, 1.2, 1.2],
+        "Unemployment Rate":[2.5, 2.4, 2.5, 2.4, 2.5, 2.4],
+        "Manufacturing PMI":[49.5, 50.1, 49.0, 48.4, 48.7, 48.5],
+        "Services PMI":     [50.6, 53.0, 53.7, 50.0, 52.4, 52.4],
+        "Retail Sales":     [-0.3, 0.0, 1.0, -1.1, 0.0, 0.2],
+        "Wage Growth":      [3.5, 3.1, 2.8, 3.5, 3.5, 3.2],
+        "Trade Balance":    [-0.8, -1.2, -0.5, -0.3, -1.2, -0.8],
+        "Core CPI":         [0.3, 0.4, 0.3, 0.2, 0.2, 0.2],
+        "Employment Change":[5, -4, 18, 15, 20, 15],
+        "Industrial Production":[-2.3, -1.1, 2.2, 0.2, -1.1, 0.5],
+        "M2 Money Supply":  [1.0, 1.1, 1.3, 1.4, 1.4, 1.5],
+        "Consumer Confidence":[35.0, 36.2, 35.5, 34.2, 33.8, 34.1],
+        "Government Debt":  [254.0, 254.0, 255.0, 255.0, 255.0, 255.0],
+        "PPI":              [0.1, 0.4, 0.3, 0.5, 0.4, 0.2],
+    },
+    "AUD": {
+        "CPI m/m":          [0.3, 0.3, 0.2, 0.1, 0.2, 0.3],
+        "Interest Rate":    [4.35, 4.35, 4.10, 4.10, 3.85, 3.85],
+        "GDP Growth":       [1.0, 1.0, 1.3, 1.3, 1.3, 1.3],
+        "Unemployment Rate":[4.1, 4.0, 4.1, 4.2, 4.1, 4.2],
+        "Manufacturing PMI":[49.0, 50.3, 49.8, 51.0, 50.3, 51.7],
+        "Services PMI":     [50.4, 51.6, 50.8, 51.6, 51.6, 51.0],
+        "Retail Sales":     [0.4, 0.3, 0.2, 0.3, 0.2, 0.3],
+        "Wage Growth":      [3.3, 3.3, 3.4, 3.4, 3.3, 3.6],
+        "Trade Balance":    [4.7, 4.7, 5.1, 4.7, 4.7, 5.1],
+        "Core CPI":         [0.2, 0.3, 0.2, 0.2, 0.3, 0.2],
+        "Employment Change":[56, 90, 53, 90, 52, 38],
+        "Industrial Production":[0.2, 0.2, 0.3, 0.4, 0.2, 0.4],
+        "M2 Money Supply":  [4.5, 4.7, 4.8, 5.0, 4.8, 5.2],
+        "Consumer Confidence":[97.0, 99.0, 101.0, 100.5, 99.0, 102.0],
+        "Government Debt":  [50.5, 50.5, 51.0, 51.5, 51.5, 52.0],
+        "PPI":              [0.3, 0.2, 0.2, 0.3, 0.2, 0.3],
+    },
+    "CAD": {
+        "CPI m/m":          [0.3, 0.4, 0.1, 0.1, 0.3, 0.2],
+        "Interest Rate":    [3.25, 3.00, 3.00, 2.75, 2.75, 2.75],
+        "GDP Growth":       [1.6, 1.6, 1.5, 1.5, 1.5, 1.5],
+        "Unemployment Rate":[6.7, 6.8, 6.8, 6.9, 6.9, 6.9],
+        "Manufacturing PMI":[51.6, 47.8, 47.9, 46.3, 46.5, 46.8],
+        "Services PMI":     [47.5, 47.5, 44.6, 48.6, 41.5, 41.9],
+        "Retail Sales":     [0.7, 0.4, -0.4, -0.2, -0.4, 0.1],
+        "Wage Growth":      [3.3, 3.3, 3.3, 3.5, 3.4, 3.3],
+        "Trade Balance":    [0.7, -0.4, 0.3, -0.8, -0.4, 0.7],
+        "Core CPI":         [0.4, 0.3, 0.2, 0.1, 0.2, 0.2],
+        "Employment Change":[76, 76, -33, -33, -33, 7],
+        "Industrial Production":[-0.4, 0.2, 0.3, -0.3, 0.1, 0.2],
+        "M2 Money Supply":  [2.5, 2.6, 2.7, 2.7, 2.8, 2.9],
+        "Consumer Confidence":[43.6, 43.7, 52.0, 48.8, 50.9, 47.0],
+        "Government Debt":  [106.0, 106.5, 106.5, 107.0, 107.0, 107.0],
+        "PPI":              [-0.1, 0.1, 0.2, 0.1, 0.1, 0.0],
+    },
+    "CHF": {
+        "CPI m/m":          [0.1, 0.2, -0.1, 0.0, 0.1, 0.1],
+        "Interest Rate":    [0.75, 0.50, 0.25, 0.25, 0.25, 0.25],
+        "GDP Growth":       [1.5, 1.5, 1.7, 1.7, 2.0, 2.0],
+        "Unemployment Rate":[2.5, 2.6, 2.5, 2.5, 2.6, 2.5],
+        "Manufacturing PMI":[48.5, 48.4, 49.0, 48.8, 49.1, 48.9],
+        "Services PMI":     [50.3, 49.0, 50.5, 49.4, 49.4, 49.1],
+        "Retail Sales":     [-0.3, 0.0, 0.3, 0.1, -0.2, 0.2],
+        "Wage Growth":      [1.8, 2.0, 1.8, 2.1, 2.0, 1.8],
+        "Trade Balance":    [4.8, 4.2, 4.5, 3.5, 4.2, 4.8],
+        "Core CPI":         [0.0, 0.1, 0.0, 0.0, 0.1, 0.1],
+        "Employment Change":[5, 4, 3, 2, 3, 4],
+        "Industrial Production":[-0.3, 0.1, 0.2, 0.0, 0.1, 0.2],
+        "M2 Money Supply":  [-1.0, -0.8, -0.5, -0.3, 0.0, 0.2],
+        "Consumer Confidence":[-38.3, -30.1, -24.1, -26.3, -24.8, -20.5],
+        "Government Debt":  [37.5, 37.5, 38.0, 38.0, 38.0, 38.0],
+        "PPI":              [-0.1, 0.0, 0.1, 0.0, -0.1, 0.0],
+    },
+    "NZD": {
+        "CPI m/m":          [0.2, 0.3, 0.1, 0.1, 0.2, 0.2],
+        "Interest Rate":    [4.25, 3.75, 3.75, 3.50, 3.50, 3.50],
+        "GDP Growth":       [-0.5, -0.5, 0.6, 0.6, 0.7, 0.7],
+        "Unemployment Rate":[5.0, 5.1, 5.2, 5.1, 5.3, 5.2],
+        "Manufacturing PMI":[46.2, 50.1, 52.7, 53.9, 54.3, 53.5],
+        "Services PMI":     [47.8, 49.1, 50.2, 49.1, 50.1, 49.8],
+        "Retail Sales":     [0.0, -0.5, 0.7, 0.4, -0.2, 0.0],
+        "Wage Growth":      [3.3, 3.3, 2.9, 2.9, 2.9, 3.0],
+        "Trade Balance":    [-0.1, -0.4, 0.0, -0.1, -0.4, -0.1],
+        "Core CPI":         [0.1, 0.2, 0.1, 0.1, 0.1, 0.2],
+        "Employment Change":[ 8, 5, -3, 2, 1, 3],
+        "Industrial Production":[0.0, -0.1, 0.2, 0.1, 0.0, 0.1],
+        "M2 Money Supply":  [5.0, 5.2, 5.0, 5.1, 5.0, 5.1],
+        "Consumer Confidence":[-65.7, -50.4, -47.3, -47.7, -45.3, -43.5],
+        "Government Debt":  [46.5, 46.5, 47.0, 47.5, 47.5, 48.0],
+        "PPI":              [0.1, 0.2, 0.1, 0.2, 0.1, 0.2],
     },
 }
 
@@ -813,7 +966,7 @@ def fetch_ecb_rate() -> dict:
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_ecb_cpi() -> dict:
     """
-    Fetch Eurozone HICP (CPI y/y) from ECB Data Portal CSV — no API key needed.
+    Fetch Eurozone HICP CPI m/m from ECB Data Portal CSV — no API key needed.
     Returns {actual, previous, date, source} or {} on failure.
     """
     try:
@@ -1221,7 +1374,7 @@ def calc_bias_score(indicators_df: pd.DataFrame, currency: str) -> dict:
 
     # ── Absolute-difference surprise/trend thresholds ─────────────────────────
     _SLT = {
-        "CPI y/y": 0.05, "Interest Rate": 0.01, "GDP Growth": 0.1,
+        "CPI m/m": 0.05, "Interest Rate": 0.01, "GDP Growth": 0.1,
         "Unemployment Rate": 0.1, "Manufacturing PMI": 1.0, "Services PMI": 1.0,
         "Trade Balance": 0.1, "Retail Sales": 0.1, "Wage Growth": 0.2,
         "PPI": 0.2, "Current Account": 0.1, "Consumer Confidence": 2.0,
@@ -1229,7 +1382,7 @@ def calc_bias_score(indicators_df: pd.DataFrame, currency: str) -> dict:
         "Government Debt": 2.0, "Building Permits": 20.0,
     }
     _STR = {
-        "CPI y/y": 0.19, "Interest Rate": 0.25, "GDP Growth": 0.3,
+        "CPI m/m": 0.19, "Interest Rate": 0.25, "GDP Growth": 0.3,
         "Unemployment Rate": 0.3, "Manufacturing PMI": 3.0, "Services PMI": 3.0,
         "Trade Balance": 0.3, "Retail Sales": 0.3, "Wage Growth": 0.5,
         "PPI": 0.5, "Current Account": 0.3, "Consumer Confidence": 5.0,
@@ -1259,12 +1412,13 @@ def calc_bias_score(indicators_df: pd.DataFrame, currency: str) -> dict:
             if a <= hi:       return  0.2
             if a <= hi * 1.5: return  0.2
             return 1.0
-        if ind == "CPI y/y":
+        if ind == "CPI m/m":
+            ann = a * 12  # annualise m/m → comparable to 2% annual target
             crit, tgt, acc, crit_hi = _CPI_CFG.get(currency, (0.5, 2.0, 3.0, 5.0))
-            if a < crit:             return -1.0
-            if abs(a - tgt) <= 0.3:  return  1.0
-            if a <= acc:             return  0.2
-            if a <= crit_hi:         return -0.6
+            if ann < crit:             return -1.0
+            if abs(ann - tgt) <= 0.3:  return  1.0
+            if ann <= acc:             return  0.2
+            if ann <= crit_hi:         return -0.6
             return -1.0
         if ind == "GDP Growth":
             if a > 0.6:   return  1.0
@@ -1316,11 +1470,12 @@ def calc_bias_score(indicators_df: pd.DataFrame, currency: str) -> dict:
             if a >= -20.0: return -0.6
             return -1.0
         if ind == "Core CPI":
+            ann = a * 12
             crit, tgt, acc, crit_hi = _CPI_CFG.get(currency, (0.5, 2.0, 3.0, 5.0))
-            if a < crit:             return -1.0
-            if abs(a - tgt) <= 0.3:  return  1.0
-            if a <= acc:             return  0.2
-            if a <= crit_hi:         return -0.6
+            if ann < crit:             return -1.0
+            if abs(ann - tgt) <= 0.3:  return  1.0
+            if ann <= acc:             return  0.2
+            if ann <= crit_hi:         return -0.6
             return -1.0
         if ind == "Employment Change":
             if a > 200:  return  1.0
@@ -1347,8 +1502,8 @@ def calc_bias_score(indicators_df: pd.DataFrame, currency: str) -> dict:
         if p is None: return base
         delta = f_ - p
         if LOWER_IS_BETTER.get(ind, False): delta = -delta
-        if ind == "CPI y/y":
-            tgt = _CPI_CFG.get(currency, (0.5, 2.0, 3.0, 5.0))[1]
+        if ind == "CPI m/m":
+            tgt = _CPI_CFG.get(currency, (0.5, 2.0, 3.0, 5.0))[1] / 12
             delta = abs(p - tgt) - abs(f_ - tgt)
         dir_s = _sdiff(delta, ind)
         return 0.5 * base + 0.5 * dir_s
@@ -1357,8 +1512,8 @@ def calc_bias_score(indicators_df: pd.DataFrame, currency: str) -> dict:
     def _d3(ind: str, a: float, f_: float) -> float:
         diff = a - f_
         if LOWER_IS_BETTER.get(ind, False): diff = -diff
-        if ind == "CPI y/y":
-            tgt = _CPI_CFG.get(currency, (0.5, 2.0, 3.0, 5.0))[1]
+        if ind == "CPI m/m":
+            tgt = _CPI_CFG.get(currency, (0.5, 2.0, 3.0, 5.0))[1] / 12
             diff = abs(f_ - tgt) - abs(a - tgt)
         return _sdiff(diff, ind)
 
@@ -1366,8 +1521,8 @@ def calc_bias_score(indicators_df: pd.DataFrame, currency: str) -> dict:
     def _d4(ind: str, a: float, p: float) -> float:
         diff = a - p
         if LOWER_IS_BETTER.get(ind, False): diff = -diff
-        if ind == "CPI y/y":
-            tgt = _CPI_CFG.get(currency, (0.5, 2.0, 3.0, 5.0))[1]
+        if ind == "CPI m/m":
+            tgt = _CPI_CFG.get(currency, (0.5, 2.0, 3.0, 5.0))[1] / 12
             diff = abs(p - tgt) - abs(a - tgt)
         return _sdiff(diff, ind)
 
@@ -1419,7 +1574,7 @@ def calc_bias_score(indicators_df: pd.DataFrame, currency: str) -> dict:
 
     # ── Per-indicator tags for bias panel ─────────────────────────────────────
     _IND_LBL = {
-        "Interest Rate": "Rate",    "CPI y/y": "CPI",        "GDP Growth": "GDP",
+        "Interest Rate": "Rate",    "CPI m/m": "CPI",        "GDP Growth": "GDP",
         "Unemployment Rate": "Unemp","Wage Growth": "Wages",  "Manufacturing PMI": "MfgPMI",
         "Services PMI": "SvcPMI",   "Trade Balance": "Trade","Current Account": "CA",
         "Retail Sales": "Retail",   "Consumer Confidence": "ConsConf",
@@ -1468,7 +1623,7 @@ def calc_bias_score(indicators_df: pd.DataFrame, currency: str) -> dict:
 
 # (slight_abs_threshold, strong_abs_threshold) per indicator for D3/D4 intensity
 _D_THRESHOLDS: dict[str, tuple[float, float]] = {
-    "CPI y/y":             (0.05, 0.19),   # 0.05 slight; >0.19 (≥0.20) = strong
+    "CPI m/m":             (0.05, 0.19),   # 0.05 slight; >0.19 (≥0.20) = strong
     "Interest Rate":       (0.01, 0.25),
     "GDP Growth":          (0.10, 0.30),
     "Unemployment Rate":   (0.10, 0.30),
@@ -1498,13 +1653,14 @@ def _d1_level(ind: str, val, currency: str = "USD") -> tuple[str, str]:
     except (TypeError, ValueError):
         return "—", C["muted"]
 
-    if ind == "CPI y/y":
-        if v < 1.0:    return "CRITICAL",  C["red"]      # deflation risk
-        if v < 2.0:    return "WEAK",      C["yellow"]   # below target
-        if v <= 2.5:   return "STRONG",    C["green"]    # on target
-        if v <= 3.5:   return "NORMAL",    C["muted"]    # slightly elevated
-        if v <= 5.0:   return "WEAK",      C["yellow"]   # elevated
-        return             "CRITICAL",     C["red"]       # out of control
+    if ind == "CPI m/m":
+        ann = v * 12
+        if ann < 1.0:    return "CRITICAL",  C["red"]
+        if ann < 2.0:    return "WEAK",      C["yellow"]
+        if ann <= 2.5:   return "STRONG",    C["green"]
+        if ann <= 3.5:   return "NORMAL",    C["muted"]
+        if ann <= 5.0:   return "WEAK",      C["yellow"]
+        return               "CRITICAL",     C["red"]
     if ind == "Interest Rate":
         if v > 4.0:    return "STRONG",    C["green"]    # restrictive
         if v >= 2.0:   return "NORMAL",    C["muted"]    # neutral
@@ -1557,11 +1713,12 @@ def _d1_level(ind: str, val, currency: str = "USD") -> tuple[str, str]:
         if v >= -20.0: return "WEAK",      C["yellow"]
         return             "CRITICAL",     C["red"]
     if ind == "Core CPI":
-        if v < 1.0:    return "CRITICAL",  C["red"]
-        if v < 2.0:    return "WEAK",      C["yellow"]
-        if v <= 2.5:   return "STRONG",    C["green"]
-        if v <= 3.5:   return "NORMAL",    C["muted"]
-        return             "WEAK",         C["yellow"]
+        ann = v * 12
+        if ann < 1.0:    return "CRITICAL",  C["red"]
+        if ann < 2.0:    return "WEAK",      C["yellow"]
+        if ann <= 2.5:   return "STRONG",    C["green"]
+        if ann <= 3.5:   return "NORMAL",    C["muted"]
+        return               "WEAK",         C["yellow"]
     if ind == "Employment Change":
         if v > 200:    return "STRONG",    C["green"]
         if v > 100:    return "NORMAL",    C["muted"]
@@ -1602,10 +1759,10 @@ def _d3_intensity(ind: str, actual, reference, invert: bool = False) -> tuple[st
 
 def _d4_trend(ind: str, actual, previous) -> tuple[str, str]:
     """D4 Trend: actual vs previous → (label, hex_color). 5-level display."""
-    # CPI: moving toward 2.0 target = positive (not raw direction)
-    if ind == "CPI y/y":
+    # CPI: moving toward target = positive (not raw direction)
+    if ind == "CPI m/m":
         try:
-            tgt   = 2.0
+            tgt   = 2.0 / 12   # monthly equivalent: 0.167%
             diff  = abs(float(previous) - tgt) - abs(float(actual) - tgt)
         except (TypeError, ValueError):
             diff  = 0.0
@@ -1960,6 +2117,83 @@ def render_indicators_table(
 
 
 
+# ── Comparable indicators for cross-currency G8 z-score comparison ────────────
+_REL_INDICATORS: dict[str, tuple[str, float]] = {
+    "CPI m/m":              ("high_good", 1.5),
+    "Interest Rate":        ("high_good", 2.0),
+    "GDP Growth":           ("high_good", 1.5),
+    "Unemployment Rate":    ("low_good",  1.5),
+    "Manufacturing PMI":    ("high_good", 1.0),
+    "Services PMI":         ("high_good", 1.0),
+    "Retail Sales":         ("high_good", 1.0),
+    "Wage Growth":          ("high_good", 1.2),
+    "Core CPI":             ("high_good", 1.2),
+    "Industrial Production":("high_good", 0.8),
+    "M2 Money Supply":      ("high_good", 0.5),
+    "Trade Balance":        ("high_good", 0.7),
+}
+# Invert z-score for indicators where lower value = better for FX
+_LOWER_BETTER_REL: frozenset[str] = frozenset({"Unemployment Rate"})
+
+
+def calc_relative_score(
+    all_histories: dict[str, dict[str, list[float]]],
+) -> dict[str, float]:
+    """
+    Cross-currency G8 relative scoring using 6-month historical data.
+
+    For each comparable indicator, compute the G8 average over 6 months,
+    then z-score each currency relative to that average. Currencies with
+    better-than-average data score positive; worse score negative.
+
+    Returns {ccy: score} where score ∈ [-3.0, +3.0].
+    """
+    import math
+
+    MONTH_WEIGHTS = [0.5, 0.7, 0.9, 1.1, 1.3, 1.5]  # recent months weighted more
+
+    ccy_scores: dict[str, list[tuple[float, float]]] = {ccy: [] for ccy in all_histories}
+
+    for ind, (_interp, weight) in _REL_INDICATORS.items():
+        for m_idx in range(6):
+            vals: dict[str, float] = {}
+            for ccy, hist in all_histories.items():
+                if ind in hist and len(hist[ind]) > m_idx:
+                    try:
+                        vals[ccy] = float(hist[ind][m_idx])
+                    except (TypeError, ValueError):
+                        pass
+
+            if len(vals) < 4:   # need at least half of G8 for meaningful comparison
+                continue
+
+            g8_vals  = list(vals.values())
+            g8_mean  = sum(g8_vals) / len(g8_vals)
+            variance = sum((x - g8_mean) ** 2 for x in g8_vals) / len(g8_vals)
+            g8_std   = math.sqrt(variance) if variance > 0 else None
+            if g8_std is None or g8_std < 1e-6:
+                continue  # no variance → skip
+
+            mw = MONTH_WEIGHTS[m_idx]
+            for ccy, v in vals.items():
+                z = (v - g8_mean) / g8_std
+                if ind in _LOWER_BETTER_REL:
+                    z = -z
+                z = max(-3.0, min(3.0, z))
+                ccy_scores[ccy].append((z * weight, weight * mw))
+
+    result: dict[str, float] = {}
+    for ccy, entries in ccy_scores.items():
+        if not entries:
+            result[ccy] = 0.0
+            continue
+        total_w = sum(w for _, w in entries)
+        raw     = sum(s * w for s, w in entries) / total_w if total_w > 0 else 0.0
+        result[ccy] = round(max(-3.0, min(3.0, raw)), 3)
+
+    return result
+
+
 @st.cache_data(ttl=TTL_NEWS_CTX, show_spinner=False)
 def fetch_d3_d4_news() -> dict[str, dict[str, float]]:
     """
@@ -2016,6 +2250,7 @@ def calc_4d_bias(
     bias_old: dict,
     d3_score: float,
     d4_news_adj: float,
+    relative_score: float | None = None,
 ) -> dict:
     """
     4-Dimensional currency bias score. Each dimension ∈ [-3, +3].
@@ -2038,11 +2273,12 @@ def calc_4d_bias(
             if v >= 1.0: return (v - 1.0) / 2.0
             return max(-2.5, -1.5 - (1.0 - v))
 
-        if ind == "CPI y/y":
-            if abs(v - 2.0) <= 0.5: return  1.0
-            if v > 3.0:  return max(-2.0, -1.0 - (v - 3.0) * 0.25)
-            if v < 1.0:  return max(-2.5, -1.5 - (1.0 - v))
-            return 0.3   # 1–1.5% or 2.5–3% — acceptable but off-target
+        if ind == "CPI m/m":
+            ann = v * 12  # annualise
+            if abs(ann - 2.0) <= 0.5: return  1.0
+            if ann > 3.0:  return max(-2.0, -1.0 - (ann - 3.0) * 0.25)
+            if ann < 1.0:  return max(-2.5, -1.5 - (1.0 - ann))
+            return 0.3
 
         if ind == "GDP Growth":
             if v > 2.0:  return min( 2.5, 1.5 + (v - 2.0) * 0.5)
@@ -2102,9 +2338,10 @@ def calc_4d_bias(
             return 0.0
 
         if ind == "Core CPI":
-            if abs(v - 2.0) <= 0.5: return  1.0
-            if v > 3.0:  return max(-2.0, -1.0 - (v - 3.0) * 0.25)
-            if v < 1.0:  return max(-2.5, -1.5 - (1.0 - v))
+            ann = v * 12
+            if abs(ann - 2.0) <= 0.5: return  1.0
+            if ann > 3.0:  return max(-2.0, -1.0 - (ann - 3.0) * 0.25)
+            if ann < 1.0:  return max(-2.5, -1.5 - (1.0 - ann))
             return 0.3
         if ind == "Employment Change":
             if v > 200:  return  2.0
@@ -2125,16 +2362,21 @@ def calc_4d_bias(
 
         return 0.0
 
-    d1_num, d1_den = 0.0, 0.0
-    for _, row in indicators_df.iterrows():
-        a = _f(row.get("actual"))
-        p = _f(row.get("previous"))
-        if a is None:
-            continue
-        w = _IMP_W.get(str(row.get("impact", "Medium")), 0.5)
-        d1_num += _d1_bench(row["indicator"], a, p) * w
-        d1_den += w
-    d1 = round(max(-3.0, min(3.0, d1_num / d1_den if d1_den else 0.0)), 3)
+    if relative_score is not None:
+        # Use cross-currency G8 relative score as D1 (already ∈ [-3, +3])
+        d1_raw = relative_score
+    else:
+        d1_num, d1_den = 0.0, 0.0
+        for _, row in indicators_df.iterrows():
+            a = _f(row.get("actual"))
+            p = _f(row.get("previous"))
+            if a is None:
+                continue
+            w = _IMP_W.get(str(row.get("impact", "Medium")), 0.5)
+            d1_num += _d1_bench(row["indicator"], a, p) * w
+            d1_den += w
+        d1_raw = d1_num / d1_den if d1_den else 0.0
+    d1 = round(max(-3.0, min(3.0, d1_raw)), 3)
 
     # ── D2: Beat/miss + trend (existing d3/d4 aggregates scaled ×3) ──────────
     d2_raw = (bias_old.get("d3", 0.0) + bias_old.get("d4", 0.0)) / 2.0
@@ -2379,7 +2621,7 @@ def main():
             f"font-family:monospace;letter-spacing:-0.5px;'>ECONOMIC BIAS ENGINE</div>"
             f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
             f"letter-spacing:1px;margin-top:3px;'>"
-            f"20 Indicators · 4D Scoring · Live Data · No Neutral</div></div>",
+            f"Monthly Data · 6M Trend · G8 Relative Scoring · Live</div></div>",
             unsafe_allow_html=True,
         )
 
@@ -2428,7 +2670,7 @@ def main():
                     official["Interest Rate"] = ecb_rate
                 ecb_cpi = fetch_ecb_cpi()
                 if ecb_cpi:
-                    official["CPI y/y"] = ecb_cpi
+                    official["CPI m/m"] = ecb_cpi
             elif currency == "GBP":
                 boe_rate = fetch_boe_rate()
                 if boe_rate:
@@ -2446,7 +2688,16 @@ def main():
     _d3_score   = _D3_BASE.get(currency, 0.0) + _d3d4["d3"].get(currency, 0.0)
     _d4_news    = _d3d4["d4"].get(currency, 0.0)
 
-    bias4d = calc_4d_bias(indicators_df, currency, bias, _d3_score, _d4_news)
+    # ── Compute cross-currency relative scores (G8 comparison) ───────────────
+    if ("rel_scores" not in st.session_state or
+            time.time() - st.session_state.get("rel_scores_ts", 0) > TTL_INDICATORS):
+        _all_hist = {ccy: STATIC_HISTORY.get(ccy, {}) for ccy in SUPPORTED_CURRENCIES}
+        st.session_state["rel_scores"]    = calc_relative_score(_all_hist)
+        st.session_state["rel_scores_ts"] = time.time()
+    _rel_scores = st.session_state.get("rel_scores", {})
+    _rel_score  = _rel_scores.get(currency, None)
+
+    bias4d = calc_4d_bias(indicators_df, currency, bias, _d3_score, _d4_news, relative_score=_rel_score)
 
     # Export 4D scores to session_state (used by Module 4 + cross-currency divergence)
     st.session_state[f"macro_scores_{currency}"] = {
@@ -2482,7 +2733,7 @@ def main():
                 _o_bias = calc_bias_score(_o_df, _other_ccy)
                 _o_d3   = _D3_BASE.get(_other_ccy, 0.0) + _d3d4["d3"].get(_other_ccy, 0.0)
                 _o_d4n  = _d3d4["d4"].get(_other_ccy, 0.0)
-                _o_4d   = calc_4d_bias(_o_df, _other_ccy, _o_bias, _o_d3, _o_d4n)
+                _o_4d   = calc_4d_bias(_o_df, _other_ccy, _o_bias, _o_d3, _o_d4n, relative_score=_rel_scores.get(_other_ccy))
                 st.session_state[f"macro_scores_{_other_ccy}"] = {
                     "total":    _o_4d["total"],
                     "level":    _o_4d["level"],
