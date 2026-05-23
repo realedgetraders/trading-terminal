@@ -1,5 +1,29 @@
 # Trading Analytics Terminal — Project Context
 
+## Arbeitsregeln (IMMER einhalten — gilt für alle Sessions)
+
+### Stopp-Bedingungen (sofort anhalten, nicht weiterarbeiten)
+- Gleicher Fehler tritt zum 2. Mal auf → stoppen, melden, auf Anweisung warten
+- Unklare Anforderung → nachfragen, nicht raten und weitermachen
+- Tool-Call schlägt fehl → nicht automatisch wiederholen, erst erklären
+
+### Iterationslimit
+- Max. 3 Versuche pro Teilaufgabe
+- Danach: Status + Problem beschreiben, auf Input warten
+
+### Keine Eigeninitiative bei
+- Datei-Löschungen oder -Überschreibungen
+- Installationen von Paketen ohne explizite Freigabe
+- Refactoring außerhalb des genannten Scope
+
+### Kommunikation
+- Vor jedem größeren Schritt: kurz ankündigen was gemacht wird
+- Nach Abschluss: was wurde gemacht, was ist offen
+- Bei Unsicherheit: Frage stellen, nicht weiterraten
+
+### Ziel
+Lieber kurz pausieren und fragen als Token verschwenden durch falsche Annahmen.
+
 ## Run Command
 streamlit run app.py
 
