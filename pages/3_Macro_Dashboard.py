@@ -1836,8 +1836,16 @@ def render_indicators_table(
         src      = str(row.get("source", ""))
 
         try:
-            dv = pd.Timestamp(row["date"])
-            date_str = dv.strftime("%d %b %Y") if not pd.isnull(dv) else "—"
+            raw_date = str(row.get("date", "")).strip()
+            dv = pd.Timestamp(raw_date)
+            if pd.isnull(dv) or dv.year < 2000:
+                # Non-standard string (e.g. "Mar/26") — show raw value trimmed
+                date_str = raw_date[:10] if raw_date else "—"
+            elif dv.day == 1:
+                # Month-only dates from ECB ("2025-12" → "Dec 2025")
+                date_str = dv.strftime("%b %Y")
+            else:
+                date_str = dv.strftime("%d %b %Y")
         except Exception:
             date_str = str(row.get("date", "—"))[:10]
 
@@ -2052,10 +2060,12 @@ def calc_4d_bias(
             return max(-2.0, -1.0 - (48 - v) * 0.25)
 
         if ind in ("Trade Balance", "Current Account"):
-            if v >  5:   return  2.0
-            if v >  0:   return  1.0
-            if v > -5:   return -1.0
-            return -2.0
+            # Graduated scale with tighter cap — avoids economies being
+            # over-rewarded/penalised for absolute balance size vs GDP
+            if v > 10:   return  1.0
+            if v >  0:   return  0.5
+            if v > -10:  return -0.5
+            return       -1.0
 
         if ind == "Retail Sales":
             if v >  0.5: return  1.5
