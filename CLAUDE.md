@@ -23,8 +23,8 @@ trading-terminal/
 ## Module Status
 - Module 1 (Seasonality Tracker): COMPLETE ✓ — DO NOT MODIFY
 - Module 2 (COT Analysis): COMPLETE ✓ — DO NOT MODIFY
-- Module 3 (Macro Dashboard): COMPLETE ✓ — DO NOT MODIFY unless explicitly asked
-- Module 4 (Geopolitical Dashboard): COMPLETE ✓ — DO NOT MODIFY unless explicitly asked
+- Module 3 (Economic Bias Engine): COMPLETE ✓ — DO NOT MODIFY unless explicitly asked
+- Module 4 (Geopolitics & News): COMPLETE ✓ — DO NOT MODIFY unless explicitly asked
 - Module 5 (News Feed): pending
 
 ## Module 1 — Seasonality Tracker (COMPLETE)
@@ -118,17 +118,17 @@ Charts (in order):
 Signal cards: below controls, show COT Index value + Bullish/Bearish/Neutral label per group
 No inversion logic — raw CFTC numbers only for all markets
 
-## Module 3 — Macro Dashboard (COMPLETE)
+## Module 3 — Economic Bias Engine (COMPLETE)
 pages/3_Macro_Dashboard.py — DO NOT BREAK THIS FILE
 
 ### Overview
 Currency-filtered macro scanner for 8 major FX currencies (USD EUR GBP JPY AUD CAD CHF NZD).
 Combines static indicator data, live FRED API data, ForexFactory calendar, and
 a 4-Dimensional bias engine into a single dashboard.
-News feed removed — moved to Module 4 (Geopolitical Dashboard).
+News feed removed — moved to Module 4 (Geopolitics & News).
 
 ### Layout (top to bottom)
-1. Title row: "← Back to Hub" left | "Macro Fundamentals Dashboard" centered | refresh controls right
+1. Title row: "← Back to Hub" left | "ECONOMIC BIAS ENGINE" centered | refresh controls right
 2. Currency selector: 8-button radio row (pill style, teal = selected)
 3. Bias panel: overall bias gauge (±3.0 scale) + D1/D2/D3/D4 grid + collapsible indicator breakdown
 4. Two-column layout: indicators table (left) | calendar only (right)
@@ -234,7 +234,7 @@ Shows: "⚠ Calendar unavailable — all sources blocked" (no raw HTTP codes)
 - Footer: "Built by @realedgetraders"
 - Hub is always editable — add new modules here as they are completed
 
-## Module 4 — Geopolitical Dashboard (COMPLETE)
+## Module 4 — Geopolitics & News (COMPLETE)
 pages/4_Geopolitics.py — DO NOT BREAK THIS FILE
 
 ### Overview

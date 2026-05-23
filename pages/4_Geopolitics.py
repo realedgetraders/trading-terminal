@@ -811,7 +811,7 @@ def render_financial_feed(
 
 def main():
     st.set_page_config(
-        page_title="Geopolitical Intelligence · Trading Terminal",
+        page_title="Geopolitics & News · Trading Terminal",
         page_icon="🌍",
         layout="wide",
         initial_sidebar_state="collapsed",
@@ -911,14 +911,14 @@ def main():
             f"<div style='text-align:center;'>"
             f"<div style='font-size:20px;font-weight:800;color:{C['text']};"
             f"font-family:monospace;letter-spacing:-0.5px;'>"
-            f"GEOPOLITICAL INTELLIGENCE</div>"
+            f"GEOPOLITICS &amp; NEWS</div>"
             f"<div style='display:flex;align-items:center;justify-content:center;"
             f"gap:8px;margin-top:4px;'>"
             f"<span class='geo-live-dot' style='width:6px;height:6px;border-radius:50%;"
             f"background:{C['red']};display:inline-block;'></span>"
             f"<span style='font-size:10px;color:{C['muted']};font-family:monospace;"
-            f"letter-spacing:1px;'>LIVE &middot; Conflicts &middot; Sanctions &middot; "
-            f"Political &middot; Trade Wars &middot; Diplomacy</span>"
+            f"letter-spacing:1px;'>LIVE &middot; Geo Events &middot; Conflicts &middot; "
+            f"Sanctions &middot; Financial News</span>"
             f"</div></div>",
             unsafe_allow_html=True,
         )

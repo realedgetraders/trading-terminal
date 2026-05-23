@@ -2409,7 +2409,7 @@ def calc_4d_bias(
 
 def main():
     st.set_page_config(
-        page_title="Macro Fundamentals · Trading Terminal",
+        page_title="Economic Bias Engine · Trading Terminal",
         page_icon="🗓️",
         layout="wide",
         initial_sidebar_state="collapsed",
@@ -2518,10 +2518,10 @@ def main():
         st.markdown(
             f"<div style='text-align:center;'>"
             f"<div style='font-size:20px;font-weight:800;color:{C['text']};"
-            f"font-family:monospace;letter-spacing:-0.5px;'>MACRO FUNDAMENTALS</div>"
+            f"font-family:monospace;letter-spacing:-0.5px;'>ECONOMIC BIAS ENGINE</div>"
             f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
             f"letter-spacing:1px;margin-top:3px;'>"
-            f"Currency Bias · Indicators · Calendar · News</div></div>",
+            f"4-Dimensional Currency Bias · Indicators · Calendar</div></div>",
             unsafe_allow_html=True,
         )
 
