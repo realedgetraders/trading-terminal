@@ -249,6 +249,74 @@ _CCY_RELEVANCE: dict[str, list[str]] = {
             "five eyes", "nz "],
 }
 
+# ── Per-currency × category impact interpretations ───────────────────────────
+_CCY_CAT_INTERP: dict[str, dict[str, str]] = {
+    "USD": {
+        "Conflict":   "Military escalation typically strengthens USD as global safe-haven demand surges.",
+        "Sanctions":  "US-led sanctions reinforce dollar dominance — secondary sanctions tighten global USD dependency.",
+        "Political":  "US political instability can briefly pressure USD, but reserve currency status limits downside.",
+        "Diplomatic": "Peace progress reduces risk premiums; USD may soften as safe-haven flows unwind.",
+        "Trade War":  "US tariffs support short-term dollar strength but risk eroding long-term reserve currency credibility.",
+        "Energy":     "Oil price spikes via petrodollar dynamics sustain USD demand from energy exporters.",
+    },
+    "EUR": {
+        "Conflict":   "European war risk drives EUR lower as energy costs surge and capital flees the continent.",
+        "Sanctions":  "EU-Russia sanctions hit European energy supply, raising inflation and weighing on EUR.",
+        "Political":  "EU political fragmentation undermines bloc cohesion and directly pressures EUR credibility.",
+        "Diplomatic": "De-escalation in Europe removes war risk premium — EUR typically rallies on ceasefire news.",
+        "Trade War":  "US-EU trade disputes add uncertainty to eurozone export outlook, bearish for EUR.",
+        "Energy":     "European energy disruptions are directly bearish for EUR via inflation and growth headwinds.",
+    },
+    "GBP": {
+        "Conflict":   "UK military involvement raises fiscal risk and may weigh on GBP through defence spending concerns.",
+        "Sanctions":  "UK-aligned sanctions signal foreign policy commitment but add trade friction for GBP.",
+        "Political":  "Westminster instability historically drives sharp GBP selloffs — political risk is priced fast.",
+        "Diplomatic": "UK diplomatic progress reduces safe-haven outflows and supports GBP stability.",
+        "Trade War":  "UK-EU trade friction post-Brexit is a structural drag — new disputes amplify GBP weakness.",
+        "Energy":     "UK energy security concerns raise inflation expectations and complicate BoE policy outlook.",
+    },
+    "JPY": {
+        "Conflict":   "Asia-Pacific conflict triggers JPY safe-haven inflows as yen carry trades rapidly unwind.",
+        "Sanctions":  "Sanctions on regional actors escalate JPY demand as risk-off positioning intensifies.",
+        "Political":  "Asian political instability accelerates carry trade unwinding, sharply strengthening JPY.",
+        "Diplomatic": "Regional tension reduction softens safe-haven demand — carry trades may gradually resume.",
+        "Trade War":  "US-Japan trade tensions can weaken JPY via export growth concerns and policy uncertainty.",
+        "Energy":     "Japan imports ~90% of its energy — sustained oil price spikes are structurally negative for JPY.",
+    },
+    "AUD": {
+        "Conflict":   "Global conflict reduces risk appetite, hitting AUD as commodity demand outlook weakens.",
+        "Sanctions":  "China-targeted sanctions disrupt iron ore and coal trade, directly bearish for AUD.",
+        "Political":  "Indo-Pacific political tensions elevate risk premium on AUD as a regional risk proxy.",
+        "Diplomatic": "China-Australia diplomatic normalisation removes trade barriers and is strongly AUD-positive.",
+        "Trade War":  "China-Australia trade restrictions on key exports (iron ore, LNG) are highly bearish for AUD.",
+        "Energy":     "LNG export disruptions have mixed impact — supply cuts can support AUD terms-of-trade.",
+    },
+    "CAD": {
+        "Conflict":   "Middle East conflict typically lifts oil prices — directly positive for CAD as a petrocurrency.",
+        "Sanctions":  "OPEC sanctions or supply disruptions raise oil prices, providing direct upside for CAD.",
+        "Political":  "Canadian political uncertainty weighs on investment and creates short-term CAD pressure.",
+        "Diplomatic": "OPEC output agreements and diplomatic resolutions directly move oil price and thus CAD.",
+        "Trade War":  "US-Canada trade disputes threaten bilateral trade flows and are directly bearish for the Loonie.",
+        "Energy":     "Oil supply shocks are the primary CAD driver — higher energy prices strongly support CAD.",
+    },
+    "CHF": {
+        "Conflict":   "Any global escalation drives the strongest safe-haven flows into CHF — Swiss neutrality premium peaks.",
+        "Sanctions":  "Financial sanctions and capital flight from conflict zones boost Swiss banking inflows into CHF.",
+        "Political":  "Global political crises reinforce Swiss neutrality premium and drive CHF appreciation.",
+        "Diplomatic": "Peace deals reduce the urgency of safe-haven positioning — CHF tends to soften on risk-on.",
+        "Trade War":  "CHF benefits indirectly from trade war uncertainty as investors seek neutral safe assets.",
+        "Energy":     "European energy crises drive safe-haven demand for CHF from regional capital outflows.",
+    },
+    "NZD": {
+        "Conflict":   "Global conflict risk-off is highly bearish for NZD — it's the most risk-sensitive G10 currency.",
+        "Sanctions":  "Sanctions targeting regional trade partners raise supply chain risk and weigh on NZD.",
+        "Political":  "Pacific political instability raises uncertainty around Five Eyes alliances and pressures NZD.",
+        "Diplomatic": "Regional diplomatic progress reduces risk premium and supports NZD on improved sentiment.",
+        "Trade War":  "China-NZ trade friction threatens dairy and agricultural exports — directly bearish for NZD.",
+        "Energy":     "Global energy disruptions reduce growth expectations and compound NZD's risk-sensitive weakness.",
+    },
+}
+
 TTL_CCY    = 300   # 5-min — per-currency Google News cache
 TTL_GLOBAL = 600   # 10-min — direct RSS feed cache
 TTL_FIN    = 300   # 5-min — financial RSS feed cache
@@ -323,6 +391,25 @@ def _fmt_time(entry) -> str:
     return raw[:16] if raw else ""
 
 
+def _fetch_rss_entries(url: str) -> list:
+    """
+    Fetch RSS entries via requests + browser headers, fall back to direct feedparser.
+    Using requests with proper headers avoids 403/429 blocks from Google News and others.
+    """
+    if _FEEDPARSER:
+        try:
+            r = requests.get(url, timeout=12, headers=_FIN_HEADERS)
+            if r.status_code == 200:
+                return feedparser.parse(r.content).entries or []
+        except Exception:
+            pass
+        try:
+            return feedparser.parse(url).entries or []
+        except Exception:
+            pass
+    return []
+
+
 @st.cache_data(ttl=TTL_CCY)
 def fetch_ccy_news(ccy: str) -> list[dict]:
     """
@@ -342,8 +429,7 @@ def fetch_ccy_news(ccy: str) -> list[dict]:
                 + urllib.parse.quote_plus(query)
                 + "&hl=en-US&gl=US&ceid=US:en"
             )
-            feed = feedparser.parse(url)
-            for entry in (feed.entries or [])[:8]:
+            for entry in _fetch_rss_entries(url)[:8]:
                 title = getattr(entry, "title", "") or ""
                 key   = title[:60].lower().strip()
                 if not key or key in seen or _is_econ_noise(title):
@@ -382,8 +468,7 @@ def fetch_global_news() -> list[dict]:
 
     for source_name, feed_url in _DIRECT_FEEDS:
         try:
-            feed = feedparser.parse(feed_url)
-            for entry in (feed.entries or [])[:20]:
+            for entry in _fetch_rss_entries(feed_url)[:20]:
                 title = getattr(entry, "title", "") or ""
                 key   = title[:60].lower().strip()
                 if not key or key in seen or _is_econ_noise(title):
@@ -543,10 +628,23 @@ def render_ccy_profile(ccy: str) -> str:
     )
 
 
-def _news_card(art: dict) -> str:
+def _news_card(art: dict, ccy: str = "") -> str:
     title  = art["title"].replace("<", "&lt;").replace(">", "&gt;")
     source = art["source"].replace("<", "&lt;").replace(">", "&gt;")
     cc     = art["cat_col"]
+    cat    = art["category"]
+
+    interp = ""
+    if ccy and cat != "General":
+        text = _CCY_CAT_INTERP.get(ccy, {}).get(cat, "")
+        if text:
+            interp = (
+                f"<div style='margin-top:8px;padding:8px 10px;"
+                f"background:{C['dim']};border-radius:6px;"
+                f"font-size:11px;color:{C['teal']};font-family:sans-serif;"
+                f"font-style:italic;line-height:1.5;'>"
+                f"&#9656; {text}</div>"
+            )
 
     return (
         f"<div style='border-left:3px solid {cc};background:{C['panel']};"
@@ -557,12 +655,13 @@ def _news_card(art: dict) -> str:
         f"font-size:9px;font-weight:600;padding:2px 7px;border-radius:4px;'>"
         f"{source}</span>"
         f"<span style='color:{cc};font-family:monospace;font-size:9px;font-weight:700;"
-        f"letter-spacing:0.5px;text-transform:uppercase;'>{art['category']}</span>"
+        f"letter-spacing:0.5px;text-transform:uppercase;'>{cat}</span>"
         f"<span style='color:{C['muted']};font-family:monospace;font-size:9px;"
         f"margin-left:auto;white-space:nowrap;'>{art['time']}</span>"
         f"</div>"
         f"<div style='font-size:13px;color:{C['text']};font-family:sans-serif;"
         f"line-height:1.5;font-weight:500;'>{title}</div>"
+        f"{interp}"
         f"</div>"
     )
 
@@ -580,7 +679,7 @@ def render_ccy_feed(articles: list[dict], ccy: str, fetched_at: str) -> str:
             f"</div>"
         )
 
-    cards = "".join(_news_card(a) for a in articles)
+    cards = "".join(_news_card(a, ccy) for a in articles)
     return (
         f"<div style='background:{C['card']};border:1px solid {C['border']};"
         f"border-radius:12px;padding:18px 18px 14px;'>"
