@@ -339,38 +339,40 @@ TTL_FUNDAMENTAL = 1800  # 30 min — Layer 2 fundamental cache TTL
 # ── 4-Dimensional bias engine ─────────────────────────────────────────────────
 # D3 — Current central bank action pricing (update when policy changes)
 _D3_BASE: dict[str, float] = {
-    "EUR":  2.5,   # ECB June 2026 hike virtually certain
-    "JPY":  1.5,   # BOJ June/July 2026, 40–75% priced
-    "AUD":  0.8,   # RBA pause after 3 hikes, further hike risk remains
-    "USD":  0.3,   # Fed hold all 2026, possible hike Q3 2027
-    "CAD":  0.0,   # BOC hold through 2026
-    "GBP": -0.3,   # BOE hold, possible cut later 2026
-    "CHF": -0.5,   # SNB hold at 0% for 12 months
-    "NZD": -1.0,   # RBNZ first hike late 2026/2027 earliest
+    # Reflects the NEXT expected CB action (positive = hike, negative = cut)
+    # Scale: +3.0 = aggressive hike cycle,  -3.0 = aggressive cut cycle
+    "USD":  0.5,   # Fed on hold at 4.50%; no cuts in 2026, slight re-hike risk Q3 2027
+    "JPY":  1.5,   # BOJ actively hiking; next move +25bp July 2026, ~70% priced
+    "AUD":  0.3,   # RBA cut to 3.85%; pause now, but inflation sticky — further cut risk minor
+    "GBP": -0.8,   # BOE cutting cycle: 4.25% → 4.00% expected Jun, weak manufacturing
+    "CAD": -1.0,   # BOC in clear cut cycle: 2.75% → 2.50% Jun; unemployment rising
+    "NZD": -1.2,   # RBNZ cutting: 3.50% → 3.25% expected, weak consumer + CA deficit
+    "EUR": -1.5,   # ECB cutting cycle: 2.25% → 2.00% expected Jun; CPI below target
+    "CHF": -0.5,   # SNB at 0.00%; hold for now, negative real rates possible
 }
 # D3 web-search queries — detect same-day CB repricing
 _D3_CB_QUERIES: dict[str, str] = {
     "USD": f"Federal Reserve next rate decision hike cut hold {_CY}",
-    "EUR": f"ECB European Central Bank next rate decision {_CY} hike",
-    "GBP": f"Bank of England BOE next rate decision {_CY} cut hold",
+    "EUR": f"ECB European Central Bank next rate cut decision {_CY}",
+    "GBP": f"Bank of England BOE next rate cut decision {_CY}",
     "JPY": f"Bank of Japan BOJ next rate hike {_CY}",
-    "AUD": f"RBA Reserve Bank Australia next rate decision hike {_CY}",
-    "CAD": f"Bank of Canada BOC next rate decision hold {_CY}",
+    "AUD": f"RBA Reserve Bank Australia next rate decision {_CY}",
+    "CAD": f"Bank of Canada BOC next rate cut decision {_CY}",
     "CHF": f"Swiss National Bank SNB next rate decision {_CY}",
-    "NZD": f"RBNZ Reserve Bank New Zealand next rate decision hike {_CY}",
+    "NZD": f"RBNZ Reserve Bank New Zealand next rate cut decision {_CY}",
 }
 # D4 — Structural macro baseline: rate differential + CA balance + inflation regime
 # NO geopolitical component — geo context reserved for Module 4.
-# Components: rate position vs G8 peers | CPI regime | current account | GDP trajectory
+# Rate advantage vs G8 average (~2.7%) is the primary FX driver.
 _D4_STRUCTURAL: dict[str, float] = {
-    "USD":  0.7,   # highest G8 rate (4.50%), solid GDP +2.8%, CPI slightly above target, CA deficit
-    "GBP":  0.5,   # high rate (4.25%), sticky CPI = prolonged tightening, weak GDP, large CA deficit
-    "AUD":  0.4,   # high rate (4.10%), commodity CA benefit, elevated CPI, moderate growth
-    "CAD":  0.1,   # near-avg rate (2.75%), oil CA surplus, CPI near target
-    "NZD":  0.0,   # moderate rate (3.25%), CA deficit, small open economy, weak growth
-    "EUR": -0.1,   # below-avg rate (2.25%) rising, near-target CPI, moderate growth
-    "CHF": -0.8,   # very low rate (0.25%), excellent CA surplus, very low inflation (1.1%)
-    "JPY": -1.5,   # ultra-low rate (0.50%), far below all G8 peers, YCC constraints
+    "USD":  1.2,   # highest G8 rate (4.50%), +1.8% above avg, solid GDP, reserve currency premium
+    "GBP":  0.6,   # 4.25%, above avg, but stagflation risk and weak manufacturing drag
+    "AUD":  0.5,   # 3.85%, commodity exporter, elevated CPI supports rate carry
+    "JPY": -0.8,   # 0.50% — far below G8 average, carry trade unwind risk
+    "CAD":  0.0,   # 2.75%, near avg, oil CA offsets rising unemployment
+    "NZD": -0.2,   # 3.50% but small open economy, CA deficit, high sensitivity to risk-off
+    "EUR": -0.5,   # 2.25%, below avg and cutting; trade surplus is structural positive
+    "CHF": -1.0,   # 0.00%, very low rate, safe-haven demand offsets rate disadvantage
 }
 # D4 live news queries — rate & macro developments (no geo)
 _D4_NEWS_QUERIES: dict[str, str] = {
@@ -2445,8 +2447,42 @@ def main():
         "dim3":     bias4d.get("dim3", 0.0),
         "dim4":     bias4d.get("dim4", 0.0),
         "currency": currency,
-        "fmt":      "4d",   # sentinel distinguishes from old [-1,+1] format
+        "fmt":      "4d",
     }
+
+    # ── Pre-compute 4D scores for ALL currencies using static data ────────────
+    # This ensures the ranking panel always shows proper 4D scores (incl. rate
+    # differential and CB pricing) — not just raw indicator quality metrics.
+    for _other_ccy in SUPPORTED_CURRENCIES:
+        if f"macro_scores_{_other_ccy}" not in st.session_state:
+            _o_rows = []
+            for _ind in INDICATOR_ORDER:
+                _fb = STATIC_INDICATORS.get(_other_ccy, {}).get(_ind, {})
+                if _fb:
+                    _o_rows.append({
+                        "indicator": _ind,
+                        "actual":    _fb.get("actual"),
+                        "previous":  _fb.get("previous"),
+                        "forecast":  _fb.get("forecast"),
+                        "impact":    _fb.get("impact", "Low"),
+                    })
+            if _o_rows:
+                import pandas as _pd_tmp
+                _o_df   = _pd_tmp.DataFrame(_o_rows)
+                _o_bias = calc_bias_score(_o_df, _other_ccy)
+                _o_d3   = _D3_BASE.get(_other_ccy, 0.0) + _d3d4["d3"].get(_other_ccy, 0.0)
+                _o_d4n  = _d3d4["d4"].get(_other_ccy, 0.0)
+                _o_4d   = calc_4d_bias(_o_df, _other_ccy, _o_bias, _o_d3, _o_d4n)
+                st.session_state[f"macro_scores_{_other_ccy}"] = {
+                    "total":    _o_4d["total"],
+                    "level":    _o_4d["level"],
+                    "dim1":     _o_4d.get("dim1", 0.0),
+                    "dim2":     _o_4d.get("dim2", 0.0),
+                    "dim3":     _o_4d.get("dim3", 0.0),
+                    "dim4":     _o_4d.get("dim4", 0.0),
+                    "currency": _other_ccy,
+                    "fmt":      "4d",
+                }
 
     # Merge indicator breakdown tags for the bias panel (from calc_bias_score)
     bias4d["scores"] = bias.get("scores", [])
