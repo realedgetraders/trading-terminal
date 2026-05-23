@@ -204,10 +204,12 @@ _FRED_KEY_VALID = bool(
 ECB_BASE         = "https://data-api.ecb.europa.eu/service/data"
 ECB_RATE_URL     = "https://data-api.ecb.europa.eu/service/data/FM/B.U2.EUR.RT0.ILM.MR.INP?format=csvdata"
 ECB_CPI_URL      = "https://data-api.ecb.europa.eu/service/data/ICP/M.U2.N.000000.4.ANR?format=csvdata"
+_BOE_FROM_YEAR  = datetime.today().year - 2
+_BOE_TO_YEAR    = datetime.today().year
 BOE_RATE_URL    = (
     "https://www.bankofengland.co.uk/boeapps/database/fromshowcolumns.asp"
     "?Travel=NIxSUx&FromSeries=1&ToSeries=50&DAT=RNG"
-    "&FD=1&FM=Jan&FY=2024&TD=31&TM=Dec&TY=2026"
+    f"&FD=1&FM=Jan&FY={_BOE_FROM_YEAR}&TD=31&TM=Dec&TY={_BOE_TO_YEAR}"
     "&VFD=Y&html.x=66&html.y=26&SeriesCodes=IUMABEDR"
     "&UsingCodes=Y&CSVF=TT&Exp=N"
 )
@@ -324,15 +326,17 @@ _BASE_RATES: dict[str, float] = {
     "NZD": 3.25,   # RBNZ OCR
 }
 # Layer 2 — medium-term fundamental outlook queries (separate from Layer 3 daily news)
+_CY = datetime.today().year
+_NY = _CY + 1
 _FUNDAMENTAL_QUERIES: dict[str, str] = {
-    "USD": "US dollar fundamental outlook Federal Reserve rate path higher longer 2025 2026",
-    "EUR": "Euro fundamental outlook ECB rate cuts eurozone recession growth 2025 2026",
-    "GBP": "British pound fundamental Bank of England rate path UK stagflation 2025 2026",
-    "JPY": "Japanese yen fundamental BOJ policy ultra-loose yen carry trade 2025 2026",
-    "AUD": "Australian dollar fundamental RBA commodity China risk sentiment 2025 2026",
-    "CAD": "Canadian dollar fundamental Bank of Canada oil prices CAD outlook 2025 2026",
-    "CHF": "Swiss franc fundamental SNB policy safe haven demand franc 2025 2026",
-    "NZD": "New Zealand dollar fundamental RBNZ rate cuts dairy commodity 2025 2026",
+    "USD": f"US dollar fundamental outlook Federal Reserve rate path higher longer {_CY} {_NY}",
+    "EUR": f"Euro fundamental outlook ECB rate cuts eurozone recession growth {_CY} {_NY}",
+    "GBP": f"British pound fundamental Bank of England rate path UK stagflation {_CY} {_NY}",
+    "JPY": f"Japanese yen fundamental BOJ policy ultra-loose yen carry trade {_CY} {_NY}",
+    "AUD": f"Australian dollar fundamental RBA commodity China risk sentiment {_CY} {_NY}",
+    "CAD": f"Canadian dollar fundamental Bank of Canada oil prices CAD outlook {_CY} {_NY}",
+    "CHF": f"Swiss franc fundamental SNB policy safe haven demand franc {_CY} {_NY}",
+    "NZD": f"New Zealand dollar fundamental RBNZ rate cuts dairy commodity {_CY} {_NY}",
 }
 # Structural / medium-term bullish keywords (CB stance, rate advantage, macro quality)
 _FUND_BULL_KW: list[tuple[str, float]] = [
@@ -373,14 +377,14 @@ _D3_BASE: dict[str, float] = {
 }
 # D3 web-search queries — detect same-day CB repricing
 _D3_CB_QUERIES: dict[str, str] = {
-    "USD": "Federal Reserve next rate decision hike cut hold 2026",
-    "EUR": "ECB European Central Bank next rate decision June 2026 hike",
-    "GBP": "Bank of England BOE next rate decision 2026 cut hold",
-    "JPY": "Bank of Japan BOJ next rate hike June July 2026",
-    "AUD": "RBA Reserve Bank Australia next rate decision hike 2026",
-    "CAD": "Bank of Canada BOC next rate decision hold 2026",
-    "CHF": "Swiss National Bank SNB next rate decision 2026",
-    "NZD": "RBNZ Reserve Bank New Zealand next rate decision hike 2026",
+    "USD": f"Federal Reserve next rate decision hike cut hold {_CY}",
+    "EUR": f"ECB European Central Bank next rate decision {_CY} hike",
+    "GBP": f"Bank of England BOE next rate decision {_CY} cut hold",
+    "JPY": f"Bank of Japan BOJ next rate hike {_CY}",
+    "AUD": f"RBA Reserve Bank Australia next rate decision hike {_CY}",
+    "CAD": f"Bank of Canada BOC next rate decision hold {_CY}",
+    "CHF": f"Swiss National Bank SNB next rate decision {_CY}",
+    "NZD": f"RBNZ Reserve Bank New Zealand next rate decision hike {_CY}",
 }
 # D4 — Structural geopolitical + rate differential + macro regime (May 2026 baseline)
 # Components: geo safe-haven | rate differential | CPI vs PP | risk-off sentiment
