@@ -42,6 +42,13 @@ MODULES = [
         "page":     "pages/3_Macro_Dashboard.py",
     },
     {
+        "title":    "Geopolitics",
+        "icon":     "🌍",
+        "desc":     "Live geo-risk tracker — active conflicts, sanctions, political crises and their impact on safe-haven currencies and FX markets.",
+        "active":   True,
+        "page":     "pages/4_Geopolitics.py",
+    },
+    {
         "title":    "Volatility",
         "icon":     "⚡",
         "desc":     "Historical vs. implied volatility, ATR regimes, and vol surface analysis.",

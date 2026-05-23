@@ -15,7 +15,7 @@ trading-terminal/
 │   ├── 1_Seasonality.py     → MODULE 1: COMPLETE ✓
 │   ├── 2_COT_Analysis.py    → MODULE 2: COMPLETE ✓
 │   ├── 3_Macro_Dashboard.py → MODULE 3: COMPLETE ✓
-│   ├── 4_Correlation.py     → pending
+│   ├── 4_Geopolitics.py     → MODULE 4: COMPLETE ✓
 │   └── 5_News_Feed.py       → pending
 ├── requirements.txt
 └── CLAUDE.md
@@ -24,7 +24,7 @@ trading-terminal/
 - Module 1 (Seasonality Tracker): COMPLETE ✓ — DO NOT MODIFY
 - Module 2 (COT Analysis): COMPLETE ✓ — DO NOT MODIFY
 - Module 3 (Macro Dashboard): COMPLETE ✓ — DO NOT MODIFY unless explicitly asked
-- Module 4 (Correlation Scanner): pending
+- Module 4 (Geopolitical Dashboard): COMPLETE ✓ — DO NOT MODIFY unless explicitly asked
 - Module 5 (News Feed): pending
 
 ## Module 1 — Seasonality Tracker (COMPLETE)
@@ -231,6 +231,64 @@ Shows: "⚠ Calendar unavailable — all sources blocked" (no raw HTTP codes)
 - Navigation via st.switch_page()
 - Footer: "Built by @realedgetraders"
 - Hub is always editable — add new modules here as they are completed
+
+## Module 4 — Geopolitical Dashboard (COMPLETE)
+pages/4_Geopolitics.py — DO NOT BREAK THIS FILE
+
+### Overview
+Live geo-risk tracker for 8 major FX currencies. Scans Google News RSS across 5 geo
+categories, scores headlines with weighted keywords, computes a tension score ∈ [-3,+3],
+and maps it to per-currency FX impact via sensitivity factors.
+
+### Layout (top to bottom)
+1. Title row: "← Back to Hub" left | "GEOPOLITICAL DASHBOARD" centered | "🔄 Refresh" right
+2. Risk Gauge: full-width CSS gradient bar, needle positioned via flex spacers, ±3.0 scale
+3. Two-column layout [3:2]:
+   - Left: Scrollable event news cards (max 16), category-tagged, color-coded risk dot
+   - Right: Safe-Haven Flow panel (CHF/JPY/USD + AUD/NZD/CAD cells) + Currency Impact table
+4. Footer: "Built by @realedgetraders"
+
+### Data Source
+- Google News RSS via feedparser (same as Modules 2–3)
+- 5 separate queries: War / Trade War / Political / Energy / Diplomacy
+- Cache TTL: 300s (5 min). Auto-rerun on TTL expiry.
+
+### Tension Score Engine
+
+**`fetch_geo_news()`** — @st.cache_data(ttl=300)
+- Fetches up to 6 articles per category (5 queries × 6 = max 30 articles)
+- Deduplicates by title[:60] prefix
+- Scores each article: sum of matched `_RISK_KW` weights (positive = tension, negative = calm)
+- Returns list sorted by |score| descending
+
+**`calc_tension_score()`**
+- Aggregates: (sum_of_scores / n_articles) × 1.5, clamped [-3.0, +3.0]
+- Positive = risk-off/tension. Negative = risk-on/calm.
+
+Level thresholds: ≥2.0=EXTREME RISK-OFF, ≥0.8=RISK-OFF, ≥-0.7=NEUTRAL,
+                  ≥-2.0=RISK-ON, else=EXTREME RISK-ON
+
+**`calc_ccy_impacts(tension)`**
+- Per-currency score = tension × `_CCY_GEO[ccy]`, clamped [-3.0, +3.0]
+- _CCY_GEO: CHF=1.5, JPY=1.5, USD=0.8, CAD=0.5, EUR=-0.5, GBP=-0.3, AUD=-0.8, NZD=-1.0
+  (matches _GEO_CCY_IMPACT from Module 3)
+- Level labels same thresholds as Module 3 bias engine
+
+### Safe-Haven Flow Indicator
+- avg_sh = mean of CHF/JPY/USD impact scores
+- avg_sh ≥ 0.5 → "Capital flowing INTO safe-havens" (red)
+- avg_sh ≤ -0.5 → "Safe-haven outflow — risk-on bid" (green)
+- else → "Safe-haven flows neutral" (muted)
+
+### Key Constants
+- _GEO_QUERIES: dict[str, str] — 5 RSS search queries per category
+- _CAT_COLOR: dict[str, str] — category badge hex colors
+- _RISK_KW: list[(kw, weight)] — keyword scoring list (positive=tension, negative=calm)
+- _CCY_GEO: dict[str, float] — per-currency geo sensitivity factors
+- TTL_GEO = 300 — cache + auto-rerun interval
+
+### Session State Keys
+- `geo_last_refresh`: float timestamp for 5-min auto-rerun timer
 
 ## Design Rules
 - Never change completed modules unless explicitly asked
