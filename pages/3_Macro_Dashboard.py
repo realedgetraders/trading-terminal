@@ -1,6 +1,6 @@
 """
-Trading Analytics Terminal — Module 3: Macro Fundamentals
-Currency-filtered macro scanner: indicators, event calendar, news feed
+Trading Analytics Terminal — Module 3: Economic Bias Engine
+Currency-filtered macro scanner: 12-month indicator trend analysis
 """
 
 import time
@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
+import plotly.graph_objects as go
 import requests
 import streamlit as st
 
@@ -36,11 +37,7 @@ FRED_API_KEY = "92dba3aead2eb80b8066515b6112958b"
 AUTO_RERUN_INTERVAL = 300   # 5 min — auto-rerun timer (seconds)
 TTL_INDICATORS      = 3600  # 1 h   — FRED / ECB cache TTL
 TTL_NEWS            = 300   # 5 min — RSS news cache TTL
-
-# ── Premium news API keys (optional upgrade) ─────────────────────────────────
-# BLOOMBERG_API_KEY = ""  # Bloomberg Terminal API — real-time data when set
-# REUTERS_API_KEY   = ""  # Reuters Connect API   — premium news feed when set
-# When either key is set above, the corresponding source activates automatically.
+TTL_HISTORY         = 3600  # 1 h   — 12M history fetch cache TTL
 
 # ── Colour palette (matches app.py exactly) ──────────────────────────────────
 C = {
@@ -226,46 +223,12 @@ _TE_ROW_MAP: list[tuple[str, str]] = [
     ("wages",               "Wage Growth"),
 ]
 
-# ── News context scoring config ───────────────────────────────────────────────
-_NEWS_QUERIES: dict[str, str] = {
-    "USD": "Federal Reserve rate decision US inflation jobs economy when:2d",
-    "EUR": "ECB European Central Bank rate eurozone inflation when:2d",
-    "GBP": "Bank of England BOE rate UK inflation employment when:2d",
-    "JPY": "Bank of Japan BOJ yen rate inflation deflation when:2d",
-    "AUD": "RBA Reserve Bank Australia rate inflation employment when:2d",
-    "CAD": "Bank of Canada BOC rate inflation oil economy when:2d",
-    "CHF": "SNB Swiss National Bank rate franc inflation when:2d",
-    "NZD": "RBNZ Reserve Bank New Zealand rate inflation when:2d",
-}
+# ── Retained geo constants (reserved for Module 4) ───────────────────────────
 _GEO_QUERY = "Iran war oil energy prices geopolitical risk conflict sanctions when:2d"
-
-# (keyword, weight) — case-insensitive substring match on title + summary
-_NEWS_BULL_KW: list[tuple[str, float]] = [
-    ("rate hike",            3.0), ("raises rates",         3.0),
-    ("hawkish surprise",     2.5), ("upside surprise",      2.5),
-    ("beats expectations",   2.0), ("better than expected", 2.0),
-    ("above forecast",       2.0), ("strong jobs",          2.0),
-    ("strong gdp",           2.0), ("robust growth",        2.0),
-    ("record employment",    2.0), ("hawkish",              1.5),
-    ("tightening",           1.5), ("inflation above",      1.5),
-    ("above target",         1.5), ("wage growth",          1.0),
-    ("strong retail",        1.5), ("surplus",              1.0),
-    ("resilient economy",    1.5), ("rate unchanged",       0.3),
-]
-_NEWS_BEAR_KW: list[tuple[str, float]] = [
-    ("emergency cut",       -3.0), ("rate cut",            -2.5),
-    ("cuts rates",          -2.5), ("dovish surprise",     -2.5),
-    ("recession fears",     -2.5), ("recession",           -2.0),
-    ("worse than expected", -2.0), ("below expectations",  -2.0),
-    ("below forecast",      -2.0), ("downside surprise",   -2.0),
-    ("deflation",           -2.0), ("contraction",         -2.0),
-    ("weak jobs",           -2.0), ("job losses",          -2.0),
-    ("stagflation",         -2.0), ("dovish",              -1.5),
-    ("easing",              -1.5), ("slowdown",            -1.0),
-    ("trade war",           -1.5), ("banking crisis",      -2.5),
-    ("rate pause",          -0.5),
-]
-# Geopolitical keywords driving risk-off / oil-spike events
+_GEO_CCY_IMPACT: dict[str, float] = {
+    "USD":  0.8, "CHF":  1.5, "JPY":  1.5, "CAD":  1.2,
+    "EUR": -0.5, "GBP": -0.3, "AUD": -0.8, "NZD": -1.0,
+}
 _GEO_BULL_KW: list[str] = [
     "iran war", "oil spike", "energy surge", "conflict escalat",
     "sanctions", "military strike", "airstrike", "oil embargo",
@@ -274,128 +237,58 @@ _GEO_BEAR_KW: list[str] = [
     "ceasefire", "de-escalat", "peace talks", "sanctions lifted",
     "supply normaliz", "oil surplus",
 ]
-# How a risk-off / oil-shock geo event shifts each currency (positive = bullish)
-_GEO_CCY_IMPACT: dict[str, float] = {
-    "USD":  0.8,   # safe-haven demand
-    "CHF":  1.5,   # strongest safe-haven
-    "JPY":  1.5,   # strong safe-haven
-    "CAD":  1.2,   # oil exporter benefits
-    "EUR": -0.5,
-    "GBP": -0.3,
-    "AUD": -0.8,   # risk-correlated commodity
-    "NZD": -1.0,
-}
-
-# Reference interest rates used for Layer 2 rate-differential scoring
-# Update when a central bank makes a policy change.
-_BASE_RATES: dict[str, float] = {
-    "USD": 4.50,   # Fed funds rate
-    "EUR": 2.40,   # ECB deposit rate
-    "GBP": 4.25,   # BoE bank rate
-    "JPY": 0.10,   # BoJ policy rate
-    "AUD": 4.10,   # RBA cash rate
-    "CAD": 2.75,   # BoC overnight rate
-    "CHF": 0.25,   # SNB policy rate
-    "NZD": 3.25,   # RBNZ OCR
-}
-# Layer 2 — medium-term fundamental outlook queries (separate from Layer 3 daily news)
 _CY = datetime.today().year
 _NY = _CY + 1
-_FUNDAMENTAL_QUERIES: dict[str, str] = {
-    "USD": f"US dollar fundamental outlook Federal Reserve rate path higher longer {_CY} {_NY}",
-    "EUR": f"Euro fundamental outlook ECB rate cuts eurozone recession growth {_CY} {_NY}",
-    "GBP": f"British pound fundamental Bank of England rate path UK stagflation {_CY} {_NY}",
-    "JPY": f"Japanese yen fundamental BOJ policy ultra-loose yen carry trade {_CY} {_NY}",
-    "AUD": f"Australian dollar fundamental RBA commodity China risk sentiment {_CY} {_NY}",
-    "CAD": f"Canadian dollar fundamental Bank of Canada oil prices CAD outlook {_CY} {_NY}",
-    "CHF": f"Swiss franc fundamental SNB policy safe haven demand franc {_CY} {_NY}",
-    "NZD": f"New Zealand dollar fundamental RBNZ rate cuts dairy commodity {_CY} {_NY}",
-}
-# Structural / medium-term bullish keywords (CB stance, rate advantage, macro quality)
-_FUND_BULL_KW: list[tuple[str, float]] = [
-    ("higher for longer",         2.5), ("rate advantage",           2.0),
-    ("hawkish",                   2.0), ("restrictive policy",       2.0),
-    ("tightening cycle",          2.0), ("rate hike",                2.0),
-    ("current account surplus",   2.0), ("safe haven",               1.5),
-    ("strong growth outlook",     2.0), ("outperforming",            1.5),
-    ("reserve currency",          1.5), ("carry trade",              1.5),
-    ("robust economy",            1.5), ("fiscal surplus",           1.5),
-    ("positive real rates",       2.0), ("commodity boom",           1.5),
-]
-# Structural / medium-term bearish keywords
-_FUND_BEAR_KW: list[tuple[str, float]] = [
-    ("easing cycle",             -2.5), ("rate cut path",            -2.5),
-    ("dovish",                   -2.0), ("ultra-loose",              -2.0),
-    ("negative rates",           -2.0), ("yen carry unwind",         -2.0),
-    ("recession risk",           -2.0), ("stagflation",              -2.0),
-    ("current account deficit",  -1.5), ("currency weakness",        -1.5),
-    ("fiscal deficit",           -1.0), ("trade war",                -1.5),
-    ("losing reserve",           -2.0), ("weak growth",              -1.5),
-    ("rate cuts expected",       -2.0), ("accommodative",            -1.5),
-]
-TTL_NEWS_CTX    = 600   # 10 min — Layer 3 news cache TTL
-TTL_FUNDAMENTAL = 1800  # 30 min — Layer 2 fundamental cache TTL
 
-# ── 4-Dimensional bias engine ─────────────────────────────────────────────────
-# D3 — Current central bank action pricing (update when policy changes)
-_D3_BASE: dict[str, float] = {
-    # Reflects the NEXT expected CB action (positive = hike, negative = cut)
-    # Scale: +3.0 = aggressive hike cycle,  -3.0 = aggressive cut cycle
-    "USD":  0.5,   # Fed on hold at 4.50%; no cuts in 2026, slight re-hike risk Q3 2027
-    "JPY":  1.5,   # BOJ actively hiking; next move +25bp July 2026, ~70% priced
-    "AUD":  0.3,   # RBA cut to 3.85%; pause now, but inflation sticky — further cut risk minor
-    "GBP": -0.8,   # BOE cutting cycle: 4.25% → 4.00% expected Jun, weak manufacturing
-    "CAD": -1.0,   # BOC in clear cut cycle: 2.75% → 2.50% Jun; unemployment rising
-    "NZD": -1.2,   # RBNZ cutting: 3.50% → 3.25% expected, weak consumer + CA deficit
-    "EUR": -1.5,   # ECB cutting cycle: 2.25% → 2.00% expected Jun; CPI below target
-    "CHF": -0.5,   # SNB at 0.00%; hold for now, negative real rates possible
+TTL_NEWS_CTX    = 600   # 10 min — retained for compatibility
+TTL_FUNDAMENTAL = 1800  # 30 min — retained for compatibility
+
+# ── New 12M bias engine: direction + weight maps ──────────────────────────────
+_IND_DIRECTION: dict[str, str] = {
+    "GDP Growth":           "high",
+    "Manufacturing PMI":    "high",
+    "Services PMI":         "high",
+    "Retail Sales":         "high",
+    "Employment Change":    "high",
+    "Wage Growth":          "high",
+    "Industrial Production":"high",
+    "Interest Rate":        "high",
+    "Trade Balance":        "high",
+    "Current Account":      "high",
+    "M2 Money Supply":      "high",
+    "Consumer Confidence":  "high",
+    "Business Confidence":  "high",
+    "Budget Balance":       "high",
+    "Building Permits":     "high",
+    "Unemployment Rate":    "low",
+    "Government Debt":      "low",
+    "CPI m/m":              "target",
+    "Core CPI":             "target",
+    "PPI":                  "target",
 }
-# D3 web-search queries — detect same-day CB repricing
-_D3_CB_QUERIES: dict[str, str] = {
-    "USD": f"Federal Reserve next rate decision hike cut hold {_CY}",
-    "EUR": f"ECB European Central Bank next rate cut decision {_CY}",
-    "GBP": f"Bank of England BOE next rate cut decision {_CY}",
-    "JPY": f"Bank of Japan BOJ next rate hike {_CY}",
-    "AUD": f"RBA Reserve Bank Australia next rate decision {_CY}",
-    "CAD": f"Bank of Canada BOC next rate cut decision {_CY}",
-    "CHF": f"Swiss National Bank SNB next rate decision {_CY}",
-    "NZD": f"RBNZ Reserve Bank New Zealand next rate cut decision {_CY}",
+
+_IND_WEIGHTS: dict[str, float] = {
+    "Interest Rate":        1.5,
+    "CPI m/m":              1.3,
+    "GDP Growth":           1.3,
+    "Unemployment Rate":    1.2,
+    "Employment Change":    1.1,
+    "Wage Growth":          1.0,
+    "Manufacturing PMI":    0.9,
+    "Services PMI":         0.9,
+    "Retail Sales":         0.8,
+    "Trade Balance":        0.8,
+    "Industrial Production":0.7,
+    "Core CPI":             0.7,
+    "Consumer Confidence":  0.6,
+    "Current Account":      0.6,
+    "Business Confidence":  0.5,
+    "M2 Money Supply":      0.5,
+    "PPI":                  0.5,
+    "Government Debt":      0.4,
+    "Budget Balance":       0.4,
+    "Building Permits":     0.3,
 }
-# D4 — Structural macro baseline: rate differential + CA balance + inflation regime
-# NO geopolitical component — geo context reserved for Module 4.
-# Rate advantage vs G8 average (~2.7%) is the primary FX driver.
-_D4_STRUCTURAL: dict[str, float] = {
-    "USD":  1.2,   # highest G8 rate (4.50%), +1.8% above avg, solid GDP, reserve currency premium
-    "GBP":  0.6,   # 4.25%, above avg, but stagflation risk and weak manufacturing drag
-    "AUD":  0.5,   # 3.85%, commodity exporter, elevated CPI supports rate carry
-    "JPY": -0.8,   # 0.50% — far below G8 average, carry trade unwind risk
-    "CAD":  0.0,   # 2.75%, near avg, oil CA offsets rising unemployment
-    "NZD": -0.2,   # 3.50% but small open economy, CA deficit, high sensitivity to risk-off
-    "EUR": -0.5,   # 2.25%, below avg and cutting; trade surplus is structural positive
-    "CHF": -1.0,   # 0.00%, very low rate, safe-haven demand offsets rate disadvantage
-}
-# D4 live news queries — rate & macro developments (no geo)
-_D4_NEWS_QUERIES: dict[str, str] = {
-    "USD": "Federal Reserve interest rate inflation GDP economic outlook hawkish dovish",
-    "EUR": "ECB interest rate eurozone inflation GDP economic outlook hawkish dovish",
-    "GBP": "Bank of England interest rate UK inflation GDP economic outlook hawkish dovish",
-    "JPY": "Bank of Japan interest rate Japan inflation GDP economic outlook hawkish dovish",
-    "AUD": "RBA interest rate Australia inflation GDP economic outlook hawkish dovish",
-    "CAD": "Bank of Canada interest rate inflation GDP economic outlook hawkish dovish",
-    "CHF": "SNB interest rate Switzerland inflation GDP economic outlook hawkish dovish",
-    "NZD": "RBNZ interest rate New Zealand inflation GDP economic outlook hawkish dovish",
-}
-# CB hawkish / dovish keyword detection used in D3 + D4 web scans
-_CB_HAWK_KW: tuple[str, ...] = (
-    "rate hike", "hikes rates", "raises rates", "hawkish", "tightening",
-    "higher for longer", "upside risk", "inflation above target",
-    "beats forecast", "strong jobs", "rate increase",
-)
-_CB_DOVE_KW: tuple[str, ...] = (
-    "rate cut", "cuts rates", "dovish", "easing", "pause",
-    "inflation easing", "weaker than expected", "slowing economy",
-    "possible cut", "rate reduction", "concern about growth",
-)
 
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  STATIC FALLBACK DATA  (May 2026 — displayed when live fetch fails)
@@ -589,154 +482,155 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════
-# ║  6-MONTH STATIC HISTORY  (Dec 2025 → May 2026, index 0=oldest, 5=latest)
-# ║  Used for cross-currency G8 relative scoring.
-# ║  Latest value (index 5) matches STATIC_INDICATORS "actual".
+# ║  12-MONTH STATIC HISTORY FALLBACK  (Jun 2025 → May 2026, index 0=oldest)
+# ║  Used when live API fetch is unavailable.
+# ║  Latest 6 values (index 6-11) match the STATIC_INDICATORS "actual" series.
 # ╚══════════════════════════════════════════════════════════════════════════════
-STATIC_HISTORY: dict[str, dict[str, list[float]]] = {
+HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
     "USD": {
-        "CPI m/m":          [0.4, 0.5, 0.2, 0.1, 0.3, 0.4],
-        "Interest Rate":    [4.25, 4.25, 4.50, 4.50, 4.50, 4.50],
-        "GDP Growth":       [2.4, 2.4, 2.8, 2.8, 2.8, 2.8],
-        "Unemployment Rate":[4.2, 4.1, 4.0, 4.1, 4.0, 4.0],
-        "Manufacturing PMI":[49.7, 51.2, 52.7, 49.0, 50.2, 49.8],
-        "Services PMI":     [56.1, 52.9, 51.0, 54.4, 50.8, 51.2],
-        "Retail Sales":     [0.4, -0.9, 0.2, 1.4, -0.2, 0.1],
-        "Wage Growth":      [4.1, 4.1, 4.0, 4.0, 4.1, 4.5],
-        "Trade Balance":    [-78.9, -131.4, -122.7, -140.5, -64.5, -61.1],
-        "Core CPI":         [0.3, 0.4, 0.4, 0.1, 0.3, 0.3],
-        "Employment Change":[227, 256, 117, 228, 142, 177],
-        "Industrial Production":[-0.1, 0.5, -0.8, -0.3, 0.1, 0.3],
-        "M2 Money Supply":  [3.5, 3.5, 3.6, 3.6, 3.8, 3.8],
-        "Consumer Confidence":[110.7, 104.1, 98.3, 92.9, 85.7, 82.0],
-        "Government Debt":  [122.0, 122.0, 123.0, 123.0, 124.0, 124.0],
-        "PPI":              [0.3, 0.5, 0.0, -0.4, -0.5, 0.2],
+        # Jun-Nov 2025 prepended, then Dec 2025-May 2026 from old STATIC_HISTORY
+        "CPI m/m":           [0.3, 0.4, 0.3, 0.4, 0.3, 0.2,  0.4, 0.5, 0.2, 0.1, 0.3, 0.4],
+        "Interest Rate":     [4.25,4.25,4.25,4.25,4.25,4.25,  4.25,4.25,4.50,4.50,4.50,4.50],
+        "GDP Growth":        [2.3, 2.4, 2.5, 2.4, 2.5, 2.4,  2.4, 2.4, 2.8, 2.8, 2.8, 2.8],
+        "Unemployment Rate": [3.9, 4.0, 4.1, 4.2, 4.1, 4.2,  4.2, 4.1, 4.0, 4.1, 4.0, 4.0],
+        "Manufacturing PMI": [48.7,49.3,50.1,50.9,51.3,50.5,  49.7,51.2,52.7,49.0,50.2,49.8],
+        "Services PMI":      [53.8,54.2,53.7,55.1,54.8,55.0,  56.1,52.9,51.0,54.4,50.8,51.2],
+        "Retail Sales":      [0.2, 0.3,-0.1, 0.5, 0.4, 0.3,   0.4,-0.9, 0.2, 1.4,-0.2, 0.1],
+        "Wage Growth":       [4.3, 4.2, 4.1, 4.0, 4.0, 4.1,   4.1, 4.1, 4.0, 4.0, 4.1, 4.5],
+        "Trade Balance":     [-67.,-72.,-75.,-80.,-82.,-79.,  -78.9,-131.4,-122.7,-140.5,-64.5,-61.1],
+        "Core CPI":          [0.3, 0.3, 0.3, 0.4, 0.3, 0.3,   0.3, 0.4, 0.4, 0.1, 0.3, 0.3],
+        "Employment Change": [200, 220, 215, 230, 245, 210,   227, 256, 117, 228, 142, 177],
+        "Industrial Production":[0.2,0.3,-0.1,0.4,0.3,0.1,  -0.1, 0.5,-0.8,-0.3, 0.1, 0.3],
+        "M2 Money Supply":   [3.2, 3.3, 3.3, 3.4, 3.5, 3.5,   3.5, 3.5, 3.6, 3.6, 3.8, 3.8],
+        "Consumer Confidence":[118.,115.,113.,112.,112.,111., 110.7,104.1,98.3,92.9,85.7,82.0],
+        "Government Debt":   [120.,121.,121.,122.,122.,122.,  122.,122.,123.,123.,124.,124.],
+        "PPI":               [0.2, 0.3, 0.4, 0.3, 0.2, 0.3,   0.3, 0.5, 0.0,-0.4,-0.5, 0.2],
     },
     "EUR": {
-        "CPI m/m":          [0.3, 0.2, -0.1, 0.0, 0.2, 0.2],
-        "Interest Rate":    [3.00, 2.75, 2.75, 2.50, 2.50, 2.25],
-        "GDP Growth":       [1.2, 1.2, 1.7, 1.7, 1.7, 1.7],
-        "Unemployment Rate":[6.3, 6.2, 6.2, 6.1, 6.1, 6.2],
-        "Manufacturing PMI":[45.1, 46.6, 47.6, 48.7, 49.0, 49.4],
-        "Services PMI":     [51.6, 51.3, 50.6, 51.0, 50.3, 50.1],
-        "Retail Sales":     [-0.1, 0.3, 0.0, 0.3, 0.2, 0.1],
-        "Wage Growth":      [4.1, 4.2, 3.8, 3.6, 3.3, 3.1],
-        "Trade Balance":    [8.5, 16.3, 10.5, 18.0, 20.5, 8.5],
-        "Core CPI":         [0.0, 0.3, 0.1, 0.3, 0.3, 0.2],
-        "Employment Change":[300, 280, 220, 180, 190, 210],
-        "Industrial Production":[-1.1, 0.5, 0.7, -1.8, 0.5, 0.4],
-        "M2 Money Supply":  [3.7, 3.8, 4.0, 3.9, 3.9, 4.1],
-        "Consumer Confidence":[-14.2, -14.2, -13.3, -16.5, -16.7, -18.0],
-        "Government Debt":  [89.5, 89.5, 90.0, 90.0, 90.8, 91.0],
-        "PPI":              [0.0, 0.2, 0.0, 0.1, 0.0, 0.1],
+        "CPI m/m":           [0.3, 0.3, 0.2, 0.2, 0.1, 0.2,   0.3, 0.2,-0.1, 0.0, 0.2, 0.2],
+        "Interest Rate":     [3.25,3.25,3.25,3.00,3.00,3.00,   3.00,2.75,2.75,2.50,2.50,2.25],
+        "GDP Growth":        [0.9, 1.0, 1.1, 1.0, 1.1, 1.2,   1.2, 1.2, 1.7, 1.7, 1.7, 1.7],
+        "Unemployment Rate": [6.5, 6.4, 6.4, 6.3, 6.3, 6.3,   6.3, 6.2, 6.2, 6.1, 6.1, 6.2],
+        "Manufacturing PMI": [43.6,44.2,44.8,45.1,45.3,45.1,  45.1,46.6,47.6,48.7,49.0,49.4],
+        "Services PMI":      [53.2,53.0,52.7,52.2,51.8,51.7,  51.6,51.3,50.6,51.0,50.3,50.1],
+        "Retail Sales":      [0.2, 0.1, 0.0,-0.1, 0.2, 0.0,  -0.1, 0.3, 0.0, 0.3, 0.2, 0.1],
+        "Wage Growth":       [4.4, 4.3, 4.2, 4.1, 4.0, 4.1,   4.1, 4.2, 3.8, 3.6, 3.3, 3.1],
+        "Trade Balance":     [12., 14., 15., 10., 12., 11.,    8.5,16.3,10.5,18.0,20.5, 8.5],
+        "Core CPI":          [0.3, 0.2, 0.2, 0.1, 0.1, 0.2,   0.0, 0.3, 0.1, 0.3, 0.3, 0.2],
+        "Employment Change": [310, 295, 285, 300, 290, 280,   300, 280, 220, 180, 190, 210],
+        "Industrial Production":[-0.3,0.2,0.4,0.3,-0.2,0.1, -1.1, 0.5, 0.7,-1.8, 0.5, 0.4],
+        "M2 Money Supply":   [3.3, 3.4, 3.5, 3.7, 3.8, 3.7,   3.7, 3.8, 4.0, 3.9, 3.9, 4.1],
+        "Consumer Confidence":[-11.,-12.,-12.,-13.,-14.,-14., -14.2,-14.2,-13.3,-16.5,-16.7,-18.0],
+        "Government Debt":   [88., 88., 89., 89., 89., 89.5,  89.5,89.5,90.0,90.0,90.8,91.0],
+        "PPI":               [0.2, 0.1, 0.2, 0.1, 0.0, 0.1,   0.0, 0.2, 0.0, 0.1, 0.0, 0.1],
     },
     "GBP": {
-        "CPI m/m":          [0.3, 0.3, 0.5, 0.2, 0.4, 0.3],
-        "Interest Rate":    [4.75, 4.75, 4.50, 4.50, 4.25, 4.25],
-        "GDP Growth":       [0.5, 0.5, 1.1, 1.1, 1.6, 1.6],
-        "Unemployment Rate":[4.3, 4.4, 4.4, 4.5, 4.5, 4.5],
-        "Manufacturing PMI":[47.3, 48.3, 46.9, 44.9, 45.4, 46.0],
-        "Services PMI":     [51.1, 51.0, 51.0, 52.5, 49.9, 50.3],
-        "Retail Sales":     [-0.6, 0.0, 1.0, -0.4, 0.4, -0.3],
-        "Wage Growth":      [6.0, 5.9, 5.8, 5.6, 5.3, 5.0],
-        "Trade Balance":    [-5.1, -3.7, -4.5, -3.8, -3.7, -5.1],
-        "Core CPI":         [0.5, 0.6, 0.4, 0.5, 0.3, 0.3],
-        "Employment Change":[ 76, 73, 27, -25, -50, -72],
-        "Industrial Production":[0.5, 0.7, -0.6, 0.2, 0.8, 0.4],
-        "M2 Money Supply":  [3.0, 3.1, 3.2, 3.3, 3.2, 3.1],
-        "Consumer Confidence":[-17.0, -22.0, -20.0, -18.0, -23.0, -20.0],
-        "Government Debt":  [98.5, 99.0, 99.5, 100.0, 100.5, 101.0],
-        "PPI":              [0.2, 0.1, 0.2, -0.1, 0.1, 0.2],
+        "CPI m/m":           [0.5, 0.4, 0.4, 0.3, 0.4, 0.3,   0.3, 0.3, 0.5, 0.2, 0.4, 0.3],
+        "Interest Rate":     [5.00,5.00,5.00,4.75,4.75,4.75,  4.75,4.75,4.50,4.50,4.25,4.25],
+        "GDP Growth":        [0.3, 0.4, 0.4, 0.5, 0.5, 0.5,   0.5, 0.5, 1.1, 1.1, 1.6, 1.6],
+        "Unemployment Rate": [4.2, 4.2, 4.3, 4.3, 4.3, 4.3,   4.3, 4.4, 4.4, 4.5, 4.5, 4.5],
+        "Manufacturing PMI": [46.2,47.0,47.3,47.3,48.1,47.5,  47.3,48.3,46.9,44.9,45.4,46.0],
+        "Services PMI":      [52.0,52.1,51.8,51.5,51.3,51.2,  51.1,51.0,51.0,52.5,49.9,50.3],
+        "Retail Sales":      [0.1, 0.0,-0.2,-0.4, 0.1,-0.1,  -0.6, 0.0, 1.0,-0.4, 0.4,-0.3],
+        "Wage Growth":       [6.5, 6.4, 6.3, 6.2, 6.1, 6.0,   6.0, 5.9, 5.8, 5.6, 5.3, 5.0],
+        "Trade Balance":     [-4.5,-4.2,-4.8,-4.9,-5.1,-4.7,  -5.1,-3.7,-4.5,-3.8,-3.7,-5.1],
+        "Core CPI":          [0.6, 0.5, 0.5, 0.5, 0.4, 0.5,   0.5, 0.6, 0.4, 0.5, 0.3, 0.3],
+        "Employment Change": [95,  88,  82,  77,  76,  76,     76,  73,  27, -25, -50, -72],
+        "Industrial Production":[0.3,0.4,0.5,0.5,0.6,0.5,    0.5, 0.7,-0.6, 0.2, 0.8, 0.4],
+        "M2 Money Supply":   [2.7, 2.8, 2.9, 3.0, 3.0, 3.0,   3.0, 3.1, 3.2, 3.3, 3.2, 3.1],
+        "Consumer Confidence":[-14.,-15.,-16.,-16.,-17.,-17., -17.,-22.,-20.,-18.,-23.,-20.],
+        "Government Debt":   [97., 97.5,98.0,98.5,98.5,98.5,  98.5,99.0,99.5,100.,100.5,101.],
+        "PPI":               [0.3, 0.2, 0.2, 0.2, 0.2, 0.2,   0.2, 0.1, 0.2,-0.1, 0.1, 0.2],
     },
     "JPY": {
-        "CPI m/m":          [0.4, 0.4, 0.3, 0.2, 0.3, 0.3],
-        "Interest Rate":    [0.25, 0.25, 0.50, 0.50, 0.75, 0.75],
-        "GDP Growth":       [1.0, 1.0, 1.2, 1.2, 1.2, 1.2],
-        "Unemployment Rate":[2.5, 2.4, 2.5, 2.4, 2.5, 2.4],
-        "Manufacturing PMI":[49.5, 50.1, 49.0, 48.4, 48.7, 48.5],
-        "Services PMI":     [50.6, 53.0, 53.7, 50.0, 52.4, 52.4],
-        "Retail Sales":     [-0.3, 0.0, 1.0, -1.1, 0.0, 0.2],
-        "Wage Growth":      [3.5, 3.1, 2.8, 3.5, 3.5, 3.2],
-        "Trade Balance":    [-0.8, -1.2, -0.5, -0.3, -1.2, -0.8],
-        "Core CPI":         [0.3, 0.4, 0.3, 0.2, 0.2, 0.2],
-        "Employment Change":[5, -4, 18, 15, 20, 15],
-        "Industrial Production":[-2.3, -1.1, 2.2, 0.2, -1.1, 0.5],
-        "M2 Money Supply":  [1.0, 1.1, 1.3, 1.4, 1.4, 1.5],
-        "Consumer Confidence":[35.0, 36.2, 35.5, 34.2, 33.8, 34.1],
-        "Government Debt":  [254.0, 254.0, 255.0, 255.0, 255.0, 255.0],
-        "PPI":              [0.1, 0.4, 0.3, 0.5, 0.4, 0.2],
+        "CPI m/m":           [0.5, 0.4, 0.4, 0.4, 0.3, 0.4,   0.4, 0.4, 0.3, 0.2, 0.3, 0.3],
+        "Interest Rate":     [0.10,0.10,0.10,0.25,0.25,0.25,  0.25,0.25,0.50,0.50,0.75,0.75],
+        "GDP Growth":        [0.8, 0.9, 1.0, 1.1, 1.0, 1.0,   1.0, 1.0, 1.2, 1.2, 1.2, 1.2],
+        "Unemployment Rate": [2.6, 2.5, 2.6, 2.5, 2.5, 2.5,   2.5, 2.4, 2.5, 2.4, 2.5, 2.4],
+        "Manufacturing PMI": [49.4,49.2,49.5,49.5,50.1,49.8,  49.5,50.1,49.0,48.4,48.7,48.5],
+        "Services PMI":      [53.8,53.5,53.0,51.3,52.0,51.0,  50.6,53.0,53.7,50.0,52.4,52.4],
+        "Retail Sales":      [0.2, 0.0,-0.1,-0.3, 0.1,-0.2,  -0.3, 0.0, 1.0,-1.1, 0.0, 0.2],
+        "Wage Growth":       [3.2, 3.3, 3.4, 3.5, 3.4, 3.5,   3.5, 3.1, 2.8, 3.5, 3.5, 3.2],
+        "Trade Balance":     [-0.5,-0.7,-0.8,-0.8,-1.0,-0.9,  -0.8,-1.2,-0.5,-0.3,-1.2,-0.8],
+        "Core CPI":          [0.3, 0.3, 0.3, 0.3, 0.3, 0.3,   0.3, 0.4, 0.3, 0.2, 0.2, 0.2],
+        "Employment Change": [10,   8,   6,   5,   5,   5,      5,  -4,  18,  15,  20,  15],
+        "Industrial Production":[-0.5,-0.2,0.3,-0.8,-1.2,-1.5,-2.3,-1.1,2.2, 0.2,-1.1, 0.5],
+        "M2 Money Supply":   [0.8, 0.9, 0.9, 1.0, 1.0, 1.0,   1.0, 1.1, 1.3, 1.4, 1.4, 1.5],
+        "Consumer Confidence":[36.5,36.8,37.0,36.5,36.0,35.5, 35.0,36.2,35.5,34.2,33.8,34.1],
+        "Government Debt":   [252.,252.,253.,254.,254.,254.,   254.,254.,255.,255.,255.,255.],
+        "PPI":               [0.3, 0.2, 0.2, 0.1, 0.3, 0.2,   0.1, 0.4, 0.3, 0.5, 0.4, 0.2],
     },
     "AUD": {
-        "CPI m/m":          [0.3, 0.3, 0.2, 0.1, 0.2, 0.3],
-        "Interest Rate":    [4.35, 4.35, 4.10, 4.10, 3.85, 3.85],
-        "GDP Growth":       [1.0, 1.0, 1.3, 1.3, 1.3, 1.3],
-        "Unemployment Rate":[4.1, 4.0, 4.1, 4.2, 4.1, 4.2],
-        "Manufacturing PMI":[49.0, 50.3, 49.8, 51.0, 50.3, 51.7],
-        "Services PMI":     [50.4, 51.6, 50.8, 51.6, 51.6, 51.0],
-        "Retail Sales":     [0.4, 0.3, 0.2, 0.3, 0.2, 0.3],
-        "Wage Growth":      [3.3, 3.3, 3.4, 3.4, 3.3, 3.6],
-        "Trade Balance":    [4.7, 4.7, 5.1, 4.7, 4.7, 5.1],
-        "Core CPI":         [0.2, 0.3, 0.2, 0.2, 0.3, 0.2],
-        "Employment Change":[56, 90, 53, 90, 52, 38],
-        "Industrial Production":[0.2, 0.2, 0.3, 0.4, 0.2, 0.4],
-        "M2 Money Supply":  [4.5, 4.7, 4.8, 5.0, 4.8, 5.2],
-        "Consumer Confidence":[97.0, 99.0, 101.0, 100.5, 99.0, 102.0],
-        "Government Debt":  [50.5, 50.5, 51.0, 51.5, 51.5, 52.0],
-        "PPI":              [0.3, 0.2, 0.2, 0.3, 0.2, 0.3],
+        "CPI m/m":           [0.4, 0.3, 0.3, 0.3, 0.2, 0.3,   0.3, 0.3, 0.2, 0.1, 0.2, 0.3],
+        "Interest Rate":     [4.35,4.35,4.35,4.35,4.35,4.35,  4.35,4.35,4.10,4.10,3.85,3.85],
+        "GDP Growth":        [0.8, 0.9, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.3, 1.3, 1.3, 1.3],
+        "Unemployment Rate": [4.0, 4.0, 4.1, 4.1, 4.1, 4.1,   4.1, 4.0, 4.1, 4.2, 4.1, 4.2],
+        "Manufacturing PMI": [48.8,48.5,48.9,49.0,50.3,49.5,  49.0,50.3,49.8,51.0,50.3,51.7],
+        "Services PMI":      [51.0,51.2,51.5,50.8,51.4,50.7,  50.4,51.6,50.8,51.6,51.6,51.0],
+        "Retail Sales":      [0.3, 0.2, 0.4, 0.4, 0.3, 0.4,   0.4, 0.3, 0.2, 0.3, 0.2, 0.3],
+        "Wage Growth":       [3.4, 3.4, 3.3, 3.3, 3.3, 3.3,   3.3, 3.3, 3.4, 3.4, 3.3, 3.6],
+        "Trade Balance":     [5.5, 5.2, 5.0, 4.8, 4.7, 4.7,   4.7, 4.7, 5.1, 4.7, 4.7, 5.1],
+        "Core CPI":          [0.3, 0.3, 0.2, 0.2, 0.3, 0.2,   0.2, 0.3, 0.2, 0.2, 0.3, 0.2],
+        "Employment Change": [60,  55,  58,  57,  57,  56,     56,  90,  53,  90,  52,  38],
+        "Industrial Production":[0.3,0.2,0.2,0.2,0.2,0.2,    0.2, 0.2, 0.3, 0.4, 0.2, 0.4],
+        "M2 Money Supply":   [4.2, 4.3, 4.4, 4.5, 4.6, 4.5,   4.5, 4.7, 4.8, 5.0, 4.8, 5.2],
+        "Consumer Confidence":[96., 97., 97., 98., 98., 97.,   97., 99.,101.,100.5,99.,102.],
+        "Government Debt":   [49., 49., 49.5,50.0,50.5,50.5,  50.5,50.5,51.0,51.5,51.5,52.0],
+        "PPI":               [0.4, 0.3, 0.3, 0.3, 0.2, 0.3,   0.3, 0.2, 0.2, 0.3, 0.2, 0.3],
     },
     "CAD": {
-        "CPI m/m":          [0.3, 0.4, 0.1, 0.1, 0.3, 0.2],
-        "Interest Rate":    [3.25, 3.00, 3.00, 2.75, 2.75, 2.75],
-        "GDP Growth":       [1.6, 1.6, 1.5, 1.5, 1.5, 1.5],
-        "Unemployment Rate":[6.7, 6.8, 6.8, 6.9, 6.9, 6.9],
-        "Manufacturing PMI":[51.6, 47.8, 47.9, 46.3, 46.5, 46.8],
-        "Services PMI":     [47.5, 47.5, 44.6, 48.6, 41.5, 41.9],
-        "Retail Sales":     [0.7, 0.4, -0.4, -0.2, -0.4, 0.1],
-        "Wage Growth":      [3.3, 3.3, 3.3, 3.5, 3.4, 3.3],
-        "Trade Balance":    [0.7, -0.4, 0.3, -0.8, -0.4, 0.7],
-        "Core CPI":         [0.4, 0.3, 0.2, 0.1, 0.2, 0.2],
-        "Employment Change":[76, 76, -33, -33, -33, 7],
-        "Industrial Production":[-0.4, 0.2, 0.3, -0.3, 0.1, 0.2],
-        "M2 Money Supply":  [2.5, 2.6, 2.7, 2.7, 2.8, 2.9],
-        "Consumer Confidence":[43.6, 43.7, 52.0, 48.8, 50.9, 47.0],
-        "Government Debt":  [106.0, 106.5, 106.5, 107.0, 107.0, 107.0],
-        "PPI":              [-0.1, 0.1, 0.2, 0.1, 0.1, 0.0],
+        "CPI m/m":           [0.3, 0.4, 0.3, 0.3, 0.4, 0.3,   0.3, 0.4, 0.1, 0.1, 0.3, 0.2],
+        "Interest Rate":     [4.50,4.25,4.00,3.75,3.50,3.25,  3.25,3.00,3.00,2.75,2.75,2.75],
+        "GDP Growth":        [1.8, 1.8, 1.7, 1.7, 1.6, 1.6,   1.6, 1.6, 1.5, 1.5, 1.5, 1.5],
+        "Unemployment Rate": [6.3, 6.4, 6.5, 6.6, 6.7, 6.7,   6.7, 6.8, 6.8, 6.9, 6.9, 6.9],
+        "Manufacturing PMI": [51.5,51.5,51.8,51.7,52.0,51.6,  51.6,47.8,47.9,46.3,46.5,46.8],
+        "Services PMI":      [49.5,49.3,48.5,48.2,48.0,47.8,  47.5,47.5,44.6,48.6,41.5,41.9],
+        "Retail Sales":      [0.3, 0.5, 0.6, 0.7, 0.5, 0.7,   0.7, 0.4,-0.4,-0.2,-0.4, 0.1],
+        "Wage Growth":       [3.5, 3.4, 3.5, 3.4, 3.3, 3.3,   3.3, 3.3, 3.3, 3.5, 3.4, 3.3],
+        "Trade Balance":     [0.5, 0.6, 0.8, 0.7, 0.8, 0.7,   0.7,-0.4, 0.3,-0.8,-0.4, 0.7],
+        "Core CPI":          [0.3, 0.4, 0.3, 0.4, 0.4, 0.4,   0.4, 0.3, 0.2, 0.1, 0.2, 0.2],
+        "Employment Change": [30,  40,  55,  70,  76,  76,     76,  76, -33, -33, -33,   7],
+        "Industrial Production":[0.2,0.1,0.0,-0.1,-0.2,-0.3,  -0.4, 0.2, 0.3,-0.3, 0.1, 0.2],
+        "M2 Money Supply":   [2.3, 2.4, 2.4, 2.5, 2.5, 2.5,   2.5, 2.6, 2.7, 2.7, 2.8, 2.9],
+        "Consumer Confidence":[52., 50., 48., 46., 44., 43.6,  43.6,43.7,52.0,48.8,50.9,47.0],
+        "Government Debt":   [104.,105.,105.,105.5,106.,106.,  106.,106.5,106.5,107.,107.,107.],
+        "PPI":               [0.2, 0.1, 0.1, 0.0,-0.1, 0.0,  -0.1, 0.1, 0.2, 0.1, 0.1, 0.0],
     },
     "CHF": {
-        "CPI m/m":          [0.1, 0.2, -0.1, 0.0, 0.1, 0.1],
-        "Interest Rate":    [0.75, 0.50, 0.25, 0.25, 0.25, 0.25],
-        "GDP Growth":       [1.5, 1.5, 1.7, 1.7, 2.0, 2.0],
-        "Unemployment Rate":[2.5, 2.6, 2.5, 2.5, 2.6, 2.5],
-        "Manufacturing PMI":[48.5, 48.4, 49.0, 48.8, 49.1, 48.9],
-        "Services PMI":     [50.3, 49.0, 50.5, 49.4, 49.4, 49.1],
-        "Retail Sales":     [-0.3, 0.0, 0.3, 0.1, -0.2, 0.2],
-        "Wage Growth":      [1.8, 2.0, 1.8, 2.1, 2.0, 1.8],
-        "Trade Balance":    [4.8, 4.2, 4.5, 3.5, 4.2, 4.8],
-        "Core CPI":         [0.0, 0.1, 0.0, 0.0, 0.1, 0.1],
-        "Employment Change":[5, 4, 3, 2, 3, 4],
-        "Industrial Production":[-0.3, 0.1, 0.2, 0.0, 0.1, 0.2],
-        "M2 Money Supply":  [-1.0, -0.8, -0.5, -0.3, 0.0, 0.2],
-        "Consumer Confidence":[-38.3, -30.1, -24.1, -26.3, -24.8, -20.5],
-        "Government Debt":  [37.5, 37.5, 38.0, 38.0, 38.0, 38.0],
-        "PPI":              [-0.1, 0.0, 0.1, 0.0, -0.1, 0.0],
+        "CPI m/m":           [0.2, 0.1, 0.1, 0.1, 0.2, 0.1,   0.1, 0.2,-0.1, 0.0, 0.1, 0.1],
+        "Interest Rate":     [1.25,1.00,1.00,0.75,0.75,0.75,  0.75,0.50,0.25,0.25,0.25,0.25],
+        "GDP Growth":        [0.8, 1.0, 1.2, 1.3, 1.4, 1.5,   1.5, 1.5, 1.7, 1.7, 2.0, 2.0],
+        "Unemployment Rate": [2.4, 2.4, 2.5, 2.5, 2.5, 2.5,   2.5, 2.6, 2.5, 2.5, 2.6, 2.5],
+        "Manufacturing PMI": [47.8,48.0,48.3,48.5,48.4,48.5,  48.5,48.4,49.0,48.8,49.1,48.9],
+        "Services PMI":      [51.0,50.8,50.5,50.3,49.5,50.0,  50.3,49.0,50.5,49.4,49.4,49.1],
+        "Retail Sales":      [0.1, 0.0,-0.1, 0.0,-0.2,-0.1,  -0.3, 0.0, 0.3, 0.1,-0.2, 0.2],
+        "Wage Growth":       [2.2, 2.1, 2.0, 1.9, 1.8, 1.8,   1.8, 2.0, 1.8, 2.1, 2.0, 1.8],
+        "Trade Balance":     [5.0, 4.8, 4.7, 4.8, 4.5, 4.8,   4.8, 4.2, 4.5, 3.5, 4.2, 4.8],
+        "Core CPI":          [0.1, 0.1, 0.0, 0.1, 0.1, 0.1,   0.0, 0.1, 0.0, 0.0, 0.1, 0.1],
+        "Employment Change": [7,   6,   5,   5,   5,   5,      5,   4,   3,   2,   3,   4],
+        "Industrial Production":[0.2,0.1,0.0,-0.1,-0.2,-0.3,  -0.3, 0.1, 0.2, 0.0, 0.1, 0.2],
+        "M2 Money Supply":   [-1.5,-1.3,-1.2,-1.1,-1.0,-1.0,  -1.0,-0.8,-0.5,-0.3, 0.0, 0.2],
+        "Consumer Confidence":[-41.,-39.,-37.,-38.,-39.,-38.3, -38.3,-30.1,-24.1,-26.3,-24.8,-20.5],
+        "Government Debt":   [37., 37., 37.5,37.5,37.5,37.5,  37.5,37.5,38.0,38.0,38.0,38.0],
+        "PPI":               [0.0, 0.0,-0.1, 0.0, 0.0,-0.1,  -0.1, 0.0, 0.1, 0.0,-0.1, 0.0],
     },
     "NZD": {
-        "CPI m/m":          [0.2, 0.3, 0.1, 0.1, 0.2, 0.2],
-        "Interest Rate":    [4.25, 3.75, 3.75, 3.50, 3.50, 3.50],
-        "GDP Growth":       [-0.5, -0.5, 0.6, 0.6, 0.7, 0.7],
-        "Unemployment Rate":[5.0, 5.1, 5.2, 5.1, 5.3, 5.2],
-        "Manufacturing PMI":[46.2, 50.1, 52.7, 53.9, 54.3, 53.5],
-        "Services PMI":     [47.8, 49.1, 50.2, 49.1, 50.1, 49.8],
-        "Retail Sales":     [0.0, -0.5, 0.7, 0.4, -0.2, 0.0],
-        "Wage Growth":      [3.3, 3.3, 2.9, 2.9, 2.9, 3.0],
-        "Trade Balance":    [-0.1, -0.4, 0.0, -0.1, -0.4, -0.1],
-        "Core CPI":         [0.1, 0.2, 0.1, 0.1, 0.1, 0.2],
-        "Employment Change":[ 8, 5, -3, 2, 1, 3],
-        "Industrial Production":[0.0, -0.1, 0.2, 0.1, 0.0, 0.1],
-        "M2 Money Supply":  [5.0, 5.2, 5.0, 5.1, 5.0, 5.1],
-        "Consumer Confidence":[-65.7, -50.4, -47.3, -47.7, -45.3, -43.5],
-        "Government Debt":  [46.5, 46.5, 47.0, 47.5, 47.5, 48.0],
-        "PPI":              [0.1, 0.2, 0.1, 0.2, 0.1, 0.2],
+        "CPI m/m":           [0.4, 0.3, 0.3, 0.2, 0.3, 0.2,   0.2, 0.3, 0.1, 0.1, 0.2, 0.2],
+        "Interest Rate":     [5.25,5.00,5.00,4.75,4.50,4.25,  4.25,3.75,3.75,3.50,3.50,3.50],
+        "GDP Growth":        [-0.3,-0.3,-0.4,-0.5,-0.5,-0.5,  -0.5,-0.5, 0.6, 0.6, 0.7, 0.7],
+        "Unemployment Rate": [4.6, 4.7, 4.8, 4.9, 5.0, 5.0,   5.0, 5.1, 5.2, 5.1, 5.3, 5.2],
+        "Manufacturing PMI": [44.2,45.0,45.5,46.2,50.1,46.8,  46.2,50.1,52.7,53.9,54.3,53.5],
+        "Services PMI":      [47.0,47.5,47.8,47.8,49.1,47.8,  47.8,49.1,50.2,49.1,50.1,49.8],
+        "Retail Sales":      [-0.3,-0.2, 0.0, 0.1,-0.3, 0.0,   0.0,-0.5, 0.7, 0.4,-0.2, 0.0],
+        "Wage Growth":       [3.5, 3.5, 3.4, 3.4, 3.3, 3.3,   3.3, 3.3, 2.9, 2.9, 2.9, 3.0],
+        "Trade Balance":     [-0.2,-0.3,-0.2,-0.1,-0.2,-0.1,  -0.1,-0.4, 0.0,-0.1,-0.4,-0.1],
+        "Core CPI":          [0.3, 0.2, 0.2, 0.1, 0.2, 0.1,   0.1, 0.2, 0.1, 0.1, 0.1, 0.2],
+        "Employment Change": [5,   6,   7,   8,   5,   8,      8,   5,  -3,   2,   1,   3],
+        "Industrial Production":[0.2,0.1,0.0, 0.0,-0.1, 0.0,   0.0,-0.1, 0.2, 0.1, 0.0, 0.1],
+        "M2 Money Supply":   [5.5, 5.3, 5.2, 5.1, 5.2, 5.0,   5.0, 5.2, 5.0, 5.1, 5.0, 5.1],
+        "Consumer Confidence":[-70.,-68.,-66.,-66.,-53.,-65.7,-65.7,-50.4,-47.3,-47.7,-45.3,-43.5],
+        "Government Debt":   [44., 44.5,45.0,45.5,46.5,46.5,  46.5,46.5,47.0,47.5,47.5,48.0],
+        "PPI":               [0.3, 0.2, 0.2, 0.1, 0.2, 0.1,   0.1, 0.2, 0.1, 0.2, 0.1, 0.2],
     },
 }
 
@@ -1118,134 +1012,333 @@ def fetch_te_indicators(currency: str) -> dict:
         return {}
 
 
-@st.cache_data(ttl=TTL_NEWS_CTX, show_spinner=False)
-def fetch_news_context_scores() -> dict[str, float]:
-    """
-    Fetch Google News RSS headlines for all 8 currencies + one geopolitical query.
-    Score each currency -3.0 to +3.0 using keyword sentiment weighting.
-    Applies a geopolitical overlay (Iran war / oil shock / risk-off) on top.
-    Returns {currency: raw_context_score}.  Falls back to 0.0 per currency silently.
-    """
-    import urllib.parse
 
-    if not _FEEDPARSER:
-        return {c: 0.0 for c in SUPPORTED_CURRENCIES}
+# ╔══════════════════════════════════════════════════════════════════════════════
+# ║  12-MONTH HISTORY FETCHERS
+# ╚══════════════════════════════════════════════════════════════════════════════
 
-    def _fetch(query: str) -> list[str]:
+@st.cache_data(ttl=TTL_HISTORY, show_spinner=False)
+def fetch_fred_history(api_key: str) -> dict[str, list[float]]:
+    """
+    Fetch 12-month rolling history for USD indicators via FRED.
+    Returns {indicator_name: [oldest, ..., newest]} up to 14 values.
+    """
+    if not api_key or api_key.strip() in ("", "your_key_here", "your_fred_api_key_here"):
+        return {}
+
+    FRED_HIST = {
+        "CPI m/m":               ("CPIAUCSL",        "mom"),
+        "Core CPI":               ("CPILFESL",        "mom"),
+        "Interest Rate":          ("FEDFUNDS",        "latest"),
+        "Unemployment Rate":      ("UNRATE",          "latest"),
+        "Retail Sales":           ("RSXFS",           "mom"),
+        "Industrial Production":  ("INDPRO",          "mom"),
+        "Employment Change":      ("PAYEMS",          "diff"),
+        "M2 Money Supply":        ("M2SL",            "yoy"),
+        "Wage Growth":            ("CES0500000003",   "yoy"),
+        "Trade Balance":          ("BOPGSTB",         "latest"),
+    }
+    result: dict[str, list[float]] = {}
+    for ind, (sid, mode) in FRED_HIST.items():
+        try:
+            limit = 28 if mode == "yoy" else 18
+            r = requests.get(
+                FRED_BASE,
+                params={"series_id": sid, "api_key": api_key,
+                        "sort_order": "desc", "limit": limit, "file_type": "json"},
+                timeout=8,
+            )
+            if r.status_code != 200:
+                continue
+            obs = [o for o in r.json().get("observations", []) if o.get("value", ".") != "."]
+            if len(obs) < 2:
+                continue
+            obs.reverse()  # oldest first
+
+            if mode == "latest":
+                vals = [float(o["value"]) for o in obs]
+            elif mode == "mom":
+                vals = []
+                for i in range(1, len(obs)):
+                    c = float(obs[i]["value"]); p = float(obs[i - 1]["value"])
+                    vals.append(round((c - p) / max(abs(p), 0.001) * 100, 3))
+            elif mode == "diff":
+                vals = []
+                for i in range(1, len(obs)):
+                    vals.append(round(float(obs[i]["value"]) - float(obs[i - 1]["value"]), 1))
+            elif mode == "yoy":
+                if len(obs) < 13:
+                    continue
+                vals = []
+                for i in range(12, len(obs)):
+                    c = float(obs[i]["value"]); y = float(obs[i - 12]["value"])
+                    vals.append(round((c - y) / max(abs(y), 0.001) * 100, 3))
+            else:
+                continue
+            result[ind] = vals[-14:]
+        except Exception:
+            continue
+    return result
+
+
+@st.cache_data(ttl=TTL_HISTORY, show_spinner=False)
+def fetch_ecb_history() -> dict[str, list[float]]:
+    """
+    Fetch 12-month history for EUR from ECB Data Portal.
+    Returns {indicator_name: [oldest, ..., newest]}
+    """
+    start = (datetime.today() - timedelta(days=450)).strftime("%Y-%m")
+    result: dict[str, list[float]] = {}
+
+    ECB_HIST_SERIES = {
+        "CPI m/m":      "https://data-api.ecb.europa.eu/service/data/ICP/M.U2.N.000000.4.GPC?format=csvdata",
+        "Interest Rate": ECB_RATE_URL,
+    }
+    for ind_name, url in ECB_HIST_SERIES.items():
+        try:
+            sep = "&" if "?" in url else "?"
+            full_url = url + f"{sep}startPeriod={start}"
+            r = requests.get(full_url, timeout=10, headers={"Accept": "text/csv,*/*"})
+            if r.status_code != 200:
+                continue
+            lines = [l for l in r.text.splitlines() if l.strip()]
+            header_idx = next(
+                (i for i, l in enumerate(lines) if "TIME_PERIOD" in l.upper()), None
+            )
+            if header_idx is None:
+                continue
+            headers = [h.strip().upper() for h in lines[header_idx].split(",")]
+            try:
+                time_col  = headers.index("TIME_PERIOD")
+                value_col = headers.index("OBS_VALUE")
+            except ValueError:
+                continue
+            pairs: list[tuple[str, float]] = []
+            for line in lines[header_idx + 1:]:
+                parts = line.split(",")
+                if len(parts) <= max(time_col, value_col):
+                    continue
+                try:
+                    pairs.append((parts[time_col].strip(), float(parts[value_col].strip())))
+                except (ValueError, IndexError):
+                    continue
+            pairs.sort(key=lambda x: x[0])  # oldest first
+            if pairs:
+                result[ind_name] = [v for _, v in pairs[-14:]]
+        except Exception:
+            continue
+    return result
+
+
+@st.cache_data(ttl=TTL_HISTORY, show_spinner=False)
+def fetch_oecd_history(country_code: str) -> dict[str, list[float]]:
+    """
+    Fetch 12-month history from OECD SDMX API.
+    country_code: GBR, JPN, AUS, CAN, CHE, NZL
+    Returns {indicator_name: [val_oldest, ..., val_newest]} (up to 14 values)
+    Falls back to empty dict on any failure.
+    """
+    OECD_MAP = {
+        "CPI m/m":               "CPALTT01.GP.M",
+        "Core CPI":              "CPGRLE01.GP.M",
+        "Unemployment Rate":     "LRUNTTTT.ST.M",
+        "Industrial Production": "PRINTO01.GP.M",
+        "Retail Sales":          "SLRTTO01.GP.M",
+        "Interest Rate":         "IR3TIB01.ST.M",
+    }
+    start = (datetime.today() - timedelta(days=450)).strftime("%Y-%m")
+    result: dict[str, list[float]] = {}
+    for ind_name, series_key in OECD_MAP.items():
         try:
             url = (
-                "https://news.google.com/rss/search?q="
-                + urllib.parse.quote_plus(query)
-                + "&hl=en-US&gl=US&ceid=US:en"
+                f"https://sdmx.oecd.org/public/rest/data/OECD,DF_MEI,1.0/"
+                f"{country_code}.{series_key}"
+                f"?format=csvdata&startPeriod={start}"
             )
-            feed = feedparser.parse(url)
-            texts = []
-            for entry in (feed.entries or [])[:8]:
-                parts = [
-                    getattr(entry, "title",   ""),
-                    getattr(entry, "summary", ""),
-                ]
-                texts.append(" ".join(parts))
-            return texts
-        except Exception:
-            return []
-
-    def _score_texts(texts: list[str]) -> float:
-        if not texts:
-            return 0.0
-        total = 0.0
-        for txt in texts:
-            t = txt.lower()
-            for kw, w in _NEWS_BULL_KW:
-                if kw in t:
-                    total += w
-            for kw, w in _NEWS_BEAR_KW:
-                if kw in t:
-                    total += w  # w is already negative
-        # Normalise to per-article average then clamp
-        return max(-3.0, min(3.0, total / len(texts)))
-
-    scores: dict[str, float] = {}
-    for ccy, query in _NEWS_QUERIES.items():
-        snippets = _fetch(query)
-        scores[ccy] = round(_score_texts(snippets), 3)
-
-    # NOTE: Geopolitical overlay removed — geo context is reserved for Module 4.
-
-    return scores
-
-
-@st.cache_data(ttl=TTL_FUNDAMENTAL, show_spinner=False)
-def fetch_fundamental_scores() -> dict[str, float]:
-    """
-    Layer 2 — Structural fundamental analysis score for all 8 currencies.
-
-    Combines three sub-components:
-      A) Interest rate differential vs G8 average  (objective, always available)
-      B) Safe-haven structural premium  (CHF/JPY/USD regime-based adjustment)
-      C) Web-searched medium-term CB-stance / macro outlook (Google News RSS)
-      D) Geopolitical / energy-price overlay (shared with Layer 3 geo query)
-
-    Returns {currency: score ∈ [-3.0, +3.0]}.  Silent 0.0 fallback on errors.
-    """
-    import urllib.parse
-
-    # A — Rate differential: how far above/below the G8 average rate is this ccy
-    avg_rate = sum(_BASE_RATES.values()) / len(_BASE_RATES)
-    scores: dict[str, float] = {}
-    for ccy, rate in _BASE_RATES.items():
-        # ±1.0 per 2 % deviation from average, capped ±2.0
-        scores[ccy] = round(max(-2.0, min(2.0, (rate - avg_rate) / 2.0)), 3)
-
-    # NOTE: Safe-haven premium removed — geo/safe-haven context reserved for Module 4.
-
-    if not _FEEDPARSER:
-        return {c: round(max(-3.0, min(3.0, scores.get(c, 0.0))), 3)
-                for c in SUPPORTED_CURRENCIES}
-
-    def _fetch(query: str) -> list[str]:
-        try:
-            url = (
-                "https://news.google.com/rss/search?q="
-                + urllib.parse.quote_plus(query)
-                + "&hl=en-US&gl=US&ceid=US:en"
+            r = requests.get(url, timeout=12, headers={"Accept": "text/csv,*/*"})
+            if r.status_code != 200:
+                continue
+            lines = [l for l in r.text.splitlines() if l.strip()]
+            header_idx = next(
+                (i for i, l in enumerate(lines) if "TIME_PERIOD" in l.upper()), None
             )
-            feed = feedparser.parse(url)
-            texts = []
-            for entry in (feed.entries or [])[:8]:
-                texts.append(
-                    getattr(entry, "title", "") + " " + getattr(entry, "summary", "")
-                )
-            return texts
+            if header_idx is None:
+                continue
+            headers = [h.strip().upper() for h in lines[header_idx].split(",")]
+            try:
+                time_col  = headers.index("TIME_PERIOD")
+                value_col = headers.index("OBS_VALUE")
+            except ValueError:
+                continue
+            pairs: list[tuple[str, float]] = []
+            for line in lines[header_idx + 1:]:
+                parts = line.split(",")
+                if len(parts) <= max(time_col, value_col):
+                    continue
+                try:
+                    pairs.append((parts[time_col].strip(), float(parts[value_col].strip())))
+                except (ValueError, IndexError):
+                    continue
+            pairs.sort(key=lambda x: x[0])  # oldest first
+            if pairs:
+                result[ind_name] = [v for _, v in pairs[-14:]]
         except Exception:
-            return []
+            continue
+    return result
 
-    def _score_texts(texts: list[str]) -> float:
-        if not texts:
-            return 0.0
-        total = 0.0
-        for txt in texts:
-            t = txt.lower()
-            for kw, w in _FUND_BULL_KW:
-                if kw in t:
-                    total += w
-            for kw, w in _FUND_BEAR_KW:
-                if kw in t:
-                    total += w  # already negative
-        return max(-2.0, min(2.0, total / len(texts)))
 
-    # C — Medium-term fundamental outlook per currency
-    for ccy, query in _FUNDAMENTAL_QUERIES.items():
-        web_score = _score_texts(_fetch(query))
-        scores[ccy] = scores.get(ccy, 0.0) + web_score
-
-    # NOTE: Geopolitical overlay removed — geo context is reserved for Module 4.
-
-    return {
-        c: round(max(-3.0, min(3.0, scores.get(c, 0.0))), 3)
-        for c in SUPPORTED_CURRENCIES
+@st.cache_data(ttl=TTL_HISTORY, show_spinner=False)
+def fetch_currency_history(currency: str, fred_api_key: str) -> dict[str, list[float]]:
+    """
+    Get 12-month indicator history for a currency.
+    Priority: live API → HISTORY_FALLBACK supplement.
+    Returns {indicator_name: [oldest, ..., newest]} (12-14 values each).
+    """
+    OECD_COUNTRY = {
+        "GBP": "GBR", "JPY": "JPN", "AUD": "AUS",
+        "CAD": "CAN", "CHF": "CHE", "NZD": "NZL",
     }
 
+    live: dict[str, list[float]] = {}
+    if currency == "USD":
+        live = fetch_fred_history(fred_api_key)
+    elif currency == "EUR":
+        live = fetch_ecb_history()
+    elif currency in OECD_COUNTRY:
+        live = fetch_oecd_history(OECD_COUNTRY[currency])
+
+    fallback = HISTORY_FALLBACK.get(currency, {})
+    result: dict[str, list[float]] = {}
+    all_indicators = set(list(live.keys()) + list(fallback.keys()))
+    for ind in all_indicators:
+        if ind in live and len(live[ind]) >= 3:
+            result[ind] = live[ind]
+        elif ind in fallback:
+            result[ind] = fallback[ind]
+    return result
+
+
+# ╔══════════════════════════════════════════════════════════════════════════════
+# ║  NEW 12-MONTH BIAS ENGINE
+# ╚══════════════════════════════════════════════════════════════════════════════
+
+def _score_indicator_series(values: list[float], indicator: str) -> float:
+    """
+    Score a single indicator's 12-month history → [-1, +1].
+    60% trend (is it improving over time?) + 40% level (is current value good within own range?)
+    """
+    if len(values) < 3:
+        return 0.0
+
+    direction = _IND_DIRECTION.get(indicator, "high")
+    n = len(values)
+
+    # Trend: compare first third vs last third
+    third = max(2, n // 3)
+    early_avg  = sum(values[:third]) / third
+    recent_avg = sum(values[-third:]) / third
+
+    if direction == "target":
+        monthly_target = 2.0 / 12  # ≈ 0.167% monthly ≈ 2% annual
+        dist_early     = abs(early_avg  - monthly_target)
+        dist_recent    = abs(recent_avg - monthly_target)
+        norm_factor    = max(abs(monthly_target), 0.1)
+        trend_raw      = (dist_early - dist_recent) / norm_factor
+    elif direction == "high":
+        if abs(early_avg) > 1e-6:
+            trend_raw = (recent_avg - early_avg) / abs(early_avg)
+        else:
+            trend_raw = (recent_avg - early_avg)
+    else:  # "low"
+        if abs(early_avg) > 1e-6:
+            trend_raw = -(recent_avg - early_avg) / abs(early_avg)
+        else:
+            trend_raw = -(recent_avg - early_avg)
+
+    trend_score = max(-1.0, min(1.0, trend_raw * 3.0))
+
+    # Level: where is current value in own 12M range?
+    v_min, v_max = min(values), max(values)
+    current = values[-1]
+
+    if direction == "target":
+        monthly_target = 2.0 / 12
+        dist_curr = abs(current - monthly_target)
+        max_dist  = max(abs(v - monthly_target) for v in values) if values else 1.0
+        if max_dist > 1e-6:
+            level_score = 1.0 - 2.0 * (dist_curr / max_dist)
+        else:
+            level_score = 1.0
+    elif v_max > v_min:
+        pct         = (current - v_min) / (v_max - v_min)  # 0=worst, 1=best
+        level_raw   = (pct - 0.5) * 2.0                    # [-1, +1]
+        level_score = level_raw if direction == "high" else -level_raw
+    else:
+        level_score = 0.0
+
+    level_score = max(-1.0, min(1.0, level_score))
+    return round(0.6 * trend_score + 0.4 * level_score, 4)
+
+
+def calc_currency_bias(currency: str, history: dict[str, list[float]]) -> dict:
+    """
+    Calculate currency economic bias purely from 12-month indicator histories.
+    No cross-currency comparison. No news. No hardcoded CB priors.
+
+    Returns:
+      score           : float [-3, +3]
+      label           : str
+      label_color     : str
+      indicator_scores: {indicator: score [-1, +1]}
+      monthly_scores  : list[float] — rolling monthly composite (for chart)
+      n_indicators    : int
+    """
+    indicator_scores: dict[str, float] = {}
+    for ind, values in history.items():
+        if len(values) >= 3 and ind in _IND_DIRECTION:
+            indicator_scores[ind] = _score_indicator_series(values, ind)
+
+    # Weighted average → scale to [-3, +3]
+    total_w = sum(_IND_WEIGHTS.get(ind, 0.5) for ind in indicator_scores)
+    if total_w > 0:
+        raw   = sum(indicator_scores[ind] * _IND_WEIGHTS.get(ind, 0.5)
+                    for ind in indicator_scores) / total_w
+        final = round(max(-3.0, min(3.0, raw * 3.0)), 3)
+    else:
+        final = 0.0
+
+    # Monthly rolling composite (12 points for the timeline chart)
+    n_months = max((len(v) for v in history.values()), default=0)
+    monthly_scores: list[float] = []
+    for m in range(1, n_months + 1):
+        m_total, m_w = 0.0, 0.0
+        for ind, values in history.items():
+            sub = values[:m]
+            if len(sub) >= 3 and ind in _IND_DIRECTION:
+                s  = _score_indicator_series(sub, ind)
+                w  = _IND_WEIGHTS.get(ind, 0.5)
+                m_total += s * w
+                m_w     += w
+        if m_w > 0:
+            monthly_scores.append(round(max(-3.0, min(3.0, (m_total / m_w) * 3.0)), 3))
+        else:
+            monthly_scores.append(0.0)
+
+    # Label
+    if   final >= 1.5:  label, lc = "STRONG BULLISH", C["green"]
+    elif final >= 0.5:  label, lc = "SLIGHT BULLISH", C["teal"]
+    elif final >= -0.5: label, lc = "NEUTRAL",         C["muted"]
+    elif final >= -1.5: label, lc = "SLIGHT BEARISH",  C["yellow"]
+    else:               label, lc = "STRONG BEARISH",  C["red"]
+
+    return {
+        "score":             final,
+        "label":             label,
+        "label_color":       lc,
+        "indicator_scores":  indicator_scores,
+        "monthly_scores":    monthly_scores,
+        "n_indicators":      len(indicator_scores),
+    }
 
 
 
@@ -1329,14 +1422,9 @@ def build_indicators_table(
 
 
 
-def calc_bias_score(indicators_df: pd.DataFrame, currency: str) -> dict:
+def _calc_bias_score_legacy(indicators_df: pd.DataFrame, currency: str) -> dict:
     """
-    4-dimensional FX bias scoring engine.
-    D1 Absolute Level    (15%) — currency-specific neutral zones, equal-weighted avg
-    D2 Forecast Quality  (10%) — consensus expectation: absolute + directional, equal-weighted
-    D3 Beat/Miss         (40%) — actual vs forecast, impact-weighted (High=5x Med=2x Low=0.5x)
-    D4 Trend/Momentum    (35%) — actual vs previous, impact-weighted
-    Final = (D1×0.15 + D2×0.10 + D3×0.40 + D4×0.35) × 1.4  clamped: -1.0 to +1.0
+    Legacy scoring helper — kept for render_all_currencies_overview fallback path only.
     """
     def _f(v):
         try: return None if v is None else float(v)
@@ -1790,66 +1878,19 @@ def _d4_trend(ind: str, actual, previous) -> tuple[str, str]:
 # ║  HTML RENDER FUNCTIONS
 # ╚══════════════════════════════════════════════════════════════════════════════
 
-def render_bias_panel(currency: str, bias: dict, source_label: str) -> str:
-    score   = bias["total"]
-    level   = bias["level"]
-    lc      = bias["level_color"]
-    scores  = bias.get("scores", [])
-    flag    = CURRENCY_FLAG.get(currency, "")
-    sign    = "+" if score > 0 else ""
-    # Gauge: ±3.0 range → 0–100%
-    pct     = max(3.0, min(97.0, (score + 3.0) / 6.0 * 100))
-    is_live = "Static" not in source_label
-
-    # Per-indicator contribution tags
-    tags = ""
-    for item in scores:
-        s     = item["weighted"]
-        color = item["color"]
-        bg    = item.get("bg", C["dim"])
-        tip   = item.get("dims", "")
-        tags += (
-            f"<span title='{tip}' style='background:{bg};color:{color};font-size:9px;"
-            f"font-family:monospace;font-weight:700;padding:2px 8px;"
-            f"border-radius:10px;border:1px solid {color}33;"
-            f"white-space:nowrap;cursor:help;'>{item['label']} {s:+.2f}</span>"
-        )
-
-    _cm2 = C["muted"]
-    tags_html = (
-        f"<details style='margin-top:4px;'>"
-        f"<summary style='font-size:9px;color:{_cm2};font-family:monospace;"
-        f"cursor:pointer;list-style:none;'>Show indicator breakdown ▼</summary>"
-        f"<div style='display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;'>{tags}</div>"
-        f"</details>"
-    )
-
-    _d_chip_data = [
-        ("D1", bias.get("dim1", 0.0), "Current values vs benchmarks"),
-        ("D2", bias.get("dim2", 0.0), "Beat/Miss + trend momentum"),
-        ("D3", bias.get("dim3", 0.0), "CB action pricing"),
-        ("D4", bias.get("dim4", 0.0), "Rate differential & macro structure"),
-    ]
-    dim_grid = (
-        f"<div style='display:grid;grid-template-columns:repeat(4,1fr);"
-        f"gap:6px;margin-bottom:10px;'>"
-    )
-    for dlbl, dval, dtip in _d_chip_data:
-        dc  = C["green"] if dval > 0.1 else C["red"] if dval < -0.1 else C["muted"]
-        dbg = "rgba(0,196,140,0.08)" if dval > 0.1 else "rgba(240,82,98,0.08)" if dval < -0.1 else C["dim"]
-        dim_grid += (
-            f"<div title='{dtip}' style='background:{dbg};border:1px solid {dc}33;"
-            f"border-radius:8px;padding:6px 8px;text-align:center;cursor:help;'>"
-            f"<div style='font-size:8px;color:{C['muted']};font-family:monospace;"
-            f"letter-spacing:0.8px;margin-bottom:3px;'>{dlbl}</div>"
-            f"<div style='font-size:16px;font-weight:800;color:{dc};"
-            f"font-family:monospace;line-height:1;'>{dval:+.2f}</div>"
-            f"</div>"
-        )
-    dim_grid += "</div>"
+def render_bias_panel(currency: str, bias_result: dict) -> str:
+    """Render the simplified bias gauge panel (no D1-D4 grid)."""
+    score  = bias_result.get("score", 0.0)
+    label  = bias_result.get("label", "NEUTRAL")
+    lc     = bias_result.get("label_color", C["muted"])
+    n_ind  = bias_result.get("n_indicators", 0)
+    flag   = CURRENCY_FLAG.get(currency, "")
+    sign   = "+" if score > 0 else ""
+    pct    = max(3.0, min(97.0, (score + 3.0) / 6.0 * 100))
 
     _cb = C["border"]; _cm = C["muted"]; _ct = C["text"]
     _cg = C["green"];  _cr = C["red"];   _cy = C["yellow"]
+
     return f"""
 <div style='background:{C["card"]};border:1px solid {_cb};
             border-radius:12px;padding:18px 20px;margin-bottom:12px;'>
@@ -1859,18 +1900,19 @@ def render_bias_panel(currency: str, bias: dict, source_label: str) -> str:
       <span style='font-size:22px;line-height:1;'>{flag}</span>
       <div>
         <div style='font-size:10px;color:{_cm};font-family:monospace;
-                    letter-spacing:1.5px;text-transform:uppercase;'>Overall Bias</div>
-        <div style='font-size:16px;font-weight:800;color:{lc};
-                    font-family:monospace;letter-spacing:1px;'>{level}</div>
+                    letter-spacing:1.5px;text-transform:uppercase;'>Economic Bias — 12M Trend</div>
+        <div style='font-size:18px;font-weight:800;color:{lc};
+                    font-family:monospace;letter-spacing:1px;'>{label}</div>
       </div>
     </div>
     <div style='text-align:right;'>
-      <div style='font-size:28px;font-weight:800;color:{lc};
+      <div style='font-size:32px;font-weight:800;color:{lc};
                   font-family:monospace;line-height:1;'>{sign}{score:.2f}</div>
-      <div style='margin-top:4px;'>{_source_badge(source_label, is_live)}</div>
+      <div style='font-size:9px;color:{_cm};font-family:monospace;margin-top:4px;'>
+        Based on {n_ind} indicators · 12M trend analysis</div>
     </div>
   </div>
-  <!-- Gauge bar — needle drawn via CSS multi-layer gradient (no position:absolute needed) -->
+  <!-- Gauge bar -->
   <div style='height:10px;border-radius:5px;margin-bottom:4px;
               background:
                 linear-gradient(to right,
@@ -1882,15 +1924,136 @@ def render_bias_panel(currency: str, bias: dict, source_label: str) -> str:
                   #cc1a2a 0%, {_cr} 20%, {_cy} 50%,
                   {_cg} 80%, #00a36c 100%);'></div>
   <div style='display:flex;justify-content:space-between;font-size:9px;
-              font-family:monospace;color:{_cm};margin-bottom:10px;'>
+              font-family:monospace;color:{_cm};'>
     <span>STR. BEARISH</span><span>SLT. BEARISH</span>
-    <span>M. BEARISH</span><span>SLT. BULLISH</span><span>STR. BULLISH</span>
+    <span>NEUTRAL</span><span>SLT. BULLISH</span><span>STR. BULLISH</span>
   </div>
-  <!-- Dimension grid: D1/D2/D3/D4 -->
-  {dim_grid}
-  <!-- Per-indicator contribution tags (collapsible) -->
-  {tags_html}
 </div>"""
+
+
+def render_economic_charts(currency: str, bias_result: dict, history: dict) -> None:
+    """Render two Plotly charts side by side: 12M strength timeline + indicator bar chart."""
+    monthly_scores   = bias_result.get("monthly_scores", [])
+    indicator_scores = bias_result.get("indicator_scores", {})
+    flag = CURRENCY_FLAG.get(currency, "")
+
+    col1, col2 = st.columns([6, 4], gap="medium")
+
+    # ── Chart 1: 12-month economic strength timeline ──────────────────────────
+    with col1:
+        n = len(monthly_scores)
+        today = datetime.today()
+        month_labels = []
+        for i in range(n - 1, -1, -1):
+            d = (today.replace(day=1) - timedelta(days=30 * i))
+            month_labels.append(d.strftime("%b %y"))
+
+        point_colors = [C["green"] if s >= 0 else C["red"] for s in monthly_scores]
+        scores_pos   = [max(0.0, s) for s in monthly_scores]
+        scores_neg   = [min(0.0, s) for s in monthly_scores]
+
+        fig1 = go.Figure()
+        fig1.add_trace(go.Scatter(
+            x=month_labels, y=scores_pos,
+            fill="tozeroy", fillcolor="rgba(0,196,140,0.10)",
+            line=dict(width=0), showlegend=False, mode="none",
+        ))
+        fig1.add_trace(go.Scatter(
+            x=month_labels, y=scores_neg,
+            fill="tozeroy", fillcolor="rgba(240,82,98,0.10)",
+            line=dict(width=0), showlegend=False, mode="none",
+        ))
+        fig1.add_trace(go.Scatter(
+            x=month_labels, y=monthly_scores,
+            mode="lines+markers",
+            line=dict(color=C["teal"], width=2.5),
+            marker=dict(size=7, color=point_colors,
+                        line=dict(width=1.5, color=C["bg"])),
+            showlegend=False,
+        ))
+        fig1.add_hline(y=0, line_dash="dot", line_color=C["muted"], line_width=1)
+        fig1.add_hrect(y0=1.5, y1=3.2, fillcolor="rgba(0,196,140,0.04)", line_width=0)
+        fig1.add_hrect(y0=-3.2, y1=-1.5, fillcolor="rgba(240,82,98,0.04)", line_width=0)
+
+        fig1.update_layout(
+            paper_bgcolor=C["bg"],
+            plot_bgcolor=C["card"],
+            title=dict(
+                text=f"{flag} {currency} — Economic Strength (12M)",
+                font=dict(color=C["text"], size=12, family="monospace"),
+                x=0, pad=dict(l=4),
+            ),
+            yaxis=dict(
+                range=[-3.3, 3.3],
+                gridcolor=C["border"],
+                color=C["muted"],
+                tickvals=[-3, -1.5, 0, 1.5, 3],
+                ticktext=["−3", "−1.5", "0", "+1.5", "+3"],
+                tickfont=dict(size=10, family="monospace"),
+                zeroline=False,
+            ),
+            xaxis=dict(
+                gridcolor=C["border"],
+                color=C["muted"],
+                tickangle=-35,
+                tickfont=dict(size=10, family="monospace"),
+            ),
+            margin=dict(t=44, l=48, r=12, b=44),
+            height=280,
+            font=dict(family="monospace"),
+        )
+        st.plotly_chart(fig1, use_container_width=True, config={"displayModeBar": False})
+
+    # ── Chart 2: Indicator contribution bar chart ─────────────────────────────
+    with col2:
+        if indicator_scores:
+            sorted_inds = sorted(indicator_scores.items(), key=lambda x: x[1])
+            labels = [ind for ind, _ in sorted_inds]
+            scores = [s for _, s in sorted_inds]
+            bar_colors = [
+                C["green"]  if s >  0.25 else
+                C["red"]    if s < -0.25 else
+                C["yellow"]
+                for s in scores
+            ]
+
+            fig2 = go.Figure(go.Bar(
+                x=scores, y=labels,
+                orientation="h",
+                marker=dict(color=bar_colors, line=dict(width=0)),
+                text=[f"{s:+.2f}" for s in scores],
+                textposition="outside",
+                textfont=dict(color=C["muted"], size=9, family="monospace"),
+                cliponaxis=False,
+            ))
+            fig2.add_vline(x=0, line_color=C["muted"], line_width=1)
+
+            fig2.update_layout(
+                paper_bgcolor=C["bg"],
+                plot_bgcolor=C["card"],
+                title=dict(
+                    text="Indicator Scores",
+                    font=dict(color=C["text"], size=12, family="monospace"),
+                    x=0, pad=dict(l=4),
+                ),
+                xaxis=dict(
+                    range=[-1.35, 1.35],
+                    gridcolor=C["border"],
+                    color=C["muted"],
+                    zeroline=False,
+                    tickformat="+.1f",
+                    tickfont=dict(size=10, family="monospace"),
+                ),
+                yaxis=dict(
+                    color=C["text"],
+                    tickfont=dict(size=10, family="monospace"),
+                    gridcolor=C["border"],
+                ),
+                margin=dict(t=44, l=8, r=60, b=20),
+                height=max(280, len(labels) * 26 + 80),
+                font=dict(family="monospace"),
+            )
+            st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
 
 
 def render_indicators_table(
@@ -2117,295 +2280,6 @@ def render_indicators_table(
 
 
 
-# ── Comparable indicators for cross-currency G8 z-score comparison ────────────
-_REL_INDICATORS: dict[str, tuple[str, float]] = {
-    "CPI m/m":              ("high_good", 1.5),
-    "Interest Rate":        ("high_good", 2.0),
-    "GDP Growth":           ("high_good", 1.5),
-    "Unemployment Rate":    ("low_good",  1.5),
-    "Manufacturing PMI":    ("high_good", 1.0),
-    "Services PMI":         ("high_good", 1.0),
-    "Retail Sales":         ("high_good", 1.0),
-    "Wage Growth":          ("high_good", 1.2),
-    "Core CPI":             ("high_good", 1.2),
-    "Industrial Production":("high_good", 0.8),
-    "M2 Money Supply":      ("high_good", 0.5),
-    "Trade Balance":        ("high_good", 0.7),
-}
-# Invert z-score for indicators where lower value = better for FX
-_LOWER_BETTER_REL: frozenset[str] = frozenset({"Unemployment Rate"})
-
-
-def calc_relative_score(
-    all_histories: dict[str, dict[str, list[float]]],
-) -> dict[str, float]:
-    """
-    Cross-currency G8 relative scoring using 6-month historical data.
-
-    For each comparable indicator, compute the G8 average over 6 months,
-    then z-score each currency relative to that average. Currencies with
-    better-than-average data score positive; worse score negative.
-
-    Returns {ccy: score} where score ∈ [-3.0, +3.0].
-    """
-    import math
-
-    MONTH_WEIGHTS = [0.5, 0.7, 0.9, 1.1, 1.3, 1.5]  # recent months weighted more
-
-    ccy_scores: dict[str, list[tuple[float, float]]] = {ccy: [] for ccy in all_histories}
-
-    for ind, (_interp, weight) in _REL_INDICATORS.items():
-        for m_idx in range(6):
-            vals: dict[str, float] = {}
-            for ccy, hist in all_histories.items():
-                if ind in hist and len(hist[ind]) > m_idx:
-                    try:
-                        vals[ccy] = float(hist[ind][m_idx])
-                    except (TypeError, ValueError):
-                        pass
-
-            if len(vals) < 4:   # need at least half of G8 for meaningful comparison
-                continue
-
-            g8_vals  = list(vals.values())
-            g8_mean  = sum(g8_vals) / len(g8_vals)
-            variance = sum((x - g8_mean) ** 2 for x in g8_vals) / len(g8_vals)
-            g8_std   = math.sqrt(variance) if variance > 0 else None
-            if g8_std is None or g8_std < 1e-6:
-                continue  # no variance → skip
-
-            mw = MONTH_WEIGHTS[m_idx]
-            for ccy, v in vals.items():
-                z = (v - g8_mean) / g8_std
-                if ind in _LOWER_BETTER_REL:
-                    z = -z
-                z = max(-3.0, min(3.0, z))
-                ccy_scores[ccy].append((z * weight, weight * mw))
-
-    result: dict[str, float] = {}
-    for ccy, entries in ccy_scores.items():
-        if not entries:
-            result[ccy] = 0.0
-            continue
-        total_w = sum(w for _, w in entries)
-        raw     = sum(s * w for s, w in entries) / total_w if total_w > 0 else 0.0
-        result[ccy] = round(max(-3.0, min(3.0, raw)), 3)
-
-    return result
-
-
-@st.cache_data(ttl=TTL_NEWS_CTX, show_spinner=False)
-def fetch_d3_d4_news() -> dict[str, dict[str, float]]:
-    """
-    Fetch same-day CB policy news (D3 web adjustment) and general fundamental
-    news (D4 adjustment) for all 8 currencies via Google News RSS.
-    Returns {"d3": {ccy: adj ∈ [-1,+1]}, "d4": {ccy: adj ∈ [-1,+1]}}.
-    Falls back to 0.0 per currency silently on any failure.
-    """
-    import urllib.parse
-
-    empty: dict[str, float] = {c: 0.0 for c in SUPPORTED_CURRENCIES}
-    if not _FEEDPARSER:
-        return {"d3": dict(empty), "d4": dict(empty)}
-
-    def _fetch(query: str) -> list[str]:
-        try:
-            url = (
-                "https://news.google.com/rss/search?q="
-                + urllib.parse.quote_plus(query)
-                + "&hl=en-US&gl=US&ceid=US:en"
-            )
-            feed = feedparser.parse(url)
-            return [
-                getattr(e, "title", "") + " " + getattr(e, "summary", "")
-                for e in (feed.entries or [])[:6]
-            ]
-        except Exception:
-            return []
-
-    def _hawk_dove(texts: list[str]) -> float:
-        """Return hawkish/dovish net score ∈ {-1.0, -0.5, 0.0, +0.5, +1.0}."""
-        if not texts:
-            return 0.0
-        hawk = sum(1 for t in texts if any(k in t.lower() for k in _CB_HAWK_KW))
-        dove = sum(1 for t in texts if any(k in t.lower() for k in _CB_DOVE_KW))
-        net  = hawk - dove
-        if net >= 2:   return  1.0
-        if net == 1:   return  0.5
-        if net == -1:  return -0.5
-        if net <= -2:  return -1.0
-        return 0.0
-
-    d3_adj: dict[str, float] = {}
-    d4_adj: dict[str, float] = {}
-    for ccy in SUPPORTED_CURRENCIES:
-        d3_adj[ccy] = _hawk_dove(_fetch(_D3_CB_QUERIES[ccy]))
-        d4_adj[ccy] = _hawk_dove(_fetch(_D4_NEWS_QUERIES[ccy]))
-    return {"d3": d3_adj, "d4": d4_adj}
-
-
-def calc_4d_bias(
-    indicators_df: pd.DataFrame,
-    currency: str,
-    bias_old: dict,
-    d3_score: float,
-    d4_news_adj: float,
-    relative_score: float | None = None,
-) -> dict:
-    """
-    4-Dimensional currency bias score. Each dimension ∈ [-3, +3].
-    D1 (25%): Current indicator values vs fundamental benchmarks
-    D2 (25%): Beat/miss + trend momentum  (reuses calc_bias_score d3/d4 × 3)
-    D3 (25%): Next CB action pricing + today's web adjustment
-    D4 (25%): Structural geo/rate/inflation context + live news adjustment
-    Final = (D1 + D2 + D3 + D4) / 4  ∈ [-3, +3]
-    """
-    def _f(v):
-        try: return None if v is None else float(v)
-        except Exception: return None
-
-    _IMP_W = {"High": 0.8, "Medium": 0.6, "Low": 0.3, "Critical": 1.0}
-
-    # ── D1: Current value vs benchmarks ──────────────────────────────────────
-    def _d1_bench(ind: str, v: float, prev: float | None) -> float:
-        if ind == "Interest Rate":
-            if v > 3.0:  return min( 3.0,  2.0 + (v - 3.0) * 0.67)
-            if v >= 1.0: return (v - 1.0) / 2.0
-            return max(-2.5, -1.5 - (1.0 - v))
-
-        if ind == "CPI m/m":
-            ann = v * 12  # annualise
-            if abs(ann - 2.0) <= 0.5: return  1.0
-            if ann > 3.0:  return max(-2.0, -1.0 - (ann - 3.0) * 0.25)
-            if ann < 1.0:  return max(-2.5, -1.5 - (1.0 - ann))
-            return 0.3
-
-        if ind == "GDP Growth":
-            if v > 2.0:  return min( 2.5, 1.5 + (v - 2.0) * 0.5)
-            if v >= 1.0: return v - 1.0
-            return max(-2.0, -1.0 - (1.0 - v) * 0.5)
-
-        if ind == "Unemployment Rate":
-            if v < 4.0:  return min(2.0, 1.5 + (4.0 - v) * 0.25)
-            if v <= 6.0: return (6.0 - v) / 2.0
-            return max(-2.0, -1.0 - (v - 6.0) * 0.25)
-
-        if ind in ("Manufacturing PMI", "Services PMI"):
-            if v > 52:   return min(2.0, 1.0 + (v - 52) * 0.25)
-            if v >= 48:  return 0.0
-            return max(-2.0, -1.0 - (48 - v) * 0.25)
-
-        if ind in ("Trade Balance", "Current Account"):
-            # Graduated scale with tighter cap — avoids economies being
-            # over-rewarded/penalised for absolute balance size vs GDP
-            if v > 10:   return  1.0
-            if v >  0:   return  0.5
-            if v > -10:  return -0.5
-            return       -1.0
-
-        if ind == "Retail Sales":
-            if v >  0.5: return  1.5
-            if v >  0.0: return  0.5
-            if v >= -0.5: return -0.5
-            return -1.5
-
-        if ind == "PPI":
-            if 1.0 <= v <= 4.0: return  0.5
-            if v < 0:           return -0.5
-            return 0.0
-
-        if ind == "Wage Growth":
-            if v > 4.5:  return  0.0   # potentially inflationary
-            if v >= 3.0: return  1.0
-            if v >= 2.0: return  0.5
-            if v >= 1.0: return  0.0
-            return -0.5
-
-        if ind in ("Consumer Confidence", "Business Confidence"):
-            if v >  5:   return  1.5
-            if v >= 0:   return  0.5
-            if v >= -20: return -0.5
-            return -1.5
-
-        if ind == "Government Debt":
-            if v > 100:  return -1.0
-            if v >  50:  return -0.5 - (v - 50) / 100 * 0.5
-            return 0.0
-
-        if ind in ("Budget Balance", "Building Permits"):
-            if prev is not None:
-                return 0.5 if v > prev else -0.5
-            return 0.0
-
-        if ind == "Core CPI":
-            ann = v * 12
-            if abs(ann - 2.0) <= 0.5: return  1.0
-            if ann > 3.0:  return max(-2.0, -1.0 - (ann - 3.0) * 0.25)
-            if ann < 1.0:  return max(-2.5, -1.5 - (1.0 - ann))
-            return 0.3
-        if ind == "Employment Change":
-            if v > 200:  return  2.0
-            if v > 100:  return  1.0
-            if v > 0:    return  0.5
-            if v > -50:  return -1.0
-            return -2.0
-        if ind == "Industrial Production":
-            if v > 0.5:  return  1.5
-            if v >= 0:   return  0.5
-            if v >= -0.5: return -0.5
-            return -1.5
-        if ind == "M2 Money Supply":
-            if v > 5.0:  return -0.5
-            if v > 2.0:  return  0.5
-            if v > 0.0:  return  0.3
-            return -0.5
-
-        return 0.0
-
-    if relative_score is not None:
-        # Use cross-currency G8 relative score as D1 (already ∈ [-3, +3])
-        d1_raw = relative_score
-    else:
-        d1_num, d1_den = 0.0, 0.0
-        for _, row in indicators_df.iterrows():
-            a = _f(row.get("actual"))
-            p = _f(row.get("previous"))
-            if a is None:
-                continue
-            w = _IMP_W.get(str(row.get("impact", "Medium")), 0.5)
-            d1_num += _d1_bench(row["indicator"], a, p) * w
-            d1_den += w
-        d1_raw = d1_num / d1_den if d1_den else 0.0
-    d1 = round(max(-3.0, min(3.0, d1_raw)), 3)
-
-    # ── D2: Beat/miss + trend (existing d3/d4 aggregates scaled ×3) ──────────
-    d2_raw = (bias_old.get("d3", 0.0) + bias_old.get("d4", 0.0)) / 2.0
-    d2     = round(max(-3.0, min(3.0, d2_raw * 3.0)), 3)
-
-    # ── D3: CB action pricing + today's web adjustment ────────────────────────
-    d3 = round(max(-3.0, min(3.0, d3_score)), 3)
-
-    # ── D4: Structural geopolitical + live news ───────────────────────────────
-    d4 = round(max(-3.0, min(3.0,
-        _D4_STRUCTURAL.get(currency, 0.0) + d4_news_adj)), 3)
-
-    # ── Final: simple average of 4 equal dimensions ───────────────────────────
-    final = round(max(-3.0, min(3.0, (d1 + d2 + d3 + d4) / 4.0)), 3)
-
-    # ── Classification (new 5-level thresholds, scale −3 to +3) ──────────────
-    if   final >= 2.0:  level, lc = "STRONG BULLISH", "#00a36c"
-    elif final >= 0.8:  level, lc = "SLIGHT BULLISH", C["green"]
-    elif final >= 0.0:  level, lc = "MILD BULLISH",   "#4ecb9e"
-    elif final > -0.7:  level, lc = "MILD BEARISH",   C["yellow"]
-    elif final >= -2.0: level, lc = "SLIGHT BEARISH",  "#f08080"
-    else:               level, lc = "STRONG BEARISH",  C["red"]
-
-    return {
-        "total": final, "level": level, "level_color": lc,
-        "dim1": d1, "dim2": d2, "dim3": d3, "dim4": d4,
-    }
-
-
 # NOTE: Pair divergence panel removed from Macro Dashboard.
 # It will be part of Module 4 (Correlation / Geo Scanner).
 
@@ -2414,45 +2288,29 @@ def render_all_currencies_overview(selected_ccy: str) -> str:
     """
     Build the All Currencies Bias panel using cached session_state scores.
     Shows all 8 currencies ranked strongest → weakest with color-coded bias labels.
-    Falls back to static-only scores if session_state not populated.
+    Falls back to HISTORY_FALLBACK scores if session_state not populated.
     """
     rows_data = []
     for ccy in SUPPORTED_CURRENCIES:
         cached = st.session_state.get(f"macro_scores_{ccy}")
-        if cached and cached.get("fmt") == "4d":
+        if cached and cached.get("fmt") == "indicator_12m":
             total = cached["total"]
             level = cached["level"]
         else:
-            static_rows = []
-            for ind in INDICATOR_ORDER:
-                fb = STATIC_INDICATORS.get(ccy, {}).get(ind, {})
-                if fb:
-                    static_rows.append({
-                        "indicator": ind,
-                        "actual":   fb.get("actual"),
-                        "previous": fb.get("previous"),
-                        "forecast": fb.get("forecast"),
-                        "impact":   fb.get("impact", "Low"),
-                    })
-            if static_rows:
-                import pandas as _pd
-                tmp_df = _pd.DataFrame(static_rows)
-                _b = calc_bias_score(tmp_df, ccy)
-                total = _b["total"]
-                level = _b["level"]
-            else:
-                total = 0.0
-                level = "MILD BEARISH"
+            # Fallback: compute from HISTORY_FALLBACK
+            _h = HISTORY_FALLBACK.get(ccy, {})
+            _b = calc_currency_bias(ccy, _h)
+            total = _b["score"]
+            level = _b["label"]
         rows_data.append({"ccy": ccy, "total": total, "level": level})
 
     rows_data.sort(key=lambda x: x["total"], reverse=True)
 
     _LEVEL_COLOR = {
-        "STRONG BULLISH": "#00a36c",
-        "SLIGHT BULLISH": C["green"],
-        "MILD BULLISH":   "#4ecb9e",
-        "MILD BEARISH":   C["yellow"],
-        "SLIGHT BEARISH": "#f08080",
+        "STRONG BULLISH": C["green"],
+        "SLIGHT BULLISH": C["teal"],
+        "NEUTRAL":        C["muted"],
+        "SLIGHT BEARISH": C["yellow"],
         "STRONG BEARISH": C["red"],
     }
 
@@ -2466,9 +2324,10 @@ def render_all_currencies_overview(selected_ccy: str) -> str:
         sign  = "+" if total > 0 else ""
         is_selected = ccy == selected_ccy
         bg    = C["teal_bg"] if is_selected else "transparent"
-        border = f"border-left:3px solid {lc};" if not is_selected else f"border-left:3px solid {C['teal']};"
+        border = (f"border-left:3px solid {C['teal']};" if is_selected
+                  else f"border-left:3px solid {lc};")
 
-        bar_pct = max(2.0, min(98.0, (total + 1.0) / 2.0 * 100))
+        bar_pct   = max(2.0, min(98.0, (total + 3.0) / 6.0 * 100))
         bar_color = lc
 
         rows_html += (
@@ -2499,7 +2358,7 @@ def render_all_currencies_overview(selected_ccy: str) -> str:
         f"<div style='font-size:9px;color:{C['muted']};font-family:monospace;letter-spacing:2px;text-transform:uppercase;'>Currency Bias Ranking</div>"
         f"</div>"
         f"{rows_html}"
-        f"<div style='padding:6px 12px;font-size:9px;color:{C['muted']};font-family:monospace;border-top:1px solid {C['border']};'>Score range: −1.0 to +1.0 · Navigate currencies above to update</div>"
+        f"<div style='padding:6px 12px;font-size:9px;color:{C['muted']};font-family:monospace;border-top:1px solid {C['border']};'>Score range: −3.0 to +3.0 · 12M trend analysis · Navigate above to update</div>"
         f"</div>"
     )
 
@@ -2527,7 +2386,7 @@ def main():
       .stMainBlockContainer {{
           padding-top:3rem !important; padding-bottom:2rem !important;
       }}
-      /* ── Radio → pill tabs (currency selector + news filter) ── */
+      /* ── Radio → pill tabs ── */
       div[data-testid="stRadio"] > label {{ display:none !important; }}
       div[data-testid="stRadio"] > div[role="radiogroup"] {{
           display:flex !important; flex-wrap:wrap !important;
@@ -2551,7 +2410,6 @@ def main():
           display:inline !important; font-family:monospace !important;
           font-size:12px !important; font-weight:600 !important;
       }}
-      /* ── Currency selector + other secondary buttons ── */
       button[kind="secondary"] {{
           background:{C['dim']} !important; color:{C['muted']} !important;
           border:1px solid {C['border']} !important;
@@ -2561,7 +2419,6 @@ def main():
       button[kind="secondary"]:hover {{
           border-color:{C['teal']} !important; color:{C['teal']} !important;
       }}
-      /* Active currency button (type="primary") */
       button[kind="primary"] {{
           background:{C['teal']} !important; color:#0a0c10 !important;
           border:1px solid {C['teal']} !important;
@@ -2571,23 +2428,12 @@ def main():
       button[kind="primary"]:hover {{
           background:{C['teal']} !important; opacity:0.9 !important;
       }}
-      button[kind="secondary"]:hover {{ border-color:{C['teal']} !important; }}
-      button[kind="primary"] {{
-          background:{C['teal']} !important; color:#0a0c10 !important;
-          border:none !important; font-weight:700 !important;
-          font-family:monospace !important;
-      }}
       p, span, label {{ color:{C['text']}; }}
-      /* Spinner text */
       div[data-testid="stSpinner"] p {{ color:{C['muted']} !important;
           font-family:monospace !important; font-size:12px !important; }}
-      /* Equal-height columns — both columns stretch to the taller one */
-      div[data-testid="stHorizontalBlock"] {{
-          align-items: stretch !important;
-      }}
+      div[data-testid="stHorizontalBlock"] {{ align-items: stretch !important; }}
       div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
-          display: flex !important;
-          flex-direction: column !important;
+          display: flex !important; flex-direction: column !important;
       }}
     </style>
     """, unsafe_allow_html=True)
@@ -2598,19 +2444,17 @@ def main():
         st.session_state.mf_currency = "USD"
     if "last_refresh_ts" not in st.session_state:
         st.session_state.last_refresh_ts = _now
-    if "release_refreshed_events" not in st.session_state:
-        st.session_state.release_refreshed_events = set()
 
-    # Auto-rerun every AUTO_RERUN_INTERVAL seconds — clears fast-moving caches
     if _now - st.session_state.last_refresh_ts > AUTO_RERUN_INTERVAL:
-        fetch_news_context_scores.clear()
-        fetch_fundamental_scores.clear()
-        fetch_d3_d4_news.clear()
+        fetch_currency_history.clear()
+        fetch_fred_history.clear()
+        fetch_ecb_history.clear()
+        fetch_oecd_history.clear()
         st.session_state.last_refresh_ts = _now
         st.rerun()
 
     # ── Title row ──────────────────────────────────────────────────────────────
-    col_back, col_title, _ = st.columns([2, 5, 2])
+    col_back, col_title, col_ref = st.columns([2, 5, 2])
     with col_back:
         if st.button("← Back to Hub"):
             st.switch_page("app.py")
@@ -2621,9 +2465,22 @@ def main():
             f"font-family:monospace;letter-spacing:-0.5px;'>ECONOMIC BIAS ENGINE</div>"
             f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
             f"letter-spacing:1px;margin-top:3px;'>"
-            f"Monthly Data · 6M Trend · G8 Relative Scoring · Live</div></div>",
+            f"12M Trend Analysis · Live Official Data · Auto-Refresh</div></div>",
             unsafe_allow_html=True,
         )
+    with col_ref:
+        if st.button("🔄 Refresh", key="manual_refresh", help="Clear all caches and reload data"):
+            fetch_currency_history.clear()
+            fetch_fred_history.clear()
+            fetch_fred_indicators.clear()
+            fetch_ecb_history.clear()
+            fetch_ecb_rate.clear()
+            fetch_ecb_cpi.clear()
+            fetch_boe_rate.clear()
+            fetch_oecd_history.clear()
+            fetch_te_indicators.clear()
+            st.session_state.last_refresh_ts = time.time()
+            st.rerun()
 
     st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
 
@@ -2654,170 +2511,108 @@ def main():
 
     st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
 
-    # ── Data fetch — indicators ───────────────────────────────────────────────
-    # Official API data
-    official: dict = {}
-    with st.spinner("⏳ Fetching official API data…"):
-        if currency == "USD":
-            official = fetch_fred_indicators(FRED_API_KEY)
-        else:
-            # Layer 1: Trading Economics scrape (broadest coverage for all non-USD)
-            official = dict(fetch_te_indicators(currency))
-            # Layer 2: higher-authority sources override TE where available
-            if currency == "EUR":
-                ecb_rate = fetch_ecb_rate()
-                if ecb_rate:
-                    official["Interest Rate"] = ecb_rate
-                ecb_cpi = fetch_ecb_cpi()
-                if ecb_cpi:
-                    official["CPI m/m"] = ecb_cpi
-            elif currency == "GBP":
-                boe_rate = fetch_boe_rate()
-                if boe_rate:
-                    official["Interest Rate"] = boe_rate
+    # ── 1. Fetch 12-month history ─────────────────────────────────────────────
+    with st.spinner("⏳ Loading 12-month data…"):
+        history = fetch_currency_history(currency, FRED_API_KEY)
 
-    indicators_df, ind_source = build_indicators_table(currency, official)
+    # ── 2. Calculate new bias ─────────────────────────────────────────────────
+    bias_result = calc_currency_bias(currency, history)
 
-    bias = calc_bias_score(indicators_df, currency)
-
-    # ── 4-Dimensional bias computation ────────────────────────────────────────
-    with st.spinner("⏳ Fetching CB signals & news…"):
-        _d3d4 = fetch_d3_d4_news()
-
-    # D3 = base CB pricing + same-day web adjustment
-    _d3_score   = _D3_BASE.get(currency, 0.0) + _d3d4["d3"].get(currency, 0.0)
-    _d4_news    = _d3d4["d4"].get(currency, 0.0)
-
-    # ── Compute cross-currency relative scores (G8 comparison) ───────────────
-    if ("rel_scores" not in st.session_state or
-            time.time() - st.session_state.get("rel_scores_ts", 0) > TTL_INDICATORS):
-        _all_hist = {ccy: STATIC_HISTORY.get(ccy, {}) for ccy in SUPPORTED_CURRENCIES}
-        st.session_state["rel_scores"]    = calc_relative_score(_all_hist)
-        st.session_state["rel_scores_ts"] = time.time()
-    _rel_scores = st.session_state.get("rel_scores", {})
-    _rel_score  = _rel_scores.get(currency, None)
-
-    bias4d = calc_4d_bias(indicators_df, currency, bias, _d3_score, _d4_news, relative_score=_rel_score)
-
-    # Export 4D scores to session_state (used by Module 4 + cross-currency divergence)
+    # ── 3. Store in session state ─────────────────────────────────────────────
     st.session_state[f"macro_scores_{currency}"] = {
-        "total":    bias4d["total"],
-        "level":    bias4d["level"],
-        "dim1":     bias4d.get("dim1", 0.0),
-        "dim2":     bias4d.get("dim2", 0.0),
-        "dim3":     bias4d.get("dim3", 0.0),
-        "dim4":     bias4d.get("dim4", 0.0),
+        "total":    bias_result["score"],
+        "level":    bias_result["label"],
         "currency": currency,
-        "fmt":      "4d",
+        "fmt":      "indicator_12m",
     }
 
-    # ── Pre-compute 4D scores for ALL currencies using static data ────────────
-    # This ensures the ranking panel always shows proper 4D scores (incl. rate
-    # differential and CB pricing) — not just raw indicator quality metrics.
-    for _other_ccy in SUPPORTED_CURRENCIES:
-        if f"macro_scores_{_other_ccy}" not in st.session_state:
-            _o_rows = []
-            for _ind in INDICATOR_ORDER:
-                _fb = STATIC_INDICATORS.get(_other_ccy, {}).get(_ind, {})
-                if _fb:
-                    _o_rows.append({
-                        "indicator": _ind,
-                        "actual":    _fb.get("actual"),
-                        "previous":  _fb.get("previous"),
-                        "forecast":  _fb.get("forecast"),
-                        "impact":    _fb.get("impact", "Low"),
-                    })
-            if _o_rows:
-                import pandas as _pd_tmp
-                _o_df   = _pd_tmp.DataFrame(_o_rows)
-                _o_bias = calc_bias_score(_o_df, _other_ccy)
-                _o_d3   = _D3_BASE.get(_other_ccy, 0.0) + _d3d4["d3"].get(_other_ccy, 0.0)
-                _o_d4n  = _d3d4["d4"].get(_other_ccy, 0.0)
-                _o_4d   = calc_4d_bias(_o_df, _other_ccy, _o_bias, _o_d3, _o_d4n, relative_score=_rel_scores.get(_other_ccy))
-                st.session_state[f"macro_scores_{_other_ccy}"] = {
-                    "total":    _o_4d["total"],
-                    "level":    _o_4d["level"],
-                    "dim1":     _o_4d.get("dim1", 0.0),
-                    "dim2":     _o_4d.get("dim2", 0.0),
-                    "dim3":     _o_4d.get("dim3", 0.0),
-                    "dim4":     _o_4d.get("dim4", 0.0),
-                    "currency": _other_ccy,
-                    "fmt":      "4d",
-                }
+    # ── 4. Pre-compute other currencies from HISTORY_FALLBACK ─────────────────
+    for _ccy in SUPPORTED_CURRENCIES:
+        if f"macro_scores_{_ccy}" not in st.session_state:
+            _h = HISTORY_FALLBACK.get(_ccy, {})
+            _b = calc_currency_bias(_ccy, _h)
+            st.session_state[f"macro_scores_{_ccy}"] = {
+                "total":    _b["score"],
+                "level":    _b["label"],
+                "currency": _ccy,
+                "fmt":      "indicator_12m",
+            }
 
-    # Merge indicator breakdown tags for the bias panel (from calc_bias_score)
-    bias4d["scores"] = bias.get("scores", [])
+    # ── 5. Bias gauge panel ───────────────────────────────────────────────────
+    st.markdown(render_bias_panel(currency, bias_result), unsafe_allow_html=True)
+    st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
 
-    # Override display fields in bias dict for render_bias_panel
-    bias = dict(bias)
-    bias["total"]       = bias4d["total"]
-    bias["level"]       = bias4d["level"]
-    bias["level_color"] = bias4d["level_color"]
-    bias["dim1"]        = bias4d.get("dim1", 0.0)
-    bias["dim2"]        = bias4d.get("dim2", 0.0)
-    bias["dim3"]        = bias4d.get("dim3", 0.0)
-    bias["dim4"]        = bias4d.get("dim4", 0.0)
+    # ── 6. Status bar ─────────────────────────────────────────────────────────
+    age_secs = int(_now - st.session_state.last_refresh_ts)
+    age_str  = f"{age_secs // 60}m {age_secs % 60}s ago" if age_secs >= 60 else f"{age_secs}s ago"
+    _live_inds = len([i for i in history if i in _IND_DIRECTION])
+    _fallback_inds = len([i for i in HISTORY_FALLBACK.get(currency, {}) if i in _IND_DIRECTION])
+    _src_note = "Live API" if _live_inds >= _fallback_inds * 0.5 else "Fallback"
+    st.markdown(
+        f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
+        f"margin-bottom:12px;padding-top:2px;'>"
+        f"{CURRENCY_FLAG.get(currency,'')} {currency} &nbsp;·&nbsp; "
+        f"Source: {_src_note} &nbsp;·&nbsp; Last updated: {age_str} &nbsp;·&nbsp; "
+        f"{bias_result['n_indicators']} indicators scored</div>",
+        unsafe_allow_html=True,
+    )
 
-    # ── Bias panel ────────────────────────────────────────────────────────────
-    st.markdown(render_bias_panel(currency, bias, ind_source), unsafe_allow_html=True)
-    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+    # ── 7. Two economic charts ────────────────────────────────────────────────
+    render_economic_charts(currency, bias_result, history)
 
-    # ── Status bar + manual refresh button ────────────────────────────────────
-    age_secs   = int(_now - st.session_state.last_refresh_ts)
-    age_str    = f"{age_secs // 60}m {age_secs % 60}s ago" if age_secs >= 60 else f"{age_secs}s ago"
-    status_parts = [
-        f"{CURRENCY_FLAG.get(currency,'')} {currency}",
-        f"Source: {ind_source}",
-        f"Last updated: {age_str}",
-    ]
+    st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
 
-    col_status, col_btn = st.columns([11, 1])
-    with col_status:
-        st.markdown(
-            f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
-            f"margin-bottom:18px;padding-top:6px;'>"
-            f"{' &nbsp;·&nbsp; '.join(status_parts)}</div>",
-            unsafe_allow_html=True,
-        )
-    with col_btn:
-        if st.button("🔄", key="manual_refresh", help="Clear all caches and reload data"):
-            fetch_fred_indicators.clear()
-            fetch_ecb_rate.clear()
-            fetch_ecb_cpi.clear()
-            fetch_boe_rate.clear()
-            fetch_te_indicators.clear()
-            fetch_fundamental_scores.clear()
-            fetch_news_context_scores.clear()
-            fetch_d3_d4_news.clear()
-            st.session_state.last_refresh_ts = time.time()
-            st.rerun()
-
-    # ── Two-column layout ─────────────────────────────────────────────────────
+    # ── 8. Calendar (left) + All Currencies Ranking (right) ───────────────────
     col_left, col_right = st.columns([3, 2], gap="medium")
 
-    # LEFT — Macro Indicators
     with col_left:
-        st.markdown(_section_header(f"Macro Indicators — {currency}"), unsafe_allow_html=True)
+        # Fetch current snapshot for collapsible table
+        official: dict = {}
+        with st.spinner("⏳ Fetching current snapshot…"):
+            if currency == "USD":
+                official = fetch_fred_indicators(FRED_API_KEY)
+            else:
+                official = dict(fetch_te_indicators(currency))
+                if currency == "EUR":
+                    ecb_rate = fetch_ecb_rate()
+                    if ecb_rate:
+                        official["Interest Rate"] = ecb_rate
+                    ecb_cpi = fetch_ecb_cpi()
+                    if ecb_cpi:
+                        official["CPI m/m"] = ecb_cpi
+                elif currency == "GBP":
+                    boe_rate = fetch_boe_rate()
+                    if boe_rate:
+                        official["Interest Rate"] = boe_rate
+
+        st.markdown(_section_header(f"Economic Calendar — {currency}"), unsafe_allow_html=True)
+        st.markdown(
+            _empty_state("Economic calendar coming soon — check ForexFactory for upcoming releases."),
+            unsafe_allow_html=True,
+        )
+
+    with col_right:
+        st.markdown(_section_header("All Currencies — Bias Ranking"), unsafe_allow_html=True)
+        st.markdown(render_all_currencies_overview(currency), unsafe_allow_html=True)
+
+    # ── 9. Collapsible raw indicator data ─────────────────────────────────────
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+    with st.expander("📊 Raw Indicator Data", expanded=False):
+        indicators_df, ind_source = build_indicators_table(currency, official)
         _cg = C["green"]; _cy = C["yellow"]; _cm2 = C["muted"]
         st.markdown(
             f"<div style='font-size:10px;color:{C['muted']};font-family:monospace;"
             f"margin-bottom:8px;'>"
             f"<span style='color:{_cg};'>●</span> Live/fresh "
             f"&nbsp; <span style='color:{_cy};'>●</span> Stale "
-            f"&nbsp; <span style='color:{_cm2};'>◎</span> Static fallback</div>",
+            f"&nbsp; <span style='color:{_cm2};'>◎</span> Static fallback "
+            f"&nbsp; Source: {ind_source}</div>",
             unsafe_allow_html=True,
         )
         st.markdown(
-            f"<div style='display:flex;flex-direction:column;flex:1;'>"
-            + render_indicators_table(indicators_df, st.session_state.last_refresh_ts, currency)
-            + "</div>",
+            render_indicators_table(indicators_df, st.session_state.last_refresh_ts, currency),
             unsafe_allow_html=True,
         )
-
-    # RIGHT — All Currencies Bias Ranking
-    with col_right:
-        st.markdown(_section_header("All Currencies — Bias Ranking"), unsafe_allow_html=True)
-        st.markdown(render_all_currencies_overview(currency), unsafe_allow_html=True)
 
     # ── Footer ─────────────────────────────────────────────────────────────────
     st.markdown(
