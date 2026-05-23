@@ -386,28 +386,29 @@ _D3_CB_QUERIES: dict[str, str] = {
     "CHF": f"Swiss National Bank SNB next rate decision {_CY}",
     "NZD": f"RBNZ Reserve Bank New Zealand next rate decision hike {_CY}",
 }
-# D4 — Structural geopolitical + rate differential + macro regime (May 2026 baseline)
-# Components: geo safe-haven | rate differential | CPI vs PP | risk-off sentiment
+# D4 — Structural macro baseline: rate differential + CA balance + inflation regime
+# NO geopolitical component — geo context reserved for Module 4.
+# Components: rate position vs G8 peers | CPI regime | current account | GDP trajectory
 _D4_STRUCTURAL: dict[str, float] = {
-    "USD":  0.8,   # +0.3 geo safe-haven, +0.5 rate-diff highest G8, 0.0 CPI active hold
-    "EUR": -0.3,   # 0.0 geo, 0.0 rate-diff, -0.3 CPI was elevated
-    "GBP":  0.3,   # 0.0 geo, +0.3 rate-diff near-high, 0.0 CPI near target
-    "JPY":  0.5,   # +0.5 geo safe-haven, -0.5 rate-diff lowest G8, +0.5 CPI near target
-    "AUD": -0.4,   # -0.2 geo risk, +0.2 rate-diff, -0.4 risk-off commodity sentiment
-    "CAD": -0.2,   # -0.3 geo risk, 0.0 rate-diff, +0.3 CPI near target, -0.2 risk-off
-    "CHF":  1.0,   # +0.8 geo safe-haven, -0.3 rate-diff near-low, +0.5 CPI stable
-    "NZD": -0.8,   # -0.5 geo risk, -0.2 rate-diff, -0.1 risk-off commodity
+    "USD":  0.7,   # highest G8 rate (4.50%), solid GDP +2.8%, CPI slightly above target, CA deficit
+    "GBP":  0.5,   # high rate (4.25%), sticky CPI = prolonged tightening, weak GDP, large CA deficit
+    "AUD":  0.4,   # high rate (4.10%), commodity CA benefit, elevated CPI, moderate growth
+    "CAD":  0.1,   # near-avg rate (2.75%), oil CA surplus, CPI near target
+    "NZD":  0.0,   # moderate rate (3.25%), CA deficit, small open economy, weak growth
+    "EUR": -0.1,   # below-avg rate (2.25%) rising, near-target CPI, moderate growth
+    "CHF": -0.8,   # very low rate (0.25%), excellent CA surplus, very low inflation (1.1%)
+    "JPY": -1.5,   # ultra-low rate (0.50%), far below all G8 peers, YCC constraints
 }
-# D4 live news queries — today's fundamental/CB developments
+# D4 live news queries — rate & macro developments (no geo)
 _D4_NEWS_QUERIES: dict[str, str] = {
-    "USD": "USD dollar forex fundamental news today Federal Reserve hawkish dovish",
-    "EUR": "EUR euro forex fundamental news today ECB hawkish dovish",
-    "GBP": "GBP pound forex fundamental news today Bank of England hawkish dovish",
-    "JPY": "JPY yen forex fundamental news today Bank of Japan hawkish dovish",
-    "AUD": "AUD dollar forex fundamental news today RBA hawkish dovish",
-    "CAD": "CAD dollar forex fundamental news today Bank of Canada hawkish dovish",
-    "CHF": "CHF franc forex fundamental news today SNB hawkish dovish",
-    "NZD": "NZD dollar forex fundamental news today RBNZ hawkish dovish",
+    "USD": "Federal Reserve interest rate inflation GDP economic outlook hawkish dovish",
+    "EUR": "ECB interest rate eurozone inflation GDP economic outlook hawkish dovish",
+    "GBP": "Bank of England interest rate UK inflation GDP economic outlook hawkish dovish",
+    "JPY": "Bank of Japan interest rate Japan inflation GDP economic outlook hawkish dovish",
+    "AUD": "RBA interest rate Australia inflation GDP economic outlook hawkish dovish",
+    "CAD": "Bank of Canada interest rate inflation GDP economic outlook hawkish dovish",
+    "CHF": "SNB interest rate Switzerland inflation GDP economic outlook hawkish dovish",
+    "NZD": "RBNZ interest rate New Zealand inflation GDP economic outlook hawkish dovish",
 }
 # CB hawkish / dovish keyword detection used in D3 + D4 web scans
 _CB_HAWK_KW: tuple[str, ...] = (
@@ -998,22 +999,7 @@ def fetch_news_context_scores() -> dict[str, float]:
         snippets = _fetch(query)
         scores[ccy] = round(_score_texts(snippets), 3)
 
-    # Geopolitical overlay — risk-off / oil-spike events
-    geo_texts = _fetch(_GEO_QUERY)
-    geo_raw = 0.0
-    for txt in geo_texts:
-        t = txt.lower()
-        if any(kw in t for kw in _GEO_BULL_KW):
-            geo_raw += 1.0
-        if any(kw in t for kw in _GEO_BEAR_KW):
-            geo_raw -= 1.0
-    geo_intensity = max(-1.0, min(1.0, geo_raw / max(len(geo_texts), 1)))
-
-    if abs(geo_intensity) > 0.2:
-        for ccy, impact in _GEO_CCY_IMPACT.items():
-            scores[ccy] = round(
-                max(-3.0, min(3.0, scores.get(ccy, 0.0) + geo_intensity * impact)), 3
-            )
+    # NOTE: Geopolitical overlay removed — geo context is reserved for Module 4.
 
     return scores
 
@@ -1040,14 +1026,7 @@ def fetch_fundamental_scores() -> dict[str, float]:
         # ±1.0 per 2 % deviation from average, capped ±2.0
         scores[ccy] = round(max(-2.0, min(2.0, (rate - avg_rate) / 2.0)), 3)
 
-    # B — Safe-haven structural premium (partially offsets low rates for CHF/JPY)
-    _SH_ADJ: dict[str, float] = {
-        "CHF":  1.0,   # strongest safe-haven premium
-        "USD":  0.6,   # world reserve currency, deep liquidity
-        "JPY":  0.3,   # safe-haven, but ultra-low rates drag it down
-    }
-    for ccy, adj in _SH_ADJ.items():
-        scores[ccy] = scores.get(ccy, 0.0) + adj
+    # NOTE: Safe-haven premium removed — geo/safe-haven context reserved for Module 4.
 
     if not _FEEDPARSER:
         return {c: round(max(-3.0, min(3.0, scores.get(c, 0.0))), 3)
@@ -1089,19 +1068,7 @@ def fetch_fundamental_scores() -> dict[str, float]:
         web_score = _score_texts(_fetch(query))
         scores[ccy] = scores.get(ccy, 0.0) + web_score
 
-    # D — Geopolitical overlay (Iran war / oil shock / safe-haven regime)
-    geo_texts = _fetch(_GEO_QUERY)
-    geo_raw = 0.0
-    for txt in geo_texts:
-        t = txt.lower()
-        if any(kw in t for kw in _GEO_BULL_KW):
-            geo_raw += 1.0
-        if any(kw in t for kw in _GEO_BEAR_KW):
-            geo_raw -= 1.0
-    geo_intensity = max(-1.0, min(1.0, geo_raw / max(len(geo_texts), 1)))
-    if abs(geo_intensity) > 0.2:
-        for ccy, impact in _GEO_CCY_IMPACT.items():
-            scores[ccy] = scores.get(ccy, 0.0) + geo_intensity * impact
+    # NOTE: Geopolitical overlay removed — geo context is reserved for Module 4.
 
     return {
         c: round(max(-3.0, min(3.0, scores.get(c, 0.0))), 3)
@@ -2044,7 +2011,7 @@ def render_bias_panel(currency: str, bias: dict, source_label: str) -> str:
         ("D1", bias.get("dim1", 0.0), "Current values vs benchmarks"),
         ("D2", bias.get("dim2", 0.0), "Beat/Miss + trend momentum"),
         ("D3", bias.get("dim3", 0.0), "CB action pricing"),
-        ("D4", bias.get("dim4", 0.0), "Geo/structural context"),
+        ("D4", bias.get("dim4", 0.0), "Rate differential & macro structure"),
     ]
     dim_grid = (
         f"<div style='display:grid;grid-template-columns:repeat(4,1fr);"
@@ -2613,126 +2580,8 @@ def calc_4d_bias(
     }
 
 
-def render_pair_divergence_panel(combined_scores: dict[str, float]) -> str:
-    """
-    Identify all 28 major FX pairs with combined-score divergence → ≥70% confidence.
-    New confidence formula (scores in [-3,+3]): |div| ≥ 1.0 → 70%, every +0.5 → +5%.
-    |div| ≥ 0.8 → ~70%  |div| ≥ 2.0 → ≥95%.
-    Returns an HTML card with German-language directional reasons.
-    """
-    _PAIRS = [
-        "EUR/USD", "USD/JPY", "GBP/USD", "USD/CHF", "AUD/USD", "USD/CAD", "NZD/USD",
-        "EUR/GBP", "EUR/JPY", "EUR/CHF", "EUR/AUD", "EUR/CAD", "EUR/NZD",
-        "GBP/JPY", "GBP/CHF", "GBP/AUD", "GBP/CAD", "GBP/NZD",
-        "AUD/JPY", "CAD/JPY", "CHF/JPY", "NZD/JPY",
-        "AUD/CAD", "AUD/CHF", "AUD/NZD", "CAD/CHF", "NZD/CAD", "NZD/CHF",
-    ]
-    _CCY_DE: dict[str, str] = {
-        "USD": "USD", "EUR": "EUR", "GBP": "GBP", "JPY": "JPY",
-        "AUD": "AUD", "CAD": "CAD", "CHF": "CHF", "NZD": "NZD",
-    }
-
-    def _lbl_de(sc: float) -> str:
-        if sc >  0.60: return "stark bullisch"
-        if sc >  0.30: return "leicht bullisch"
-        if sc >  0.10: return "neutral-positiv"
-        if sc >= -0.10: return "neutral"
-        if sc >= -0.30: return "neutral-negativ"
-        if sc >= -0.60: return "leicht bearisch"
-        return "stark bearisch"
-
-    def _reason_de(base: str, quote: str, div: float,
-                   b_sc: float, q_sc: float) -> str:
-        bn = _CCY_DE[base]; qn = _CCY_DE[quote]
-        bl = _lbl_de(b_sc); ql = _lbl_de(q_sc)
-        if abs(div) > 1.5:
-            return (f"Starkes Gefälle: {bn} {bl} vs. {qn} {ql} — "
-                    f"hohe Divergenzwahrscheinlichkeit in 1–4 Wochen")
-        if b_sc > 0.35 and q_sc < -0.2:
-            return (f"{bn} durch solide Fundamentaldaten und Nachrichtenlage gestützt; "
-                    f"{qn} unter fundamentalem Druck")
-        if b_sc < -0.2 and q_sc > 0.35:
-            return (f"{bn} zeigt Schwäche; {qn} profitiert von "
-                    f"positivem Datenmix und Risikobereitschaft")
-        if div > 0:
-            return (f"Fundamentales Übergewicht für {bn} ({bl}) "
-                    f"gegenüber {qn} ({ql})")
-        return (f"Übergewicht für {qn} ({ql}) drückt {base}/{quote} nach unten")
-
-    high_conf: list[dict] = []
-    for pair in _PAIRS:
-        base, quote = pair.split("/")
-        b_sc = combined_scores.get(base, 0.0)
-        q_sc = combined_scores.get(quote, 0.0)
-        div  = b_sc - q_sc
-        if abs(div) < 1.0:
-            continue
-        # |div| 1.0→70%, 1.5→75%, 2.0→80%, 2.5→85%, 3.0→90%+
-        conf = min(95, int(60 + abs(div) * 10))
-        if conf < 70:
-            continue
-        direction = "↑ LONG"  if div > 0 else "↓ SHORT"
-        d_color   = C["green"] if div > 0 else C["red"]
-        high_conf.append({
-            "pair": pair, "div": div, "conf": conf,
-            "direction": direction, "color": d_color,
-            "reason": _reason_de(base, quote, div, b_sc, q_sc),
-            "b_sc": b_sc, "q_sc": q_sc,
-        })
-
-    high_conf.sort(key=lambda x: -x["conf"])
-
-    _cm = C["muted"]; _cb = C["border"]; _card = C["card"]
-    header = (
-        f"<div style='display:flex;justify-content:space-between;"
-        f"align-items:center;margin-bottom:12px;'>"
-        f"<div style='font-size:10px;color:{_cm};font-family:monospace;"
-        f"letter-spacing:1.5px;text-transform:uppercase;'>"
-        f"Währungspaare · Divergenz-Konfidenz ≥ 70%</div>"
-        f"<div style='font-size:9px;color:{_cm};font-family:monospace;'>"
-        f"{len(high_conf)} Paare gefunden · Horizont 1–4 Wochen</div>"
-        f"</div>"
-    )
-
-    if not high_conf:
-        body = (
-            f"<div style='font-size:11px;color:{_cm};font-family:monospace;"
-            f"padding:4px 0;'>"
-            f"Keine Paare mit ≥70% Konfidenz — geringe fundamentale Divergenz.</div>"
-        )
-    else:
-        rows = ""
-        for r in high_conf:
-            bar_w = int((r["conf"] - 50) / 45 * 100)
-            rows += (
-                f"<div style='display:grid;"
-                f"grid-template-columns:90px 80px 56px 1fr;"
-                f"gap:8px;align-items:center;padding:8px 0;"
-                f"border-bottom:1px solid {_cb};'>"
-                f"<div style='font-size:13px;font-weight:800;color:{r['color']};"
-                f"font-family:monospace;'>{r['pair']}</div>"
-                f"<div style='font-size:11px;font-weight:700;color:{r['color']};"
-                f"font-family:monospace;'>{r['direction']}</div>"
-                f"<div>"
-                f"<div style='font-size:14px;font-weight:800;color:{r['color']};"
-                f"font-family:monospace;line-height:1;'>{r['conf']}%</div>"
-                f"<div style='height:3px;border-radius:2px;margin-top:3px;"
-                f"background:{_cb};'>"
-                f"<div style='height:3px;border-radius:2px;width:{bar_w}%;"
-                f"background:{r['color']};'></div></div>"
-                f"</div>"
-                f"<div style='font-size:10px;color:{_cm};"
-                f"font-family:monospace;line-height:1.4;'>{r['reason']}</div>"
-                f"</div>"
-            )
-        body = rows
-
-    return (
-        f"<div style='background:{_card};border:1px solid {_cb};"
-        f"border-radius:12px;padding:16px 20px;margin-top:4px;'>"
-        f"{header}{body}"
-        f"</div>"
-    )
+# NOTE: Pair divergence panel removed from Macro Dashboard.
+# It will be part of Module 4 (Correlation / Geo Scanner).
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════
@@ -2994,41 +2843,12 @@ def main():
     bias["dim3"]        = bias4d.get("dim3", 0.0)
     bias["dim4"]        = bias4d.get("dim4", 0.0)
 
-    # Build cross-currency 4D scores for pair divergence
-    # For currencies not yet selected: use D3+D4 (always fresh) + cached D1/D2 proxy
-    _all_combined: dict[str, float] = {}
-    for _c in SUPPORTED_CURRENCIES:
-        if _c == currency:
-            _all_combined[_c] = bias4d["total"]
-        else:
-            _cached = st.session_state.get(f"macro_scores_{_c}", {})
-            _c_d3   = _D3_BASE.get(_c, 0.0) + _d3d4["d3"].get(_c, 0.0)
-            _c_d4   = _D4_STRUCTURAL.get(_c, 0.0) + _d3d4["d4"].get(_c, 0.0)
-            if _cached.get("fmt") == "4d":
-                # Full 4D cached from a previous selection — use as-is
-                _all_combined[_c] = round(
-                    max(-3.0, min(3.0, float(_cached["total"]))), 3)
-            else:
-                # Not yet computed with 4D — estimate from D3+D4 only
-                _all_combined[_c] = round(
-                    max(-3.0, min(3.0, (_c_d3 + _c_d4) / 2.0)), 3)
-
     # ── Data fetch — news ─────────────────────────────────────────────────────
     with st.spinner("⏳ Fetching news…"):
         all_news, news_errors = fetch_news(currency)
 
     # ── Bias panel ────────────────────────────────────────────────────────────
     st.markdown(render_bias_panel(currency, bias, ind_source), unsafe_allow_html=True)
-    _ct_div = C["teal"]
-    st.markdown(
-        f"<div style='height:16px;'></div>"
-        f"<div style='height:1px;background:{_ct_div};opacity:0.25;"
-        f"margin-bottom:16px;'></div>",
-        unsafe_allow_html=True,
-    )
-
-    # ── Pair divergence panel ─────────────────────────────────────────────────
-    st.markdown(render_pair_divergence_panel(_all_combined), unsafe_allow_html=True)
     st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
 
     # ── Status bar + manual refresh button ────────────────────────────────────
