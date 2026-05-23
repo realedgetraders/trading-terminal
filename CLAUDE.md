@@ -130,10 +130,8 @@ a 4-Dimensional bias engine into a single dashboard.
 1. Title row: "← Back to Hub" left | "Macro Fundamentals Dashboard" centered | refresh controls right
 2. Currency selector: 8-button radio row (pill style, teal = selected)
 3. Bias panel: overall bias gauge (±3.0 scale) + D1/D2/D3/D4 grid + collapsible indicator breakdown
-4. Teal divider (1px, 25% opacity)
-5. Two-column layout: indicators table (left) | calendar + news (right)
-6. Pair divergence panel: 28 FX pairs, ≥70% confidence, German-language reasons
-7. Footer: "Built by @realedgetraders"
+4. Two-column layout: indicators table (left) | calendar + news (right)
+5. Footer: "Built by @realedgetraders"
 
 ### Data Sources
 - Live: FRED API (FRED_API_KEY set in file, line ~33) for USD indicators
@@ -178,10 +176,11 @@ D3 (25%) — Next CB action pricing + same-day web news adjustment
                                CAD=0.0, GBP=-0.3, CHF=-0.5, NZD=-1.0)
            Web adjustment ∈ {-1.0,-0.5,0.0,+0.5,+1.0} via hawk/dove keyword scan
 
-D4 (25%) — Structural geo/rate context + live news adjustment
+D4 (25%) — Rate differential + macro structure + live news adjustment (NO geo)
            = _D4_STRUCTURAL[ccy] + fetch_d3_d4_news()["d4"][ccy]
-           _D4_STRUCTURAL: USD=+0.8, CHF=+1.0, JPY=+0.5, GBP=+0.3,
-                           CAD=-0.2, EUR=-0.3, AUD=-0.4, NZD=-0.8
+           _D4_STRUCTURAL: USD=+0.7, GBP=+0.5, AUD=+0.4, CAD=+0.1,
+                           NZD=0.0, EUR=-0.1, CHF=-0.8, JPY=-1.5
+           Geo constants (_GEO_QUERY, _GEO_CCY_IMPACT etc.) kept in file — reserved for Module 4
 
 Final = (D1+D2+D3+D4) / 4  clamped [-3,+3]
 ```
@@ -193,11 +192,6 @@ Level thresholds: ≥2.0=STRONG BULLISH, ≥0.8=SLIGHT BULLISH, ≥-0.7=NEUTRAL,
 @st.cache_data(ttl=600). Fetches Google News RSS for D3 (CB queries) + D4 (fundamental queries).
 _hawk_dove() counts hawk/dove keywords across up to 6 articles per currency.
 net score: ≥+2→+1.0, +1→+0.5, 0→0.0, -1→-0.5, ≤-2→-1.0.
-
-### Pair Divergence Panel — `render_pair_divergence_panel()` (line ~2612)
-All 28 major FX pairs. Filter: |div| ≥ 1.0. Confidence: min(95, int(60 + |div|×10)).
-70% confidence floor means |div| must be ≥ 1.0 to appear.
-German-language reasons. Cross-currency scores: if fmt=="4d" use cached total, else (D3+D4)/2.
 
 ### Bias Panel UI — `render_bias_panel()` (line ~2005)
 - Gauge: ±3.0 → 0–100% via (score+3.0)/6.0×100. Pure CSS multi-layer gradient (no position:absolute).
@@ -227,6 +221,9 @@ Shows: "⚠ Calendar unavailable — all sources blocked" (no raw HTTP codes)
 - _D3_BASE, _D4_STRUCTURAL, _D3_CB_QUERIES, _D4_NEWS_QUERIES
 - _CB_HAWK_KW, _CB_DOVE_KW — keyword tuples for hawk/dove detection
 - FRED_API_KEY — hardcoded, enables live USD data from FRED
+- _CY / _NY — current year / next year (computed at import time, used in f-string queries)
+- BOE_RATE_URL — FY/TY computed dynamically from datetime.today().year (rolling 2-year window)
+- _GEO_QUERY, _GEO_CCY_IMPACT, _GEO_BULL_KW, _GEO_BEAR_KW — geo constants retained, reserved for Module 4
 
 ## Hub (app.py)
 - Dark navy landing page
