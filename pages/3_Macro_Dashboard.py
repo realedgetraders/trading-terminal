@@ -77,18 +77,6 @@ CURRENCY_FLAG = {
     "USD": "🇺🇸", "EUR": "🇪🇺", "GBP": "🇬🇧", "JPY": "🇯🇵",
     "AUD": "🇦🇺", "CAD": "🇨🇦", "CHF": "🇨🇭", "NZD": "🇳🇿",
 }
-CURRENCY_KEYWORDS: dict[str, list[str]] = {
-    "USD": ["dollar", "fed", "federal reserve", "usd", "powell", "fomc"],
-    "EUR": ["euro", "ecb", "eur", "lagarde", "eurozone", "european central bank"],
-    "GBP": ["pound", "boe", "gbp", "sterling", "bank of england", "bailey"],
-    "JPY": ["yen", "boj", "jpy", "japan", "ueda", "bank of japan"],
-    "AUD": ["aussie", "rba", "aud", "australia", "reserve bank of australia"],
-    "CAD": ["loonie", "boc", "cad", "canada", "bank of canada", "macklem"],
-    "CHF": ["franc", "snb", "chf", "switzerland", "swiss national bank"],
-    "NZD": ["kiwi", "rbnz", "nzd", "new zealand", "reserve bank of new zealand"],
-}
-# All keywords lowercased for case-insensitive matching against lowercased haystack
-
 # ── Indicator normalisation (longest-key-first) ───────────────────────────────
 _RAW_IND_MAP: dict[str, str] = {
     "consumer price index":   "CPI y/y",
@@ -157,28 +145,6 @@ INDICATOR_ORDER = [
     # Extended — table only
     "Budget Balance", "Building Permits", "Business Confidence",
 ]
-
-# ── News RSS feeds  (Reuters/DailyFX removed — 403 blocked) ─────────────────
-RSS_FEEDS = [
-    ("FXStreet",   "https://www.fxstreet.com/rss/news"),
-    ("ForexLive",  "https://www.forexlive.com/feed/news"),
-    ("CNBC",       "https://search.cnbc.com/rs/search/combinedcms/view.xml"
-                   "?partnerId=wrss01&id=100003114"),
-    ("Bloomberg",  "https://feeds.bloomberg.com/markets/news.rss"),
-    ("MarketWatch","https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines"),
-    ("Investing",  "https://www.investing.com/rss/news.rss"),
-]
-NEWS_SOURCE_NAMES = ["All"] + [s for s, _ in RSS_FEEDS]
-
-# Shared headers for every RSS request — reduces 403 rejections
-_RSS_HEADERS = {
-    "User-Agent":      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                       "AppleWebKit/537.36 (KHTML, like Gecko) "
-                       "Chrome/124.0.0.0 Safari/537.36",
-    "Accept":          "application/rss+xml, application/xml, text/xml, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer":         "https://www.google.com/",
-}
 
 # ── FRED API config ───────────────────────────────────────────────────────────
 FRED_BASE   = "https://api.stlouisfed.org/fred/series/observations"
@@ -1737,97 +1703,6 @@ def calc_bias_score(indicators_df: pd.DataFrame, currency: str) -> dict:
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════
-# ║  NEWS FETCH  (feedparser primary, xml fallback)
-# ╚══════════════════════════════════════════════════════════════════════════════
-
-@st.cache_data(ttl=TTL_NEWS, show_spinner=False)
-def fetch_news(currency: str) -> tuple[list[dict], dict[str, str]]:
-    """
-    Fetch and keyword-filter RSS news for the selected currency.
-    Returns (items, source_errors).
-      items:        list of {title, source, url, published} — up to 40, newest-first
-      source_errors: {source_name: error_msg} — populated for every failed source,
-                    regardless of whether other sources succeeded.
-    """
-    import email.utils as _eu
-    keywords = [k.lower() for k in CURRENCY_KEYWORDS.get(currency, [])]
-    items:         list[dict]       = []
-    source_errors: dict[str, str]   = {}
-
-    for source_name, url in RSS_FEEDS:
-        source_items: list[dict] = []
-        try:
-            r = requests.get(url, timeout=12, headers=_RSS_HEADERS)
-            if r.status_code != 200:
-                source_errors[source_name] = f"HTTP {r.status_code}"
-                continue
-            content = r.content
-
-            if _FEEDPARSER:
-                feed    = feedparser.parse(content)
-                entries = feed.entries[:60]
-                for entry in entries:
-                    title = getattr(entry, "title",   "") or ""
-                    desc  = (getattr(entry, "summary", "") or
-                             getattr(entry, "description", "") or "")
-                    link  = getattr(entry, "link",    "") or ""
-                    pt    = getattr(entry, "published_parsed", None)
-                    published: datetime | None = None
-                    if pt:
-                        try:
-                            published = datetime(*pt[:6], tzinfo=timezone.utc)
-                        except Exception:
-                            pass
-                    if any(kw in (title + " " + desc).lower() for kw in keywords):
-                        source_items.append({
-                            "title": title.strip(), "source": source_name,
-                            "url":   link.strip(),  "published": published,
-                        })
-            else:
-                ns_atom  = "{http://www.w3.org/2005/Atom}"
-                root     = ET.fromstring(content)
-                entries2 = root.findall(".//item") or root.findall(f".//{ns_atom}entry")
-                for entry in entries2:
-                    def _g(tag: str) -> str:
-                        el = entry.find(tag) or entry.find(f"{ns_atom}{tag}")
-                        return (el.text or "").strip() if el is not None else ""
-                    title   = _g("title")
-                    desc    = _g("description") or _g("summary")
-                    link_el = entry.find("link") or entry.find(f"{ns_atom}link")
-                    link    = ((link_el.text or link_el.get("href", ""))
-                               if link_el is not None else "")
-                    pub_str = _g("pubDate") or _g("published") or _g("updated")
-                    published = None
-                    try:
-                        published = _eu.parsedate_to_datetime(pub_str)
-                    except Exception:
-                        try:
-                            published = pd.to_datetime(pub_str, utc=True).to_pydatetime()
-                        except Exception:
-                            pass
-                    if any(kw in (title + " " + desc).lower() for kw in keywords):
-                        source_items.append({
-                            "title": title, "source": source_name,
-                            "url":   link.strip(), "published": published,
-                        })
-
-            items.extend(source_items)
-
-        except requests.exceptions.ConnectionError:
-            source_errors[source_name] = "connection refused"
-        except requests.exceptions.Timeout:
-            source_errors[source_name] = "timeout"
-        except Exception as e:
-            source_errors[source_name] = type(e).__name__
-
-    items.sort(
-        key=lambda x: x["published"] or datetime.min.replace(tzinfo=timezone.utc),
-        reverse=True,
-    )
-    return items[:40], source_errors
-
-
-# ╔══════════════════════════════════════════════════════════════════════════════
 # ║  4-DIMENSIONAL INDICATOR ASSESSMENT HELPERS  (used in table rendering)
 # ╚══════════════════════════════════════════════════════════════════════════════
 
@@ -2345,62 +2220,6 @@ def render_calendar_table(calendar_df: pd.DataFrame) -> str:
     )
 
 
-def render_news_feed(news_items: list[dict], source_errors: dict[str, str]) -> str:
-    if not news_items and not source_errors:
-        return _empty_state("⚠ No news loaded — check network connection")
-    if not news_items:
-        errs = " &nbsp;·&nbsp; ".join(f"{s}: {e}" for s, e in source_errors.items())
-        return _empty_state(f"⚠ No matching news found &nbsp; <span style='opacity:0.6;font-size:10px;'>{errs}</span>")
-
-    cards = ""
-    for item in news_items:
-        time_str = _time_ago(item.get("published"))
-        title    = item.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
-        url      = item.get("url", "#")
-        source   = item.get("source", "")
-
-        cards += (
-            f"<div style='padding:11px 14px;border-bottom:1px solid {C['border']};'>"
-            f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:5px;'>"
-            f"<span style='background:{C['dim']};color:{C['teal']};font-size:9px;"
-            f"font-family:monospace;font-weight:700;letter-spacing:1px;"
-            f"padding:2px 7px;border-radius:4px;text-transform:uppercase;'>{source}</span>"
-            f"<span style='font-size:10px;color:{C['muted']};font-family:monospace;'>"
-            f"{time_str}</span>"
-            f"</div>"
-            f"<a href='{url}' target='_blank' rel='noopener'"
-            f"   style='color:{C['text']};text-decoration:none;font-size:12px;"
-            f"          line-height:1.5;font-family:sans-serif;'>{title}</a>"
-            f"</div>"
-        )
-
-    # Per-source error indicators
-    err_banner = ""
-    if source_errors:
-        err_parts = " &nbsp;·&nbsp; ".join(
-            f"⚠ {src} — could not load ({msg})"
-            for src, msg in source_errors.items()
-        )
-        _cb = C["border"]; _cm = C["muted"]; _cd = C["dim"]
-        err_banner = (
-            f"<div style='padding:6px 14px;border-top:1px solid {_cb};"
-            f"font-size:9px;color:{_cm};font-family:monospace;"
-            f"background:{_cd};'>{err_parts}</div>"
-        )
-
-    upgrade_note = (
-        f"<div style='padding:8px 14px;border-top:1px solid {C['border']};"
-        f"text-align:right;font-size:9px;color:{C['muted']};font-family:monospace;'>"
-        f"Upgrade for Bloomberg / Reuters live feed</div>"
-    )
-    return (
-        f"<div style='background:{C['card']};border:1px solid {C['border']};"
-        f"border-radius:10px;overflow:hidden;'>"
-        f"<div style='max-height:420px;overflow-y:auto;'>{cards}</div>"
-        f"{err_banner}{upgrade_note}</div>"
-    )
-
-
 @st.cache_data(ttl=TTL_NEWS_CTX, show_spinner=False)
 def fetch_d3_d4_news() -> dict[str, dict[str, float]]:
     """
@@ -2676,8 +2495,6 @@ def main():
     _now = time.time()
     if "mf_currency" not in st.session_state:
         st.session_state.mf_currency = "USD"
-    if "mf_news_source" not in st.session_state:
-        st.session_state.mf_news_source = "All"
     if "last_refresh_ts" not in st.session_state:
         st.session_state.last_refresh_ts = _now
     if "release_refreshed_events" not in st.session_state:
@@ -2686,7 +2503,6 @@ def main():
     # Auto-rerun every AUTO_RERUN_INTERVAL seconds — clears fast-moving caches
     if _now - st.session_state.last_refresh_ts > AUTO_RERUN_INTERVAL:
         fetch_ff_calendar.clear()
-        fetch_news.clear()
         fetch_news_context_scores.clear()
         fetch_fundamental_scores.clear()
         fetch_d3_d4_news.clear()
@@ -2843,10 +2659,6 @@ def main():
     bias["dim3"]        = bias4d.get("dim3", 0.0)
     bias["dim4"]        = bias4d.get("dim4", 0.0)
 
-    # ── Data fetch — news ─────────────────────────────────────────────────────
-    with st.spinner("⏳ Fetching news…"):
-        all_news, news_errors = fetch_news(currency)
-
     # ── Bias panel ────────────────────────────────────────────────────────────
     st.markdown(render_bias_panel(currency, bias, ind_source), unsafe_allow_html=True)
     st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
@@ -2882,7 +2694,6 @@ def main():
             fetch_ecb_cpi.clear()
             fetch_boe_rate.clear()
             fetch_te_indicators.clear()
-            fetch_news.clear()
             fetch_fundamental_scores.clear()
             fetch_news_context_scores.clear()
             fetch_d3_d4_news.clear()
@@ -2926,27 +2737,6 @@ def main():
                 unsafe_allow_html=True,
             )
         st.markdown(render_calendar_table(calendar_df), unsafe_allow_html=True)
-
-        st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
-
-        # News
-        st.markdown(_section_header(f"News Feed — {currency}"), unsafe_allow_html=True)
-
-        source_filter = st.radio(
-            "News Source",
-            options=NEWS_SOURCE_NAMES,
-            horizontal=True,
-            key="mf_news_source",
-            label_visibility="collapsed",
-        )
-
-        st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
-
-        filtered_news = (
-            all_news if source_filter == "All"
-            else [n for n in all_news if n["source"] == source_filter]
-        )
-        st.markdown(render_news_feed(filtered_news, news_errors), unsafe_allow_html=True)
 
     # ── Footer ─────────────────────────────────────────────────────────────────
     st.markdown(

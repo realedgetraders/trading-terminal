@@ -1,13 +1,15 @@
 """
 Trading Analytics Terminal — Module 4: Geopolitical Intelligence
-Currency-filtered geo news — no economic data, no trade signals
-Sources: Google News · Reuters · BBC · Al Jazeera
+Geo events + financial news per currency
+Sources (geo): Google News · Reuters · BBC · Al Jazeera
+Sources (financial): FXStreet · ForexLive · CNBC · Bloomberg · MarketWatch · Investing
 """
 
 import time
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timezone
 
+import requests
 import streamlit as st
 
 try:
@@ -249,6 +251,40 @@ _CCY_RELEVANCE: dict[str, list[str]] = {
 
 TTL_CCY    = 300   # 5-min — per-currency Google News cache
 TTL_GLOBAL = 600   # 10-min — direct RSS feed cache
+TTL_FIN    = 300   # 5-min — financial RSS feed cache
+
+# ── Financial news RSS feeds (moved from Module 3) ────────────────────────────
+_FIN_FEEDS: list[tuple[str, str]] = [
+    ("FXStreet",    "https://www.fxstreet.com/rss/news"),
+    ("ForexLive",   "https://www.forexlive.com/feed/news"),
+    ("CNBC",        "https://search.cnbc.com/rs/search/combinedcms/view.xml"
+                    "?partnerId=wrss01&id=100003114"),
+    ("Bloomberg",   "https://feeds.bloomberg.com/markets/news.rss"),
+    ("MarketWatch", "https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines"),
+    ("Investing",   "https://www.investing.com/rss/news.rss"),
+]
+_FIN_SOURCE_NAMES: list[str] = ["All"] + [s for s, _ in _FIN_FEEDS]
+
+_FIN_HEADERS: dict[str, str] = {
+    "User-Agent":      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                       "Chrome/124.0.0.0 Safari/537.36",
+    "Accept":          "application/rss+xml, application/xml, text/xml, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer":         "https://www.google.com/",
+}
+
+# Currency keyword filter for financial news (same as Module 3)
+_CCY_FIN_KW: dict[str, list[str]] = {
+    "USD": ["dollar", "fed", "federal reserve", "usd", "powell", "fomc"],
+    "EUR": ["euro", "ecb", "eur", "lagarde", "eurozone", "european central bank"],
+    "GBP": ["pound", "boe", "gbp", "sterling", "bank of england", "bailey"],
+    "JPY": ["yen", "boj", "jpy", "japan", "ueda", "bank of japan"],
+    "AUD": ["aussie", "rba", "aud", "australia", "reserve bank of australia"],
+    "CAD": ["loonie", "boc", "cad", "canada", "bank of canada", "macklem"],
+    "CHF": ["franc", "snb", "chf", "switzerland", "swiss national bank"],
+    "NZD": ["kiwi", "rbnz", "nzd", "new zealand", "reserve bank of new zealand"],
+}
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════
@@ -368,6 +404,95 @@ def fetch_global_news() -> list[dict]:
             continue
 
     return articles[:14]
+
+
+@st.cache_data(ttl=TTL_FIN, show_spinner=False)
+def fetch_financial_news(ccy: str) -> tuple[list[dict], dict[str, str]]:
+    """
+    Fetch financial RSS news for the selected currency.
+    Sources: FXStreet, ForexLive, CNBC, Bloomberg, MarketWatch, Investing.
+    Returns (items, source_errors) — items sorted newest-first, max 40.
+    """
+    import email.utils as _eu
+    import xml.etree.ElementTree as ET
+
+    keywords      = [k.lower() for k in _CCY_FIN_KW.get(ccy, [])]
+    items:         list[dict]     = []
+    source_errors: dict[str, str] = {}
+
+    for source_name, url in _FIN_FEEDS:
+        try:
+            r = requests.get(url, timeout=12, headers=_FIN_HEADERS)
+            if r.status_code != 200:
+                source_errors[source_name] = f"HTTP {r.status_code}"
+                continue
+            content = r.content
+
+            if _FEEDPARSER:
+                feed = feedparser.parse(content)
+                for entry in (feed.entries or [])[:60]:
+                    title = getattr(entry, "title",   "") or ""
+                    desc  = (getattr(entry, "summary", "") or
+                             getattr(entry, "description", "") or "")
+                    link  = getattr(entry, "link",    "") or ""
+                    pt    = getattr(entry, "published_parsed", None)
+                    pub: datetime | None = None
+                    if pt:
+                        try:
+                            pub = datetime(*pt[:6], tzinfo=timezone.utc)
+                        except Exception:
+                            pass
+                    if any(kw in (title + " " + desc).lower() for kw in keywords):
+                        items.append({"title": title.strip(), "source": source_name,
+                                      "url": link.strip(), "published": pub})
+            else:
+                ns   = "{http://www.w3.org/2005/Atom}"
+                root = ET.fromstring(content)
+                for entry in (root.findall(".//item") or root.findall(f".//{ns}entry")):
+                    def _g(tag: str) -> str:
+                        el = entry.find(tag) or entry.find(f"{ns}{tag}")
+                        return (el.text or "").strip() if el is not None else ""
+                    title   = _g("title")
+                    desc    = _g("description") or _g("summary")
+                    le      = entry.find("link") or entry.find(f"{ns}link")
+                    link    = ((le.text or le.get("href", "")) if le is not None else "")
+                    pub_str = _g("pubDate") or _g("published") or _g("updated")
+                    pub     = None
+                    try:
+                        pub = _eu.parsedate_to_datetime(pub_str)
+                    except Exception:
+                        pass
+                    if any(kw in (title + " " + desc).lower() for kw in keywords):
+                        items.append({"title": title, "source": source_name,
+                                      "url": link.strip(), "published": pub})
+
+        except requests.exceptions.ConnectionError:
+            source_errors[source_name] = "connection refused"
+        except requests.exceptions.Timeout:
+            source_errors[source_name] = "timeout"
+        except Exception as e:
+            source_errors[source_name] = type(e).__name__
+
+    items.sort(
+        key=lambda x: x["published"] or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    return items[:40], source_errors
+
+
+def _time_ago(pub: datetime | None) -> str:
+    if pub is None:
+        return ""
+    try:
+        now  = datetime.now(timezone.utc)
+        diff = (now - pub).total_seconds()
+        if diff < 3600:
+            return f"{int(diff / 60)}m ago"
+        if diff < 86400:
+            return f"{int(diff / 3600)}h ago"
+        return pub.strftime("%b %d")
+    except Exception:
+        return ""
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════
@@ -506,6 +631,81 @@ def render_global_feed(articles: list[dict]) -> str:
     )
 
 
+def render_financial_feed(
+    items: list[dict],
+    source_errors: dict[str, str],
+    ccy: str,
+    source_filter: str = "All",
+) -> str:
+    visible = (
+        items if source_filter == "All"
+        else [n for n in items if n["source"] == source_filter]
+    )
+
+    if not visible and not source_errors:
+        return (
+            f"<div style='background:{C['card']};border:1px solid {C['border']};"
+            f"border-radius:10px;padding:32px;text-align:center;"
+            f"color:{C['muted']};font-family:monospace;font-size:13px;'>"
+            f"No financial news loaded — check network connection</div>"
+        )
+    if not visible:
+        errs = " &nbsp;&middot;&nbsp; ".join(
+            f"{s}: {e}" for s, e in source_errors.items()
+        )
+        return (
+            f"<div style='background:{C['card']};border:1px solid {C['border']};"
+            f"border-radius:10px;padding:32px;text-align:center;"
+            f"color:{C['muted']};font-family:monospace;font-size:13px;'>"
+            f"No {ccy} news matched &nbsp; "
+            f"<span style='opacity:0.6;font-size:10px;'>{errs}</span></div>"
+        )
+
+    cards = ""
+    for item in visible:
+        t_str  = _time_ago(item.get("published"))
+        title  = item.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
+        url    = item.get("url", "#")
+        source = item.get("source", "")
+        cards += (
+            f"<div style='padding:11px 14px;border-bottom:1px solid {C['border']};'>"
+            f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:5px;'>"
+            f"<span style='background:{C['dim']};color:{C['teal']};font-size:9px;"
+            f"font-family:monospace;font-weight:700;letter-spacing:1px;"
+            f"padding:2px 7px;border-radius:4px;text-transform:uppercase;'>{source}</span>"
+            f"<span style='font-size:10px;color:{C['muted']};font-family:monospace;'>"
+            f"{t_str}</span>"
+            f"</div>"
+            f"<a href='{url}' target='_blank' rel='noopener'"
+            f"   style='color:{C['text']};text-decoration:none;font-size:12px;"
+            f"          line-height:1.5;font-family:sans-serif;'>{title}</a>"
+            f"</div>"
+        )
+
+    err_banner = ""
+    if source_errors:
+        err_parts = " &nbsp;&middot;&nbsp; ".join(
+            f"&#9888; {s} — {m}" for s, m in source_errors.items()
+        )
+        err_banner = (
+            f"<div style='padding:6px 14px;border-top:1px solid {C['border']};"
+            f"font-size:9px;color:{C['muted']};font-family:monospace;"
+            f"background:{C['dim']};'>{err_parts}</div>"
+        )
+
+    return (
+        f"<div style='background:{C['card']};border:1px solid {C['border']};"
+        f"border-radius:10px;overflow:hidden;'>"
+        f"<div style='max-height:620px;overflow-y:auto;'>{cards}</div>"
+        f"{err_banner}"
+        f"<div style='padding:8px 14px;border-top:1px solid {C['border']};"
+        f"text-align:right;font-size:9px;color:{C['muted']};font-family:monospace;'>"
+        f"Sources: FXStreet &middot; ForexLive &middot; CNBC &middot; "
+        f"Bloomberg &middot; MarketWatch &middot; Investing.com</div>"
+        f"</div>"
+    )
+
+
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  ENTRY POINT
 # ╚══════════════════════════════════════════════════════════════════════════════
@@ -594,6 +794,7 @@ def main():
     if _now - st.session_state.geo_last_refresh > TTL_CCY:
         fetch_ccy_news.clear()
         fetch_global_news.clear()
+        fetch_financial_news.clear()
         st.session_state.geo_last_refresh = _now
         st.rerun()
 
@@ -628,6 +829,7 @@ def main():
             if st.button("🔄 Refresh", key="geo_refresh"):
                 fetch_ccy_news.clear()
                 fetch_global_news.clear()
+                fetch_financial_news.clear()
                 st.session_state.geo_last_refresh = time.time()
                 st.rerun()
 
@@ -653,7 +855,7 @@ def main():
 
     st.markdown("<div style='margin-bottom:16px;'></div>", unsafe_allow_html=True)
 
-    # ── Data fetch ─────────────────────────────────────────────────────────────
+    # ── Data fetch — geo (always) ──────────────────────────────────────────────
     if not _FEEDPARSER:
         st.warning("feedparser not installed — run: pip install feedparser")
         ccy_articles    = []
@@ -671,10 +873,38 @@ def main():
         st.markdown(render_global_feed(global_articles), unsafe_allow_html=True)
 
     with col_news:
-        st.markdown(
-            render_ccy_feed(ccy_articles, selected_ccy, last_refresh_str),
-            unsafe_allow_html=True,
+        # ── Tab switcher: Geo Events | Financial News ──────────────────────────
+        news_tab = st.radio(
+            "news_tab",
+            ["🌍  Geo Events", "📰  Financial News"],
+            horizontal=True,
+            key="geo_news_tab",
+            label_visibility="collapsed",
         )
+        st.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
+
+        if news_tab.startswith("🌍"):
+            st.markdown(
+                render_ccy_feed(ccy_articles, selected_ccy, last_refresh_str),
+                unsafe_allow_html=True,
+            )
+        else:
+            with st.spinner(f"Fetching financial news for {selected_ccy}..."):
+                fin_items, fin_errors = fetch_financial_news(selected_ccy)
+
+            # Source filter
+            source_filter = st.radio(
+                "fin_source",
+                options=_FIN_SOURCE_NAMES,
+                horizontal=True,
+                key="geo_fin_source",
+                label_visibility="collapsed",
+            )
+            st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+            st.markdown(
+                render_financial_feed(fin_items, fin_errors, selected_ccy, source_filter),
+                unsafe_allow_html=True,
+            )
 
     # ── Footer ─────────────────────────────────────────────────────────────────
     st.markdown(
@@ -683,7 +913,8 @@ def main():
         f"font-size:11px;color:{C['muted']};font-family:monospace;'>"
         f"Built by @realedgetraders"
         f"&nbsp;&nbsp;&middot;&nbsp;&nbsp;"
-        f"Sources: Google News &middot; Reuters &middot; BBC &middot; Al Jazeera"
+        f"Sources: Google News &middot; Reuters &middot; BBC &middot; Al Jazeera "
+        f"&middot; FXStreet &middot; ForexLive &middot; CNBC &middot; Bloomberg"
         f"&nbsp;&nbsp;&middot;&nbsp;&nbsp;"
         f"Auto-refresh every 5 min"
         f"</div>",

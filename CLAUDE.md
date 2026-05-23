@@ -123,23 +123,25 @@ pages/3_Macro_Dashboard.py — DO NOT BREAK THIS FILE
 
 ### Overview
 Currency-filtered macro scanner for 8 major FX currencies (USD EUR GBP JPY AUD CAD CHF NZD).
-Combines static indicator data, live FRED API data, ForexFactory calendar, RSS news, and
+Combines static indicator data, live FRED API data, ForexFactory calendar, and
 a 4-Dimensional bias engine into a single dashboard.
+News feed removed — moved to Module 4 (Geopolitical Dashboard).
 
 ### Layout (top to bottom)
 1. Title row: "← Back to Hub" left | "Macro Fundamentals Dashboard" centered | refresh controls right
 2. Currency selector: 8-button radio row (pill style, teal = selected)
 3. Bias panel: overall bias gauge (±3.0 scale) + D1/D2/D3/D4 grid + collapsible indicator breakdown
-4. Two-column layout: indicators table (left) | calendar + news (right)
+4. Two-column layout: indicators table (left) | calendar only (right)
 5. Footer: "Built by @realedgetraders"
 
 ### Data Sources
 - Live: FRED API (FRED_API_KEY set in file, line ~33) for USD indicators
 - Live: ECB Data Portal for EUR indicators
 - Live: ForexFactory calendar (JSON + XML fallback, Windows NT UA)
-- Live: Google News RSS via feedparser for D3/D4 news signals
+- Live: Google News RSS via feedparser for D3/D4 news signals (internal scoring only, not displayed)
 - Static: hardcoded indicator tables for all 8 currencies (lines ~100–576)
-- Cache TTLs: indicators 1h, calendar 30min, news 5min, D3/D4 news 10min
+- Cache TTLs: indicators 1h, calendar 30min, D3/D4 news 10min
+- Removed: RSS_FEEDS, CURRENCY_KEYWORDS, fetch_news(), render_news_feed() — all moved to Module 4
 
 ### Scoring Architecture — Two-Layer Approach
 
@@ -249,14 +251,18 @@ Economic data (rates, CPI, GDP, payrolls) is explicitly filtered out via keyword
 4. Two-column layout [2:5]:
    - Left: Currency geo profile card (flag, role, sensitivity badge, context bullets, key risks)
             + Global Geo Events panel (Reuters / BBC / Al Jazeera, filtered to geo categories only)
-   - Right: Currency-specific headline feed (Google News RSS, left-border colored cards)
+   - Right: Tab switcher ["🌍 Geo Events" | "📰 Financial News"]
+       - Geo Events: Google News RSS geo-only headlines for selected currency
+       - Financial News: FXStreet/ForexLive/CNBC/Bloomberg/MarketWatch/Investing (moved from Module 3)
+                         with per-source filter radio (All / per-source)
 5. Footer: sources + auto-refresh note
 
 ### Data Sources
-- Primary: Google News RSS via feedparser — 2 geo-specific queries per currency (16 articles max)
-- Secondary: Reuters, BBC World, Al Jazeera direct RSS feeds — global geo events panel
-- All sources: economic noise removed via `_ECON_SKIP_KW`, General category skipped from direct feeds
-- Cache TTLs: per-currency feed=300s, global feed=600s. Auto-rerun on TTL expiry.
+- Geo (primary): Google News RSS via feedparser — 2 geo-specific queries per currency (16 articles max)
+- Geo (secondary): Reuters, BBC World, Al Jazeera direct RSS feeds — global geo events panel
+- Financial: FXStreet, ForexLive, CNBC, Bloomberg, MarketWatch, Investing.com — `requests` + feedparser/XML
+- All geo sources: economic noise removed via `_ECON_SKIP_KW`, General category skipped from direct feeds
+- Cache TTLs: per-currency geo=300s, global geo=600s, financial=300s. Auto-rerun on TTL expiry.
 
 ### Key Functions
 
@@ -282,9 +288,13 @@ Trade War (orange), Energy (purple). Each has keyword list. Default fallback: "G
 ### Key Constants
 - _CCY_GEO_QUERIES: dict[str, list[str]] — 2 geo-only RSS queries per currency
 - _DIRECT_FEEDS: list[(name, url)] — Reuters, BBC, Al Jazeera RSS URLs
+- _FIN_FEEDS: list[(name, url)] — FXStreet, ForexLive, CNBC, Bloomberg, MarketWatch, Investing
+- _FIN_HEADERS: dict — HTTP headers to reduce 403 rejections on financial RSS feeds
+- _CCY_FIN_KW: dict[str, list[str]] — currency keyword filter for financial news (from Module 3)
+- _FIN_SOURCE_NAMES: list[str] — ["All"] + financial source names for tab filter
 - _CATEGORIES: category → {color, keyword list}
-- _ECON_SKIP_KW: list[str] — economic noise filter keywords
-- TTL_CCY=300, TTL_GLOBAL=600 — cache + auto-rerun intervals
+- _ECON_SKIP_KW: list[str] — economic noise filter for geo feeds
+- TTL_CCY=300, TTL_GLOBAL=600, TTL_FIN=300 — cache + auto-rerun intervals
 
 ### Session State Keys
 - `geo_ccy`: selected currency (default "USD")
