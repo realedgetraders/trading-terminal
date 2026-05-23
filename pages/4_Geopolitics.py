@@ -1,6 +1,7 @@
 """
-Trading Analytics Terminal — Module 4: Geopolitical Dashboard
-Live geo-risk tracker — conflicts, sanctions, political crises & FX currency impact
+Trading Analytics Terminal — Module 4: Geopolitical Intelligence
+Currency-filtered geo news — no economic data, no trade signals
+Sources: Google News · Reuters · BBC · Al Jazeera
 """
 
 import time
@@ -34,6 +35,7 @@ C = {
     "yellow":   "#f0b429",
     "orange":   "#f08c29",
     "blue":     "#4f8ef7",
+    "purple":   "#a78bfa",
 }
 
 CURRENCIES    = ["USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"]
@@ -41,82 +43,263 @@ CURRENCY_FLAG = {
     "USD": "🇺🇸", "EUR": "🇪🇺", "GBP": "🇬🇧", "JPY": "🇯🇵",
     "AUD": "🇦🇺", "CAD": "🇨🇦", "CHF": "🇨🇭", "NZD": "🇳🇿",
 }
-
-# ── Google News RSS queries per category ──────────────────────────────────────
-_GEO_QUERIES: dict[str, str] = {
-    "War":       "war military conflict airstrike battle troops invasion when:2d",
-    "Trade War": "trade war tariffs sanctions trade restrictions embargo when:2d",
-    "Political": "political crisis government instability coup election when:2d",
-    "Energy":    "oil energy prices OPEC supply disruption crisis when:2d",
-    "Diplomacy": "ceasefire peace deal diplomatic agreement summit when:2d",
+CURRENCY_NAME = {
+    "USD": "US Dollar",        "EUR": "Euro",
+    "GBP": "British Pound",    "JPY": "Japanese Yen",
+    "AUD": "Australian Dollar","CAD": "Canadian Dollar",
+    "CHF": "Swiss Franc",      "NZD": "New Zealand Dollar",
 }
 
-_CAT_COLOR: dict[str, str] = {
-    "War":       "#f05262",
-    "Trade War": "#f08c29",
-    "Sanctions": "#f0b429",
-    "Political": "#4f8ef7",
-    "Energy":    "#45c4b0",
-    "Diplomacy": "#00c48c",
+# ── Currency geo profile ──────────────────────────────────────────────────────
+_CCY_PROFILE: dict[str, dict] = {
+    "USD": {
+        "role":       "World Reserve Currency",
+        "sensitivity":"SAFE HAVEN",
+        "sens_col":   "#45c4b0",
+        "context": [
+            "Global crises universally drive safe-haven demand for USD.",
+            "US-imposed trade tariffs and sanctions reshape cross-border dollar flows.",
+            "Middle East conflicts affect USD via oil price and petrodollar dynamics.",
+            "Rising US military commitments increase geopolitical risk premium.",
+        ],
+        "key_risks": ["US-China Trade War", "Middle East", "Russia Sanctions", "Taiwan Strait"],
+    },
+    "EUR": {
+        "role":       "European Single Currency",
+        "sensitivity":"GEO-EXPOSED",
+        "sens_col":   "#f0b429",
+        "context": [
+            "Russia-Ukraine war is the dominant geo risk; energy disruptions weigh on EUR.",
+            "European political fragmentation (elections, populism) pressures the bloc.",
+            "NATO commitments and US-EU trade frictions create ongoing headline risk.",
+        ],
+        "key_risks": ["Ukraine War", "Russia-EU Energy", "EU Instability", "NATO"],
+    },
+    "GBP": {
+        "role":       "British Pound",
+        "sensitivity":"MODERATE EXPOSURE",
+        "sens_col":   "#4f8ef7",
+        "context": [
+            "UK NATO commitments and foreign policy decisions create regular headline risk.",
+            "Post-Brexit trade disputes with the EU remain a structural vulnerability.",
+            "Political instability in Westminster amplifies external shocks.",
+        ],
+        "key_risks": ["UK-EU Trade", "NATO", "Political Instability", "Scotland"],
+    },
+    "JPY": {
+        "role":       "Japanese Yen",
+        "sensitivity":"SAFE HAVEN + CARRY",
+        "sens_col":   "#45c4b0",
+        "context": [
+            "North Korean missile tests and China-Taiwan tensions unwind JPY carry trades.",
+            "Japan's US security dependency creates asymmetric geopolitical risk.",
+            "Asia-Pacific escalation drives JPY safe-haven demand.",
+        ],
+        "key_risks": ["North Korea", "Taiwan Strait", "China-Japan", "US-Japan Alliance"],
+    },
+    "AUD": {
+        "role":       "Australian Dollar",
+        "sensitivity":"RISK CORRELATED",
+        "sens_col":   "#f05262",
+        "context": [
+            "China-Australia tensions directly impact exports (iron ore, coal, LNG).",
+            "South China Sea escalation raises risk premium — AUD is a regional proxy.",
+            "AUKUS pact ties AUD sentiment to US-Pacific strategic posture.",
+        ],
+        "key_risks": ["China-Australia Trade", "South China Sea", "Indo-Pacific", "AUKUS"],
+    },
+    "CAD": {
+        "role":       "Canadian Dollar",
+        "sensitivity":"OIL / TRADE LINKED",
+        "sens_col":   "#f08c29",
+        "context": [
+            "Middle East conflicts and OPEC supply shocks move CAD via oil price linkage.",
+            "Canada-US trade disputes (tariffs, USMCA) directly affect the Loonie.",
+            "Energy infrastructure security (pipelines, LNG exports) is a CAD-specific risk.",
+        ],
+        "key_risks": ["OPEC / Middle East", "US-Canada Trade", "Oil Supply Shocks"],
+    },
+    "CHF": {
+        "role":       "Swiss Franc",
+        "sensitivity":"STRONGEST SAFE HAVEN",
+        "sens_col":   "#00c48c",
+        "context": [
+            "Swiss neutrality makes CHF the premier safe-haven — any crisis drives inflows.",
+            "European wars and global financial crises generate the sharpest CHF bids.",
+            "Nuclear or extreme geopolitical scenarios create the strongest CHF demand.",
+        ],
+        "key_risks": ["European War Risk", "Global Crisis", "Nuclear Threats"],
+    },
+    "NZD": {
+        "role":       "New Zealand Dollar",
+        "sensitivity":"MOST RISK-SENSITIVE",
+        "sens_col":   "#f05262",
+        "context": [
+            "NZD is the most risk-sensitive G10 currency — global escalation hits NZD first.",
+            "Pacific Island geopolitics and China's regional influence affect NZD via trade.",
+            "Five Eyes commitments align NZD risk with Western geopolitical stance.",
+        ],
+        "key_risks": ["Pacific Geopolitics", "China Relations", "Five Eyes Alliance"],
+    },
 }
 
-# ── Keyword scoring: positive weight = tension/risk-off ───────────────────────
-_RISK_KW: list[tuple[str, float]] = [
-    ("nuclear threat",        3.0), ("war declared",          3.0),
-    ("military invasion",     3.0), ("nuclear strike",        3.0),
-    ("airstrike",             2.5), ("missile attack",        2.5),
-    ("shoot down",            2.0), ("naval blockade",        2.0),
-    ("military conflict",     2.0), ("conflict escalat",      2.0),
-    ("oil embargo",           2.0), ("oil spike",             2.0),
-    ("military buildup",      1.5), ("energy crisis",         1.5),
-    ("sanctions imposed",     1.5), ("new sanctions",         1.5),
-    ("trade war",             1.5), ("government collapse",   1.5),
-    ("coup",                  1.5), ("terrorist",             1.5),
-    ("political crisis",      1.0), ("hostage",               1.0),
-    ("supply disruption",     1.0), ("oil price surge",       1.5),
-    ("ceasefire",            -2.5), ("peace deal",           -2.5),
-    ("peace agreement",      -2.5), ("sanctions lifted",     -2.0),
-    ("sanctions removed",    -2.0), ("diplomatic breakthrough", -2.0),
-    ("de-escalat",           -1.5), ("peace talks",          -1.5),
-    ("trade deal",           -1.5), ("agreement reached",    -1.0),
-    ("withdraw troops",      -1.5), ("normalized relations", -1.5),
-    ("stability restored",   -1.0), ("oil supply restored",  -1.5),
+# ── Per-currency geo news queries (Google News RSS) ───────────────────────────
+# Strictly geo/political — no monetary policy, no rate/inflation content
+_CCY_GEO_QUERIES: dict[str, list[str]] = {
+    "USD": [
+        "United States military sanctions trade war foreign policy conflict when:3d",
+        "America Pentagon NATO troops war diplomatic crisis when:3d",
+    ],
+    "EUR": [
+        "Ukraine Russia war Europe NATO energy sanctions conflict when:3d",
+        "European political crisis elections populism instability war when:3d",
+    ],
+    "GBP": [
+        "UK Britain military NATO sanctions conflict foreign policy when:3d",
+        "Britain Russia Ukraine war Europe trade tensions when:3d",
+    ],
+    "JPY": [
+        "Japan North Korea missile China Taiwan military Asia-Pacific when:3d",
+        "Japan security US alliance Taiwan Strait conflict geopolitical when:3d",
+    ],
+    "AUD": [
+        "Australia China tensions AUKUS Pacific military conflict when:3d",
+        "South China Sea territorial dispute Indo-Pacific military when:3d",
+    ],
+    "CAD": [
+        "OPEC oil supply disruption Middle East war energy crisis when:3d",
+        "Canada United States trade war tariffs sanctions dispute when:3d",
+    ],
+    "CHF": [
+        "Europe war conflict crisis instability geopolitical safe-haven when:3d",
+        "Middle East war Iran nuclear conflict global crisis when:3d",
+    ],
+    "NZD": [
+        "New Zealand Pacific China military AUKUS geopolitical conflict when:3d",
+        "Pacific Islands geopolitics China Solomon Islands PNG military when:3d",
+    ],
+}
+
+# Verified direct RSS feeds — major international news organisations
+_DIRECT_FEEDS: list[tuple[str, str]] = [
+    ("Reuters",    "https://feeds.reuters.com/reuters/worldNews"),
+    ("BBC World",  "https://feeds.bbci.co.uk/news/world/rss.xml"),
+    ("Al Jazeera", "https://www.aljazeera.com/xml/rss/all.xml"),
 ]
 
-# Currency geo-sensitivity: positive = benefits from tension (safe-haven inflow)
-# Negative = hurt by tension (risk-correlated selling)
-_CCY_GEO: dict[str, float] = {
-    "CHF":  1.5,   # strongest safe-haven
-    "JPY":  1.5,   # strong safe-haven (carry unwind)
-    "USD":  0.8,   # reserve-currency safe-haven bid
-    "CAD":  0.5,   # oil exporter: energy shock offset
-    "EUR": -0.5,   # geopolitically exposed (Ukraine proximity)
-    "GBP": -0.3,   # moderate exposure
-    "AUD": -0.8,   # risk-correlated commodity currency
-    "NZD": -1.0,   # most risk-sensitive G10
+# ── Category detection ────────────────────────────────────────────────────────
+_CATEGORIES: dict[str, dict] = {
+    "Conflict":  {"color": "#f05262", "kw": [
+        "war", "military", "airstrike", "bomb", "attack", "troops", "invasion",
+        "battle", "missile", "drone strike", "killed", "combat", "offensive",
+        "artillery", "navy", "weapons", "armed forces", "siege", "frontline",
+    ]},
+    "Sanctions": {"color": "#f0b429", "kw": [
+        "sanctions", "embargo", "blockade", "asset freeze", "banned",
+        "expelled", "travel ban", "export control", "trade ban",
+    ]},
+    "Political": {"color": "#4f8ef7", "kw": [
+        "coup", "election", "protest", "government collapse", "resign",
+        "instability", "opposition", "parliament dissolved", "crisis",
+        "overthrow", "dictator", "authoritarian", "civil unrest", "martial law",
+    ]},
+    "Diplomatic":{"color": "#00c48c", "kw": [
+        "ceasefire", "peace deal", "summit", "treaty", "agreement",
+        "negotiations", "envoy", "ambassador", "diplomatic talks", "accord",
+    ]},
+    "Trade War":  {"color": "#f08c29", "kw": [
+        "tariffs", "trade war", "trade deal", "import duty", "export ban",
+        "trade restrictions", "trade dispute", "wto", "protectionism",
+    ]},
+    "Energy":    {"color": "#a78bfa", "kw": [
+        "oil", "gas pipeline", "energy supply", "opec", "crude", "petroleum",
+        "lng", "nuclear plant", "energy crisis", "oil embargo",
+    ]},
 }
 
-TTL_GEO = 300  # 5-min cache
+# Articles containing these keywords are economic noise — skip them
+_ECON_SKIP_KW: list[str] = [
+    "interest rate", "rate decision", "rate cut", "rate hike", "monetary policy",
+    "inflation data", "cpi report", "gdp growth", "gdp data", "gdp figures",
+    "employment report", "nonfarm payroll", "jobs report", "retail sales data",
+    "pmi report", "balance sheet", "quantitative easing", "bond yield",
+    "treasury yield", "earnings report", "quarterly earnings", "ipo",
+    "stock split", "dividend", "market rally", "market crash",
+]
+
+# Keywords to confirm an article is relevant to a specific currency
+_CCY_RELEVANCE: dict[str, list[str]] = {
+    "USD": ["united states", "us military", "america", "pentagon", "washington dc",
+            "us sanctions", "us tariffs", "nato", "american troops"],
+    "EUR": ["europe", "ukraine", "russia", "nato", "european union", "brussels",
+            "germany", "france", "poland", "eu sanctions"],
+    "GBP": ["britain", " uk ", "england", "british", "london", "scotland",
+            "northern ireland", "westminster"],
+    "JPY": ["japan", "japanese", "north korea", "tokyo", "taiwan",
+            "asia pacific", "east asia", "china sea"],
+    "AUD": ["australia", "australian", "aukus", "indo-pacific",
+            "south china sea", "canberra"],
+    "CAD": ["canada", "canadian", "ottawa", "opec", "oil supply",
+            "alberta", "us-canada"],
+    "CHF": ["switzerland", "swiss", "safe haven", "geneva",
+            "zurich", "neutral country"],
+    "NZD": ["new zealand", "wellington", "pacific island",
+            "five eyes", "nz "],
+}
+
+TTL_CCY    = 300   # 5-min — per-currency Google News cache
+TTL_GLOBAL = 600   # 10-min — direct RSS feed cache
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  DATA
 # ╚══════════════════════════════════════════════════════════════════════════════
 
-@st.cache_data(ttl=TTL_GEO)
-def fetch_geo_news() -> list[dict]:
+def _classify(title: str) -> tuple[str, str]:
+    """(category, color) from headline keywords. Defaults to General."""
+    t = title.lower()
+    for cat, meta in _CATEGORIES.items():
+        if any(kw in t for kw in meta["kw"]):
+            return cat, meta["color"]
+    return "General", C["muted"]
+
+
+def _is_econ_noise(title: str) -> bool:
+    t = title.lower()
+    return any(kw in t for kw in _ECON_SKIP_KW)
+
+
+def _fmt_time(entry) -> str:
+    pub = getattr(entry, "published_parsed", None)
+    if pub:
+        try:
+            dt   = datetime(*pub[:6])
+            now  = datetime.utcnow()
+            diff = (now - dt).total_seconds()
+            if diff < 3600:
+                return f"{int(diff / 60)}m ago"
+            if diff < 86400:
+                return f"{int(diff / 3600)}h ago"
+            return dt.strftime("%b %d")
+        except Exception:
+            pass
+    raw = getattr(entry, "published", "") or ""
+    return raw[:16] if raw else ""
+
+
+@st.cache_data(ttl=TTL_CCY)
+def fetch_ccy_news(ccy: str) -> list[dict]:
     """
-    Fetch geo-political news per category via Google News RSS.
-    Returns list of article dicts: title, source, url, published, category, score.
-    Falls back to empty list on any failure.
+    Fetch geo-political headlines for one currency via Google News RSS.
+    Two queries per currency, up to 8 articles each. Filters out economic noise.
     """
     if not _FEEDPARSER:
         return []
 
     articles: list[dict] = []
-    seen:     set[str]   = set()
+    seen: set[str] = set()
 
-    for category, query in _GEO_QUERIES.items():
+    for query in _CCY_GEO_QUERIES.get(ccy, []):
         try:
             url = (
                 "https://news.google.com/rss/search?q="
@@ -124,322 +307,202 @@ def fetch_geo_news() -> list[dict]:
                 + "&hl=en-US&gl=US&ceid=US:en"
             )
             feed = feedparser.parse(url)
-            for entry in (feed.entries or [])[:6]:
-                title  = getattr(entry, "title", "") or ""
-                link   = getattr(entry, "link",  "") or ""
-                src    = getattr(entry, "source", None)
-                source = getattr(src, "title", "Reuters") if src else "Reuters"
-
-                pub_tuple = getattr(entry, "published_parsed", None)
-                published = ""
-                if pub_tuple:
-                    try:
-                        published = datetime(*pub_tuple[:6]).strftime("%b %d, %H:%M")
-                    except Exception:
-                        pass
-                if not published:
-                    published = getattr(entry, "published", "") or ""
-
-                key = title[:60].lower().strip()
-                if not key or key in seen:
+            for entry in (feed.entries or [])[:8]:
+                title = getattr(entry, "title", "") or ""
+                key   = title[:60].lower().strip()
+                if not key or key in seen or _is_econ_noise(title):
                     continue
                 seen.add(key)
 
-                text  = title.lower()
-                score = sum(w for kw, w in _RISK_KW if kw in text)
+                src    = getattr(entry, "source", None)
+                source = getattr(src, "title", "Google News") if src else "Google News"
+                cat, cat_col = _classify(title)
 
                 articles.append({
-                    "title":     title,
-                    "source":    source,
-                    "url":       link,
-                    "published": published,
-                    "category":  category,
-                    "score":     score,
+                    "title":   title,
+                    "source":  source,
+                    "url":     getattr(entry, "link", "") or "",
+                    "time":    _fmt_time(entry),
+                    "category":cat,
+                    "cat_col": cat_col,
                 })
         except Exception:
             continue
 
-    articles.sort(key=lambda x: abs(x["score"]), reverse=True)
     return articles
 
 
-def calc_tension_score(articles: list[dict]) -> float:
+@st.cache_data(ttl=TTL_GLOBAL)
+def fetch_global_news() -> list[dict]:
     """
-    Aggregate geo tension score ∈ [-3.0, +3.0].
-    Positive = risk-off / high tension. Negative = calm / risk-on.
+    Fetch top geo headlines from Reuters, BBC, and Al Jazeera RSS feeds.
+    Filters to geo-only articles (skips General + economic noise).
     """
-    if not articles:
-        return 0.0
-    total = sum(a["score"] for a in articles)
-    raw   = (total / len(articles)) * 1.5
-    return round(max(-3.0, min(3.0, raw)), 2)
+    if not _FEEDPARSER:
+        return []
 
+    articles: list[dict] = []
+    seen: set[str] = set()
 
-def calc_ccy_impacts(tension: float) -> dict[str, dict]:
-    """Return per-currency geo impact. Each dict: score, label, color, direction."""
-    out: dict[str, dict] = {}
-    for ccy in CURRENCIES:
-        score = round(max(-3.0, min(3.0, tension * _CCY_GEO[ccy])), 2)
-        if score >= 1.5:
-            label, color = "STRONG BULLISH", C["green"]
-        elif score >= 0.5:
-            label, color = "SLIGHT BULLISH", C["teal"]
-        elif score >= -0.5:
-            label, color = "NEUTRAL",        C["muted"]
-        elif score >= -1.5:
-            label, color = "SLIGHT BEARISH", C["yellow"]
-        else:
-            label, color = "STRONG BEARISH", C["red"]
-        direction = "↑" if score > 0.1 else ("↓" if score < -0.1 else "→")
-        out[ccy] = {"score": score, "label": label, "color": color,
-                    "direction": direction, "geo_factor": _CCY_GEO[ccy]}
-    return out
+    for source_name, feed_url in _DIRECT_FEEDS:
+        try:
+            feed = feedparser.parse(feed_url)
+            for entry in (feed.entries or [])[:20]:
+                title = getattr(entry, "title", "") or ""
+                key   = title[:60].lower().strip()
+                if not key or key in seen or _is_econ_noise(title):
+                    continue
+                cat, cat_col = _classify(title)
+                if cat == "General":
+                    continue  # direct feeds: only keep articles with a geo category
+                seen.add(key)
+                articles.append({
+                    "title":   title,
+                    "source":  source_name,
+                    "url":     getattr(entry, "link", "") or "",
+                    "time":    _fmt_time(entry),
+                    "category":cat,
+                    "cat_col": cat_col,
+                })
+        except Exception:
+            continue
+
+    return articles[:14]
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  RENDER
 # ╚══════════════════════════════════════════════════════════════════════════════
 
-def _tension_meta(score: float) -> tuple[str, str, str]:
-    """Returns (level_label, hex_color, description)."""
-    if score >= 2.0:
-        return ("EXTREME RISK-OFF", C["red"],
-                "Severe global tensions — strong safe-haven demand")
-    if score >= 0.8:
-        return ("RISK-OFF", C["yellow"],
-                "Elevated geopolitical stress — safe-haven bid active")
-    if score >= -0.7:
-        return ("NEUTRAL", C["muted"],
-                "Moderate backdrop — no strong directional geo bias")
-    if score >= -2.0:
-        return ("RISK-ON", C["teal"],
-                "Calm conditions — risk appetite broadly supported")
-    return ("EXTREME RISK-ON", C["green"],
-            "De-escalation / stable conditions — full risk-on")
+def render_ccy_profile(ccy: str) -> str:
+    p = _CCY_PROFILE[ccy]
 
-
-def render_risk_gauge(tension: float) -> str:
-    level, lcolor, desc = _tension_meta(tension)
-    pct       = (tension + 3.0) / 6.0 * 100.0
-    right_pct = 100.0 - pct
-
-    return f"""
-<div style="background:{C['card']};border:1px solid {C['border']};border-radius:12px;
-            padding:22px 28px 20px;margin-bottom:20px;">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;
-              margin-bottom:16px;">
-    <div>
-      <div style="font-size:10px;color:{C['muted']};font-family:monospace;
-                  letter-spacing:2px;text-transform:uppercase;margin-bottom:5px;">
-        Geopolitical Tension Level
-      </div>
-      <div style="font-size:12px;color:{C['muted']};font-family:sans-serif;">
-        {desc}
-      </div>
-    </div>
-    <div style="text-align:right;flex-shrink:0;margin-left:20px;">
-      <div style="font-size:30px;font-weight:800;color:{lcolor};
-                  font-family:monospace;letter-spacing:-1px;line-height:1;">
-        {tension:+.2f}
-      </div>
-      <div style="font-size:9px;color:{C['muted']};font-family:monospace;margin-top:2px;">
-        ± 3.0 scale
-      </div>
-    </div>
-  </div>
-
-  <!-- Gradient bar -->
-  <div style="width:100%;height:12px;border-radius:6px;overflow:hidden;
-              background:linear-gradient(to right,
-                {C['green']} 0%, {C['teal']} 20%,
-                {C['muted']} 42%, {C['muted']} 58%,
-                {C['yellow']} 80%, {C['red']} 100%);
-              margin-bottom:2px;">
-  </div>
-  <!-- Needle: flex spacers -->
-  <div style="display:flex;align-items:stretch;height:10px;margin-bottom:4px;">
-    <div style="flex:{pct:.2f};"></div>
-    <div style="width:2px;background:rgba(255,255,255,0.85);border-radius:1px;
-                margin-top:-6px;height:18px;"></div>
-    <div style="flex:{right_pct:.2f};"></div>
-  </div>
-  <!-- Scale labels -->
-  <div style="display:flex;justify-content:space-between;
-              font-size:9px;font-family:monospace;letter-spacing:0.5px;">
-    <span style="color:{C['green']};">RISK-ON  &minus;3.0</span>
-    <span style="color:{C['muted']};">NEUTRAL  0.0</span>
-    <span style="color:{C['red']};">+3.0  RISK-OFF</span>
-  </div>
-  <!-- Status badge -->
-  <div style="margin-top:14px;text-align:center;">
-    <span style="background:{lcolor};color:{C['bg']};font-family:monospace;
-                 font-size:11px;font-weight:700;letter-spacing:2px;
-                 padding:5px 22px;border-radius:20px;">
-      {level}
-    </span>
-  </div>
-</div>
-"""
-
-
-def render_event_cards(articles: list[dict]) -> str:
-    if not articles:
-        return (
-            f"<div style='background:{C['card']};border:1px solid {C['border']};"
-            f"border-radius:12px;padding:32px;text-align:center;"
-            f"color:{C['muted']};font-family:monospace;font-size:13px;'>"
-            f"No geo events loaded — feedparser unavailable or network error"
-            f"</div>"
-        )
-
-    cards_html = ""
-    for art in articles[:16]:
-        cat     = art["category"]
-        cc      = _CAT_COLOR.get(cat, C["muted"])
-        score   = art["score"]
-        dot_col = (C["red"] if score > 0.5
-                   else C["green"] if score < -0.5
-                   else C["muted"])
-        title   = art["title"].replace("<", "&lt;").replace(">", "&gt;")
-        source  = art["source"].replace("<", "&lt;").replace(">", "&gt;")
-        pub     = art["published"]
-
-        cards_html += (
-            f"<div style='background:{C['panel']};border:1px solid {C['border']};"
-            f"border-radius:8px;padding:12px 14px;margin-bottom:8px;'>"
-            f"<div style='display:flex;justify-content:space-between;"
-            f"align-items:flex-start;margin-bottom:6px;'>"
-            f"<span style='background:{cc};color:{C['bg']};font-family:monospace;"
-            f"font-size:9px;font-weight:700;letter-spacing:1px;padding:2px 8px;"
-            f"border-radius:10px;text-transform:uppercase;flex-shrink:0;'>{cat}</span>"
-            f"<span style='width:8px;height:8px;border-radius:50%;background:{dot_col};"
-            f"display:inline-block;flex-shrink:0;margin-top:2px;margin-left:8px;'>"
-            f"</span></div>"
-            f"<div style='font-size:12px;color:{C['text']};font-family:sans-serif;"
-            f"line-height:1.5;margin-bottom:6px;'>{title}</div>"
-            f"<div style='font-size:10px;color:{C['muted']};font-family:monospace;'>"
-            f"{source} &middot; {pub}</div>"
-            f"</div>"
-        )
+    bullets = "".join(
+        f"<li style='margin-bottom:7px;color:{C['text']};font-size:12px;"
+        f"font-family:sans-serif;line-height:1.5;'>{txt}</li>"
+        for txt in p["context"]
+    )
+    risk_tags = "".join(
+        f"<span style='background:{C['dim']};border:1px solid {C['border']};"
+        f"color:{C['muted']};font-family:monospace;font-size:9px;font-weight:600;"
+        f"padding:2px 9px;border-radius:10px;display:inline-block;"
+        f"margin:0 4px 5px 0;'>{r}</span>"
+        for r in p["key_risks"]
+    )
 
     return (
         f"<div style='background:{C['card']};border:1px solid {C['border']};"
-        f"border-radius:12px;padding:18px 18px 14px;'>"
-        f"<div style='font-size:10px;color:{C['muted']};font-family:monospace;"
-        f"letter-spacing:2px;text-transform:uppercase;margin-bottom:14px;'>"
-        f"Live Geo Events &nbsp;({len(articles)} items)</div>"
-        f"<div style='max-height:580px;overflow-y:auto;padding-right:4px;'>"
-        f"{cards_html}"
+        f"border-radius:12px;padding:24px 20px;'>"
+        f"<div style='text-align:center;margin-bottom:18px;'>"
+        f"<div style='font-size:54px;line-height:1;'>{CURRENCY_FLAG[ccy]}</div>"
+        f"<div style='font-size:26px;font-weight:800;color:{C['text']};"
+        f"font-family:monospace;margin-top:8px;letter-spacing:1px;'>{ccy}</div>"
+        f"<div style='font-size:11px;color:{C['muted']};font-family:sans-serif;"
+        f"margin-top:3px;'>{CURRENCY_NAME[ccy]}</div>"
+        f"<div style='margin-top:10px;'>"
+        f"<span style='background:{p['sens_col']};color:{C['bg']};font-family:monospace;"
+        f"font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;"
+        f"padding:3px 12px;border-radius:20px;'>{p['sensitivity']}</span>"
         f"</div></div>"
+        f"<div style='border-top:1px solid {C['border']};padding-top:16px;'>"
+        f"<div style='font-size:9px;color:{C['muted']};font-family:monospace;"
+        f"letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;'>"
+        f"Geo Sensitivity</div>"
+        f"<ul style='margin:0;padding-left:16px;'>{bullets}</ul>"
+        f"<div style='margin-top:16px;'>"
+        f"<div style='font-size:9px;color:{C['muted']};font-family:monospace;"
+        f"letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;'>"
+        f"Key Geo Risks</div>"
+        f"<div style='display:flex;flex-wrap:wrap;'>{risk_tags}</div>"
+        f"</div></div></div>"
     )
 
 
-def render_safehaven_panel(impacts: dict[str, dict], tension: float) -> str:
-    sh_scores = [impacts[c]["score"] for c in ["CHF", "JPY", "USD"]]
-    avg_sh    = sum(sh_scores) / 3.0
-
-    if avg_sh >= 0.5:
-        flow_col  = C["red"]
-        flow_text = "&#9679; Capital flowing INTO safe-havens"
-    elif avg_sh <= -0.5:
-        flow_col  = C["green"]
-        flow_text = "&#9679; Safe-haven outflow — risk-on bid"
-    else:
-        flow_col  = C["muted"]
-        flow_text = "&#9679; Safe-haven flows neutral"
-
-    def _cell(ccy: str) -> str:
-        d = impacts[ccy]
-        return (
-            f"<div style='background:{C['panel']};border:1px solid {C['border']};"
-            f"border-radius:8px;padding:12px 8px;text-align:center;flex:1;'>"
-            f"<div style='font-size:20px;'>{CURRENCY_FLAG[ccy]}</div>"
-            f"<div style='font-size:12px;font-weight:700;color:{C['text']};"
-            f"font-family:monospace;margin:4px 0 2px;'>{ccy}</div>"
-            f"<div style='font-size:22px;font-weight:800;color:{d['color']};"
-            f"font-family:monospace;line-height:1;'>{d['direction']}</div>"
-            f"<div style='font-size:10px;color:{d['color']};font-family:monospace;"
-            f"margin-top:3px;'>{d['score']:+.1f}</div>"
-            f"</div>"
-        )
-
-    sh_cells   = "".join(_cell(c) for c in ["CHF", "JPY", "USD"])
-    risk_cells = "".join(_cell(c) for c in ["AUD", "NZD", "CAD"])
+def _news_card(art: dict) -> str:
+    title  = art["title"].replace("<", "&lt;").replace(">", "&gt;")
+    source = art["source"].replace("<", "&lt;").replace(">", "&gt;")
+    cc     = art["cat_col"]
 
     return (
-        f"<div style='background:{C['card']};border:1px solid {C['border']};"
-        f"border-radius:12px;padding:18px 18px 16px;margin-bottom:14px;'>"
-        f"<div style='display:flex;justify-content:space-between;align-items:center;"
-        f"margin-bottom:12px;'>"
-        f"<div style='font-size:10px;color:{C['muted']};font-family:monospace;"
-        f"letter-spacing:2px;text-transform:uppercase;'>Safe-Haven Flow</div>"
-        f"<div style='font-size:10px;font-family:monospace;color:{flow_col};'>"
-        f"{flow_text}</div></div>"
-        f"<div style='display:flex;gap:8px;margin-bottom:14px;'>{sh_cells}</div>"
-        f"<div style='font-size:10px;color:{C['muted']};font-family:monospace;"
-        f"letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;'>"
-        f"Risk-Correlated</div>"
-        f"<div style='display:flex;gap:8px;'>{risk_cells}</div>"
+        f"<div style='border-left:3px solid {cc};background:{C['panel']};"
+        f"border-radius:0 8px 8px 0;padding:14px 16px;margin-bottom:10px;'>"
+        f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:8px;"
+        f"flex-wrap:wrap;'>"
+        f"<span style='background:{C['dim']};color:{C['muted']};font-family:monospace;"
+        f"font-size:9px;font-weight:600;padding:2px 7px;border-radius:4px;'>"
+        f"{source}</span>"
+        f"<span style='color:{cc};font-family:monospace;font-size:9px;font-weight:700;"
+        f"letter-spacing:0.5px;text-transform:uppercase;'>{art['category']}</span>"
+        f"<span style='color:{C['muted']};font-family:monospace;font-size:9px;"
+        f"margin-left:auto;white-space:nowrap;'>{art['time']}</span>"
+        f"</div>"
+        f"<div style='font-size:13px;color:{C['text']};font-family:sans-serif;"
+        f"line-height:1.5;font-weight:500;'>{title}</div>"
         f"</div>"
     )
 
 
-def render_ccy_impact_table(impacts: dict[str, dict]) -> str:
-    rows = ""
-    for i, ccy in enumerate(CURRENCIES):
-        d      = impacts[ccy]
-        bg     = C["dim"] if i % 2 == 0 else "transparent"
-        barpct = abs(d["score"]) / 3.0 * 100.0
-
-        rows += (
-            f"<tr style='background:{bg};'>"
-            f"<td style='padding:9px 10px;font-family:monospace;font-size:12px;"
-            f"color:{C['text']};white-space:nowrap;'>"
-            f"{CURRENCY_FLAG[ccy]} {ccy}</td>"
-            f"<td style='padding:9px 10px;font-family:monospace;font-size:20px;"
-            f"color:{d['color']};text-align:center;width:28px;'>{d['direction']}</td>"
-            f"<td style='padding:9px 10px;width:80px;'>"
-            f"<div style='background:{C['border']};border-radius:3px;height:6px;"
-            f"overflow:hidden;'>"
-            f"<div style='width:{barpct:.1f}%;height:100%;background:{d['color']};"
-            f"border-radius:3px;'></div></div></td>"
-            f"<td style='padding:9px 10px;font-family:monospace;font-size:10px;"
-            f"color:{d['color']};text-align:right;white-space:nowrap;'>{d['label']}</td>"
-            f"<td style='padding:9px 10px;font-family:monospace;font-size:11px;"
-            f"color:{C['muted']};text-align:right;'>{d['score']:+.2f}</td>"
-            f"</tr>"
+def render_ccy_feed(articles: list[dict], ccy: str, fetched_at: str) -> str:
+    if not articles:
+        return (
+            f"<div style='background:{C['card']};border:1px solid {C['border']};"
+            f"border-radius:12px;padding:40px;text-align:center;'>"
+            f"<div style='font-size:32px;margin-bottom:12px;'>🔍</div>"
+            f"<div style='font-size:13px;color:{C['muted']};font-family:monospace;"
+            f"margin-bottom:6px;'>No geopolitical headlines found for {ccy}</div>"
+            f"<div style='font-size:11px;color:{C['muted']};font-family:sans-serif;'>"
+            f"Google News may be temporarily rate-limited — try refreshing in 30s</div>"
+            f"</div>"
         )
 
-    header = (
-        f"<tr>"
-        f"<th style='padding:6px 10px;font-family:monospace;font-size:9px;"
-        f"color:{C['muted']};text-align:left;letter-spacing:1px;"
-        f"border-bottom:1px solid {C['border']};'>CCY</th>"
-        f"<th style='padding:6px 10px;font-family:monospace;font-size:9px;"
-        f"color:{C['muted']};text-align:center;letter-spacing:1px;"
-        f"border-bottom:1px solid {C['border']};'>DIR</th>"
-        f"<th style='padding:6px 10px;font-family:monospace;font-size:9px;"
-        f"color:{C['muted']};letter-spacing:1px;"
-        f"border-bottom:1px solid {C['border']};'>STRENGTH</th>"
-        f"<th style='padding:6px 10px;font-family:monospace;font-size:9px;"
-        f"color:{C['muted']};text-align:right;letter-spacing:1px;"
-        f"border-bottom:1px solid {C['border']};'>SIGNAL</th>"
-        f"<th style='padding:6px 10px;font-family:monospace;font-size:9px;"
-        f"color:{C['muted']};text-align:right;letter-spacing:1px;"
-        f"border-bottom:1px solid {C['border']};'>SCORE</th>"
-        f"</tr>"
+    cards = "".join(_news_card(a) for a in articles)
+    return (
+        f"<div style='background:{C['card']};border:1px solid {C['border']};"
+        f"border-radius:12px;padding:18px 18px 14px;'>"
+        f"<div style='display:flex;justify-content:space-between;align-items:center;"
+        f"margin-bottom:14px;flex-wrap:wrap;gap:6px;'>"
+        f"<div style='font-size:10px;color:{C['muted']};font-family:monospace;"
+        f"letter-spacing:2px;text-transform:uppercase;'>"
+        f"Headlines &mdash; {ccy}</div>"
+        f"<div style='font-size:10px;color:{C['muted']};font-family:monospace;'>"
+        f"{len(articles)} articles &middot; updated {fetched_at}</div>"
+        f"</div>"
+        f"<div style='max-height:680px;overflow-y:auto;padding-right:4px;'>"
+        f"{cards}</div></div>"
+    )
+
+
+def render_global_feed(articles: list[dict]) -> str:
+    if not articles:
+        return ""
+
+    rows = "".join(
+        f"<div style='padding:10px 0;border-bottom:1px solid {C['border']};'>"
+        f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:5px;"
+        f"flex-wrap:wrap;'>"
+        f"<span style='color:{a['cat_col']};font-family:monospace;font-size:9px;"
+        f"font-weight:700;text-transform:uppercase;'>{a['category']}</span>"
+        f"<span style='background:{C['dim']};color:{C['muted']};font-family:monospace;"
+        f"font-size:9px;font-weight:600;padding:1px 6px;border-radius:3px;'>"
+        f"{a['source']}</span>"
+        f"<span style='color:{C['muted']};font-family:monospace;font-size:9px;"
+        f"margin-left:auto;'>{a['time']}</span>"
+        f"</div>"
+        f"<div style='font-size:12px;color:{C['text']};font-family:sans-serif;"
+        f"line-height:1.4;'>"
+        f"{a['title'].replace('<','&lt;').replace('>','&gt;')}</div>"
+        f"</div>"
+        for a in articles
     )
 
     return (
         f"<div style='background:{C['card']};border:1px solid {C['border']};"
-        f"border-radius:12px;padding:18px 18px 14px;'>"
+        f"border-radius:12px;padding:18px 18px 14px;margin-top:14px;'>"
         f"<div style='font-size:10px;color:{C['muted']};font-family:monospace;"
         f"letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;'>"
-        f"Currency Geo Impact</div>"
-        f"<table style='width:100%;border-collapse:collapse;'>"
-        f"<thead>{header}</thead>"
-        f"<tbody>{rows}</tbody>"
-        f"</table></div>"
+        f"Global Geo Events &mdash; Reuters &middot; BBC &middot; Al Jazeera</div>"
+        f"<div style='max-height:340px;overflow-y:auto;'>{rows}</div>"
+        f"</div>"
     )
 
 
@@ -449,7 +512,7 @@ def render_ccy_impact_table(impacts: dict[str, dict]) -> str:
 
 def main():
     st.set_page_config(
-        page_title="Geopolitical Dashboard · Trading Terminal",
+        page_title="Geopolitical Intelligence · Trading Terminal",
         page_icon="🌍",
         layout="wide",
         initial_sidebar_state="collapsed",
@@ -466,11 +529,38 @@ def main():
       .stMainBlockContainer {{
           padding-top:3rem !important; padding-bottom:2rem !important;
       }}
+      /* Currency pill selector */
+      div[data-testid="stRadio"] > label {{ display:none !important; }}
+      div[data-testid="stRadio"] > div[role="radiogroup"] {{
+          display:flex !important; flex-wrap:wrap !important;
+          gap:8px !important; background:transparent !important;
+      }}
+      div[data-testid="stRadio"] label {{
+          background:{C['card']} !important;
+          border:1px solid {C['border']} !important;
+          border-radius:10px !important; padding:8px 16px !important;
+          cursor:pointer !important; font-family:monospace !important;
+          font-size:13px !important; font-weight:700 !important;
+          color:{C['muted']} !important; margin:0 !important;
+          transition:all 0.15s !important;
+      }}
+      div[data-testid="stRadio"] label:has(input:checked) {{
+          background:{C['dim']} !important;
+          border-color:{C['teal']} !important;
+          color:{C['text']} !important;
+          box-shadow: 0 0 0 1px {C['teal']} !important;
+      }}
+      div[data-testid="stRadio"] label input {{ display:none !important; }}
+      div[data-testid="stRadio"] label > div,
+      div[data-testid="stRadio"] label > div > p {{
+          display:inline !important; font-family:monospace !important;
+          font-size:13px !important; font-weight:700 !important;
+      }}
       button[kind="secondary"] {{
           background:{C['dim']} !important; color:{C['muted']} !important;
           border:1px solid {C['border']} !important;
           font-family:monospace !important; font-weight:600 !important;
-          border-radius:20px !important;
+          border-radius:8px !important;
       }}
       button[kind="secondary"]:hover {{
           border-color:{C['teal']} !important; color:{C['teal']} !important;
@@ -478,32 +568,41 @@ def main():
       button[kind="primary"] {{
           background:{C['teal']} !important; color:#0a0c10 !important;
           border:none !important; font-weight:700 !important;
-          font-family:monospace !important;
+          font-family:monospace !important; border-radius:8px !important;
       }}
       p, span, label {{ color:{C['text']}; }}
       div[data-testid="stSpinner"] p {{
           color:{C['muted']} !important; font-family:monospace !important;
           font-size:12px !important;
       }}
-      div[data-testid="stHorizontalBlock"] {{ align-items:stretch !important; }}
-      div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
-          display:flex !important; flex-direction:column !important;
+      /* Live pulse dot */
+      @keyframes geo-pulse {{
+        0%,100% {{ opacity:1; }} 50% {{ opacity:0.3; }}
       }}
+      .geo-live-dot {{ animation: geo-pulse 2s ease-in-out infinite; }}
     </style>
     """, unsafe_allow_html=True)
 
-    # ── Session state / auto-refresh ───────────────────────────────────────────
+    # ── Session state ──────────────────────────────────────────────────────────
     _now = time.time()
+    if "geo_ccy" not in st.session_state:
+        st.session_state.geo_ccy = "USD"
     if "geo_last_refresh" not in st.session_state:
         st.session_state.geo_last_refresh = _now
 
-    if _now - st.session_state.geo_last_refresh > TTL_GEO:
-        fetch_geo_news.clear()
+    # Auto-rerun every TTL_CCY seconds — clears both caches
+    if _now - st.session_state.geo_last_refresh > TTL_CCY:
+        fetch_ccy_news.clear()
+        fetch_global_news.clear()
         st.session_state.geo_last_refresh = _now
         st.rerun()
 
+    last_refresh_str = datetime.fromtimestamp(
+        st.session_state.geo_last_refresh
+    ).strftime("%H:%M:%S")
+
     # ── Title row ──────────────────────────────────────────────────────────────
-    col_back, col_title, col_right = st.columns([2, 5, 2])
+    col_back, col_title, col_right = st.columns([2, 6, 2])
     with col_back:
         if st.button("← Back to Hub"):
             st.switch_page("app.py")
@@ -512,53 +611,81 @@ def main():
             f"<div style='text-align:center;'>"
             f"<div style='font-size:20px;font-weight:800;color:{C['text']};"
             f"font-family:monospace;letter-spacing:-0.5px;'>"
-            f"GEOPOLITICAL DASHBOARD</div>"
-            f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
-            f"letter-spacing:1px;margin-top:3px;'>"
-            f"Geo Risk &middot; Conflict Tracker &middot; Safe-Haven Flow &middot; "
-            f"FX Impact</div></div>",
+            f"GEOPOLITICAL INTELLIGENCE</div>"
+            f"<div style='display:flex;align-items:center;justify-content:center;"
+            f"gap:8px;margin-top:4px;'>"
+            f"<span class='geo-live-dot' style='width:6px;height:6px;border-radius:50%;"
+            f"background:{C['red']};display:inline-block;'></span>"
+            f"<span style='font-size:10px;color:{C['muted']};font-family:monospace;"
+            f"letter-spacing:1px;'>LIVE &middot; Conflicts &middot; Sanctions &middot; "
+            f"Political &middot; Trade Wars &middot; Diplomacy</span>"
+            f"</div></div>",
             unsafe_allow_html=True,
         )
     with col_right:
         _, btn_col = st.columns([1, 1])
         with btn_col:
             if st.button("🔄 Refresh", key="geo_refresh"):
-                fetch_geo_news.clear()
+                fetch_ccy_news.clear()
+                fetch_global_news.clear()
                 st.session_state.geo_last_refresh = time.time()
                 st.rerun()
 
-    st.markdown("<div style='margin-bottom:12px;'></div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='margin-bottom:6px;padding-bottom:16px;"
+        f"border-bottom:1px solid {C['border']};'></div>",
+        unsafe_allow_html=True,
+    )
+
+    # ── Currency selector ──────────────────────────────────────────────────────
+    labels = [f"{CURRENCY_FLAG[c]}  {c}" for c in CURRENCIES]
+    default_idx = CURRENCIES.index(st.session_state.geo_ccy)
+
+    selected_label = st.radio(
+        "currency",
+        options=labels,
+        index=default_idx,
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    selected_ccy = selected_label.split()[-1]  # extract "USD" from "🇺🇸  USD"
+    st.session_state.geo_ccy = selected_ccy
+
+    st.markdown("<div style='margin-bottom:16px;'></div>", unsafe_allow_html=True)
 
     # ── Data fetch ─────────────────────────────────────────────────────────────
     if not _FEEDPARSER:
         st.warning("feedparser not installed — run: pip install feedparser")
-        articles = []
+        ccy_articles    = []
+        global_articles = []
     else:
-        with st.spinner("Scanning geopolitical news sources..."):
-            articles = fetch_geo_news()
-
-    tension = calc_tension_score(articles)
-    impacts = calc_ccy_impacts(tension)
-
-    # ── Risk gauge ─────────────────────────────────────────────────────────────
-    st.markdown(render_risk_gauge(tension), unsafe_allow_html=True)
+        with st.spinner(f"Fetching geopolitical news for {selected_ccy}..."):
+            ccy_articles    = fetch_ccy_news(selected_ccy)
+            global_articles = fetch_global_news()
 
     # ── Two-column layout ──────────────────────────────────────────────────────
-    col_l, col_r = st.columns([3, 2], gap="large")
+    col_profile, col_news = st.columns([2, 5], gap="large")
 
-    with col_l:
-        st.markdown(render_event_cards(articles), unsafe_allow_html=True)
+    with col_profile:
+        st.markdown(render_ccy_profile(selected_ccy), unsafe_allow_html=True)
+        st.markdown(render_global_feed(global_articles), unsafe_allow_html=True)
 
-    with col_r:
-        st.markdown(render_safehaven_panel(impacts, tension), unsafe_allow_html=True)
-        st.markdown(render_ccy_impact_table(impacts), unsafe_allow_html=True)
+    with col_news:
+        st.markdown(
+            render_ccy_feed(ccy_articles, selected_ccy, last_refresh_str),
+            unsafe_allow_html=True,
+        )
 
     # ── Footer ─────────────────────────────────────────────────────────────────
     st.markdown(
-        f"<div style='margin-top:48px;padding-top:16px;"
+        f"<div style='margin-top:40px;padding-top:16px;"
         f"border-top:1px solid {C['border']};text-align:center;"
         f"font-size:11px;color:{C['muted']};font-family:monospace;'>"
         f"Built by @realedgetraders"
+        f"&nbsp;&nbsp;&middot;&nbsp;&nbsp;"
+        f"Sources: Google News &middot; Reuters &middot; BBC &middot; Al Jazeera"
+        f"&nbsp;&nbsp;&middot;&nbsp;&nbsp;"
+        f"Auto-refresh every 5 min"
         f"</div>",
         unsafe_allow_html=True,
     )

@@ -236,58 +236,58 @@ Shows: "⚠ Calendar unavailable — all sources blocked" (no raw HTTP codes)
 pages/4_Geopolitics.py — DO NOT BREAK THIS FILE
 
 ### Overview
-Live geo-risk tracker for 8 major FX currencies. Scans Google News RSS across 5 geo
-categories, scores headlines with weighted keywords, computes a tension score ∈ [-3,+3],
-and maps it to per-currency FX impact via sensitivity factors.
+Currency-filtered geo news reader for 8 major FX currencies (USD EUR GBP JPY AUD CAD CHF NZD).
+NO directional trade signals — shows geopolitical headlines per selected currency plus a static
+geo-sensitivity profile explaining WHY those events matter for that currency.
+Strictly geo/political content: conflicts, sanctions, trade wars, political crises, diplomacy.
+Economic data (rates, CPI, GDP, payrolls) is explicitly filtered out via keyword list.
 
 ### Layout (top to bottom)
-1. Title row: "← Back to Hub" left | "GEOPOLITICAL DASHBOARD" centered | "🔄 Refresh" right
-2. Risk Gauge: full-width CSS gradient bar, needle positioned via flex spacers, ±3.0 scale
-3. Two-column layout [3:2]:
-   - Left: Scrollable event news cards (max 16), category-tagged, color-coded risk dot
-   - Right: Safe-Haven Flow panel (CHF/JPY/USD + AUD/NZD/CAD cells) + Currency Impact table
-4. Footer: "Built by @realedgetraders"
+1. Title row: "← Back to Hub" left | "GEOPOLITICAL INTELLIGENCE" centered | "🔄 Refresh" right
+2. Live pulse dot + tag line
+3. Currency selector: 8 radio pills with flag emoji (USD EUR GBP JPY AUD CAD CHF NZD)
+4. Two-column layout [2:5]:
+   - Left: Currency geo profile card (flag, role, sensitivity badge, context bullets, key risks)
+            + Global Geo Events panel (Reuters / BBC / Al Jazeera, filtered to geo categories only)
+   - Right: Currency-specific headline feed (Google News RSS, left-border colored cards)
+5. Footer: sources + auto-refresh note
 
-### Data Source
-- Google News RSS via feedparser (same as Modules 2–3)
-- 5 separate queries: War / Trade War / Political / Energy / Diplomacy
-- Cache TTL: 300s (5 min). Auto-rerun on TTL expiry.
+### Data Sources
+- Primary: Google News RSS via feedparser — 2 geo-specific queries per currency (16 articles max)
+- Secondary: Reuters, BBC World, Al Jazeera direct RSS feeds — global geo events panel
+- All sources: economic noise removed via `_ECON_SKIP_KW`, General category skipped from direct feeds
+- Cache TTLs: per-currency feed=300s, global feed=600s. Auto-rerun on TTL expiry.
 
-### Tension Score Engine
+### Key Functions
 
-**`fetch_geo_news()`** — @st.cache_data(ttl=300)
-- Fetches up to 6 articles per category (5 queries × 6 = max 30 articles)
-- Deduplicates by title[:60] prefix
-- Scores each article: sum of matched `_RISK_KW` weights (positive = tension, negative = calm)
-- Returns list sorted by |score| descending
+**`fetch_ccy_news(ccy)`** — @st.cache_data(ttl=300), one cache entry per currency
+- Runs `_CCY_GEO_QUERIES[ccy]` (2 queries × 8 articles via Google News RSS)
+- Skips articles matching `_ECON_SKIP_KW`; `_classify(title)` assigns geo category + color
+- Returns deduplicated list: title, source, url, time, category, cat_col
 
-**`calc_tension_score()`**
-- Aggregates: (sum_of_scores / n_articles) × 1.5, clamped [-3.0, +3.0]
-- Positive = risk-off/tension. Negative = risk-on/calm.
+**`fetch_global_news()`** — @st.cache_data(ttl=600)
+- Fetches Reuters + BBC + Al Jazeera RSS directly (up to 20 articles each)
+- Keeps only articles with a named geo category (skips "General" and economic noise)
+- Returns top 14 articles for the global events panel
 
-Level thresholds: ≥2.0=EXTREME RISK-OFF, ≥0.8=RISK-OFF, ≥-0.7=NEUTRAL,
-                  ≥-2.0=RISK-ON, else=EXTREME RISK-ON
+### Currency Profiles (`_CCY_PROFILE`)
+Each has: role string, sensitivity label + color, 3-4 context bullets, key_risks list.
+- USD/CHF/JPY: SAFE HAVEN | EUR: GEO-EXPOSED | AUD/NZD: RISK CORRELATED
+- CAD: OIL/TRADE LINKED | GBP: MODERATE EXPOSURE
 
-**`calc_ccy_impacts(tension)`**
-- Per-currency score = tension × `_CCY_GEO[ccy]`, clamped [-3.0, +3.0]
-- _CCY_GEO: CHF=1.5, JPY=1.5, USD=0.8, CAD=0.5, EUR=-0.5, GBP=-0.3, AUD=-0.8, NZD=-1.0
-  (matches _GEO_CCY_IMPACT from Module 3)
-- Level labels same thresholds as Module 3 bias engine
-
-### Safe-Haven Flow Indicator
-- avg_sh = mean of CHF/JPY/USD impact scores
-- avg_sh ≥ 0.5 → "Capital flowing INTO safe-havens" (red)
-- avg_sh ≤ -0.5 → "Safe-haven outflow — risk-on bid" (green)
-- else → "Safe-haven flows neutral" (muted)
+### Category Detection (`_CATEGORIES`)
+6 categories: Conflict (red), Sanctions (yellow), Political (blue), Diplomatic (green),
+Trade War (orange), Energy (purple). Each has keyword list. Default fallback: "General".
 
 ### Key Constants
-- _GEO_QUERIES: dict[str, str] — 5 RSS search queries per category
-- _CAT_COLOR: dict[str, str] — category badge hex colors
-- _RISK_KW: list[(kw, weight)] — keyword scoring list (positive=tension, negative=calm)
-- _CCY_GEO: dict[str, float] — per-currency geo sensitivity factors
-- TTL_GEO = 300 — cache + auto-rerun interval
+- _CCY_GEO_QUERIES: dict[str, list[str]] — 2 geo-only RSS queries per currency
+- _DIRECT_FEEDS: list[(name, url)] — Reuters, BBC, Al Jazeera RSS URLs
+- _CATEGORIES: category → {color, keyword list}
+- _ECON_SKIP_KW: list[str] — economic noise filter keywords
+- TTL_CCY=300, TTL_GLOBAL=600 — cache + auto-rerun intervals
 
 ### Session State Keys
+- `geo_ccy`: selected currency (default "USD")
 - `geo_last_refresh`: float timestamp for 5-min auto-rerun timer
 
 ## Design Rules
