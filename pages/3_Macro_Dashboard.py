@@ -1572,14 +1572,24 @@ def fetch_investing_history(currency: str) -> dict[str, list[float]]:
         return {}
 
     today = datetime.today()
-    # Two overlapping chunks each ~210 days — keeps event count per request < 200
-    # Small 5-day overlap ensures no gap at the boundary
-    chunks = [
-        ((today - timedelta(days=420)).strftime("%Y-%m-%d"),
-         (today - timedelta(days=210)).strftime("%Y-%m-%d")),
-        ((today - timedelta(days=215)).strftime("%Y-%m-%d"),
-         today.strftime("%Y-%m-%d")),
-    ]
+    # USD calendar is denser (~200 events per 5 months) — use 3 × 5-month chunks.
+    # Other currencies use 2 × 7-month chunks.  5-day overlaps prevent gaps.
+    if currency == "USD":
+        chunks = [
+            ((today - timedelta(days=450)).strftime("%Y-%m-%d"),
+             (today - timedelta(days=295)).strftime("%Y-%m-%d")),
+            ((today - timedelta(days=300)).strftime("%Y-%m-%d"),
+             (today - timedelta(days=145)).strftime("%Y-%m-%d")),
+            ((today - timedelta(days=150)).strftime("%Y-%m-%d"),
+             today.strftime("%Y-%m-%d")),
+        ]
+    else:
+        chunks = [
+            ((today - timedelta(days=420)).strftime("%Y-%m-%d"),
+             (today - timedelta(days=210)).strftime("%Y-%m-%d")),
+            ((today - timedelta(days=215)).strftime("%Y-%m-%d"),
+             today.strftime("%Y-%m-%d")),
+        ]
 
     def _fetch_chunk(d_from: str, d_to: str):
         """POST one request and return a BeautifulSoup or None."""
@@ -1617,6 +1627,10 @@ def fetch_investing_history(currency: str) -> dict[str, list[float]]:
         except (ValueError, TypeError):
             return None
 
+    # Alternative event-name fragments that Investing.com uses for Consumer Confidence
+    # (not in the global map to avoid conflicts with Business Confidence / ZEW)
+    _CC_ALT = ("consumer sentiment", "economic sentiment")
+
     def _map_name(raw: str) -> str | None:
         """Map Investing.com event name to our indicator key."""
         t = raw.lower().strip()
@@ -1624,6 +1638,9 @@ def fetch_investing_history(currency: str) -> dict[str, list[float]]:
         for fragment, ind_key in _INV_NAME_MAP:
             if fragment in t:
                 return ind_key
+        # Fallback: check alternative Consumer Confidence synonyms
+        if any(kw in raw.lower() for kw in _CC_ALT):
+            return "Consumer Confidence"
         return None
 
     # GDP: only keep QoQ official releases; skip YoY, GDPNow, Atlanta Fed
@@ -1709,16 +1726,18 @@ def fetch_fred_history(api_key: str) -> dict[str, list[float]]:
         return {}
 
     FRED_HIST = {
-        "CPI m/m":               ("CPIAUCSL",        "mom"),
-        "Core CPI":               ("CPILFESL",        "mom"),
-        "Interest Rate":          ("FEDFUNDS",        "latest"),
-        "Unemployment Rate":      ("UNRATE",          "latest"),
-        "Retail Sales":           ("RSXFS",           "mom"),
-        "Industrial Production":  ("INDPRO",          "mom"),
-        "Employment Change":      ("PAYEMS",          "diff"),
-        "M2 Money Supply":        ("M2SL",            "yoy"),
-        "Wage Growth":            ("CES0500000003",   "yoy"),
-        "Trade Balance":          ("BOPGSTB",         "latest"),
+        "CPI m/m":               ("CPIAUCSL",          "mom"),
+        "Core CPI":               ("CPILFESL",          "mom"),
+        "Interest Rate":          ("FEDFUNDS",          "latest"),
+        "Unemployment Rate":      ("UNRATE",            "latest"),
+        "Retail Sales":           ("RSXFS",             "mom"),
+        "Industrial Production":  ("INDPRO",            "mom"),
+        "Employment Change":      ("PAYEMS",            "diff"),
+        "M2 Money Supply":        ("M2SL",              "yoy"),
+        "Wage Growth":            ("CES0500000003",     "yoy"),
+        "Trade Balance":          ("BOPGSTB",           "latest"),
+        # Quarterly, already annualised QoQ rate — no derivation needed
+        "GDP Growth":             ("A191RL1Q225SBEA",   "latest"),
     }
     result: dict[str, list[float]] = {}
     for ind, (sid, mode) in FRED_HIST.items():
@@ -2374,8 +2393,9 @@ def fetch_currency_history(currency: str, fred_api_key: str) -> dict[str, list[f
 
     # ── Investing.com: primary 12-month source for most indicators ──────────────
     # For non-USD: fills all gaps not already covered by CB API fetches above.
-    # For USD: FRED doesn't carry PMI or GDP — supplement those three only.
-    _USD_INV_INDS = {"Manufacturing PMI", "Services PMI", "GDP Growth"}
+    # For USD: FRED doesn't carry PMI — supplement those two only.
+    #          GDP is now fetched from FRED (A191RL1Q225SBEA), so excluded here.
+    _USD_INV_INDS = {"Manufacturing PMI", "Services PMI"}
     inv_history = fetch_investing_history(currency)
     for ind_name, vals in inv_history.items():
         if currency == "USD" and ind_name not in _USD_INV_INDS:
