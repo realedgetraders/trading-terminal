@@ -338,9 +338,12 @@ COUNTRY_TO_CURRENCY_M4: dict[str, str] = {
 _SUPPORTED_CCY_M4 = ["USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"]
 
 _CALENDAR_CCY_KEYWORDS_M4: dict[str, list[str]] = {
-    "USD": ["usd", "us", "united states", "federal reserve", "fed", "fomc", "powell"],
+    # Note: "us" and "uk" removed — 2-letter substrings cause false positives
+    # ("Australian" contains "us", "bulk"/"truck" contain "uk", etc.)
+    # Direct 3-letter code lookup in _resolve_calendar_ccy_m4 handles FF feeds.
+    "USD": ["usd", "united states", "federal reserve", "fed", "fomc", "powell"],
     "EUR": ["eur", "euro", "european", "ecb", "eurozone", "euro zone", "lagarde"],
-    "GBP": ["gbp", "british", "uk", "united kingdom", "boe", "bank of england", "bailey"],
+    "GBP": ["gbp", "british", "united kingdom", "boe", "bank of england", "bailey"],
     "JPY": ["jpy", "japanese", "japan", "boj", "bank of japan", "ueda"],
     "AUD": ["aud", "australian", "australia", "rba", "reserve bank of australia"],
     "CAD": ["cad", "canadian", "canada", "boc", "bank of canada", "macklem"],
@@ -368,6 +371,13 @@ _RAW_IND_MAP_M4: dict[str, str] = {
 }
 _INDICATOR_MAP_M4: list[tuple[str, str]] = sorted(
     _RAW_IND_MAP_M4.items(), key=lambda x: len(x[0]), reverse=True
+)
+
+# Events to always skip regardless of impact (bond auctions, technical revisions)
+_CAL_NOISE_KW_M4: tuple[str, ...] = (
+    "bond auction", "treasury auction", "bill auction", "note auction",
+    "gbond auction", "btp auction", "jgb auction", "linker auction",
+    "t-bill", "t-note auction", "t-bond auction",
 )
 
 _FF_HDR_JSON_M4 = {
@@ -493,10 +503,29 @@ def _normalize_indicator_m4(title: str) -> str | None:
 
 
 def _resolve_calendar_ccy_m4(country: str, title: str) -> str | None:
-    ccy = COUNTRY_TO_CURRENCY_M4.get(country) or (country if country in _SUPPORTED_CCY_M4 else None)
+    """Map a raw FF country string + title to one of the 8 supported CCY codes.
+
+    FF JSON sends lowercase 3-letter codes (e.g. "usd", "eur").  The original
+    dict/list lookups were case-sensitive and always failed, pushing every event
+    into the keyword fallback where "us" matched "Australian", "business",
+    "surplus", etc., mis-tagging AUD/GBP events as USD.
+
+    Resolution order:
+    1. COUNTRY_TO_CURRENCY_M4 — handles English names ("Euro Zone", "Japan" …)
+    2. Direct uppercase match against _SUPPORTED_CCY_M4 — handles "usd"→"USD"
+    3. Keyword fallback (only for unusual country strings) — "us"/"uk" removed
+    """
+    c = country.strip()
+    # 1. English name lookup (original dict — unchanged)
+    ccy = COUNTRY_TO_CURRENCY_M4.get(c) or COUNTRY_TO_CURRENCY_M4.get(c.title())
     if ccy:
         return ccy
-    haystack = (country + " " + title).lower()
+    # 2. Case-normalised 3-letter code (handles lowercase FF codes like "usd")
+    c_up = c.upper()
+    if c_up in _SUPPORTED_CCY_M4:
+        return c_up
+    # 3. Keyword fallback — only reached for unusual or composite country strings
+    haystack = (c + " " + title).lower()
     for ccy_code, keywords in _CALENDAR_CCY_KEYWORDS_M4.items():
         if any(kw in haystack for kw in keywords):
             return ccy_code
@@ -531,7 +560,8 @@ def fetch_ff_calendar_m4() -> pd.DataFrame:
             ccy         = _resolve_calendar_ccy_m4(country_raw, title)
             if not ccy: continue
             impact_raw  = str(ev.get("impact") or "Low").capitalize()
-            if impact_raw in ("Holiday", "Low"): continue
+            if impact_raw == "Holiday": continue
+            if any(kw in title.lower() for kw in _CAL_NOISE_KW_M4): continue
             ind = _normalize_indicator_m4(title) or title
             rows.append({
                 "currency": ccy, "indicator": ind, "title": title,
@@ -551,7 +581,8 @@ def fetch_ff_calendar_m4() -> pd.DataFrame:
                 return (el.text or "").strip() if el is not None else ""
             title      = _t("title")
             impact_raw = _t("impact").capitalize() or "Low"
-            if impact_raw in ("Holiday", "Low"): continue
+            if impact_raw == "Holiday": continue
+            if any(kw in title.lower() for kw in _CAL_NOISE_KW_M4): continue
             ccy = _resolve_calendar_ccy_m4(_t("country"), title)
             if not ccy: continue
             ind = _normalize_indicator_m4(title) or title
@@ -592,7 +623,7 @@ def fetch_ff_calendar_m4() -> pd.DataFrame:
 
 
 def build_calendar_view_m4(ff_df: pd.DataFrame, currency: str) -> pd.DataFrame:
-    """Past week + next 14 weeks — HIGH and MEDIUM impact only, sorted ascending."""
+    """Full current week + next 14 weeks — High/Medium/Low impact (noise filtered), sorted descending."""
     now       = pd.Timestamp.today().normalize()
     lookback  = now - pd.Timedelta(days=now.dayofweek)
     lookahead = now + pd.Timedelta(weeks=14)
@@ -608,7 +639,7 @@ def build_calendar_view_m4(ff_df: pd.DataFrame, currency: str) -> pd.DataFrame:
         (source["currency"] == currency) &
         (source["date"] >= lookback) &
         (source["date"] <= lookahead) &
-        (source["impact"].isin(["High", "Medium"]))
+        (source["impact"].isin(["High", "Medium", "Low"]))
     ].copy()
     if sub.empty:
         return pd.DataFrame()
@@ -659,7 +690,7 @@ def render_calendar_table_m4(calendar_df: pd.DataFrame) -> str:
             f"padding:2px 7px;border-radius:4px;text-transform:uppercase;'>{impact}</span>"
         )
 
-    cols = ["Date", "Event", "Actual", "Forecast", "Previous", "Impact"]
+    cols = ["Time", "Date", "Event", "Actual", "Forecast", "Previous", "Impact"]
     hdr  = (
         f"<tr style='border-bottom:1px solid {C['border']};'>"
         + "".join(
@@ -678,13 +709,18 @@ def render_calendar_table_m4(calendar_df: pd.DataFrame) -> str:
         date_color  = C["teal"] if soon else (C["muted"] if is_upcoming else C["text"])
 
         try:
-            date_str = pd.Timestamp(row["date"]).strftime("%a %d %b")
+            ts       = pd.Timestamp(row["date"])
+            date_str = ts.strftime("%a %d %b")
+            time_str = ts.strftime("%H:%M") if (ts.hour, ts.minute) != (0, 0) else "—"
         except Exception:
             date_str = "—"
+            time_str = "—"
         ind_name = str(row.get("title") or row.get("indicator") or "—")
 
         body += (
             f"<tr style='border-bottom:1px solid {C['border']};background:{row_bg};'>"
+            f"<td style='padding:7px 10px;font-size:11px;color:{C['muted']};"
+            f"font-family:monospace;white-space:nowrap;'>{time_str}</td>"
             f"<td style='padding:7px 10px;font-size:11px;color:{date_color};"
             f"font-family:monospace;white-space:nowrap;'>{date_str}</td>"
             f"<td style='padding:7px 10px;font-size:11px;color:{C['text']};"
