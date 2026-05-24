@@ -614,7 +614,7 @@ def build_calendar_view_m4(ff_df: pd.DataFrame, currency: str) -> pd.DataFrame:
         return pd.DataFrame()
 
     sub["date"]        = pd.to_datetime(sub["date"])
-    sub                = sub.sort_values("date", ascending=True)
+    sub                = sub.sort_values("date", ascending=False)
     sub["days_until"]  = (sub["date"] - now).dt.days
     sub["is_upcoming"] = sub["date"] > now
     return sub[[
@@ -744,6 +744,17 @@ def _fmt_time(entry) -> str:
     return raw[:16] if raw else ""
 
 
+def _get_pub_dt(entry) -> "datetime | None":
+    """Extract a timezone-aware UTC datetime from a feedparser entry for sorting."""
+    pub = getattr(entry, "published_parsed", None)
+    if pub:
+        try:
+            return datetime(*pub[:6], tzinfo=timezone.utc)
+        except Exception:
+            pass
+    return None
+
+
 def _fetch_rss_entries(url: str) -> list:
     """
     Fetch RSS entries via requests + browser headers, fall back to direct feedparser.
@@ -800,10 +811,15 @@ def fetch_ccy_news(ccy: str) -> list[dict]:
                     "time":    _fmt_time(entry),
                     "category":cat,
                     "cat_col": cat_col,
+                    "_pub_dt": _get_pub_dt(entry),
                 })
         except Exception:
             continue
 
+    articles.sort(
+        key=lambda a: a["_pub_dt"] or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
     return articles
 
 
@@ -837,10 +853,15 @@ def fetch_global_news() -> list[dict]:
                     "time":    _fmt_time(entry),
                     "category":cat,
                     "cat_col": cat_col,
+                    "_pub_dt": _get_pub_dt(entry),
                 })
         except Exception:
             continue
 
+    articles.sort(
+        key=lambda a: a["_pub_dt"] or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
     return articles[:14]
 
 
@@ -1014,7 +1035,14 @@ def _news_card(art: dict, ccy: str = "") -> str:
         f"</div>"
         f"<div style='font-size:13px;color:{C['text']};font-family:sans-serif;"
         f"line-height:1.5;font-weight:500;'>{title}</div>"
-        f"{interp}"
+        + (
+            f"<div style='margin-top:4px;'>"
+            f"<a href='{art['url']}' target='_blank' rel='noopener' "
+            f"style='font-size:10px;color:#6b7280;font-family:monospace;"
+            f"text-decoration:none;'>↗ Read more</a></div>"
+            if art.get("url") else ""
+        )
+        + f"{interp}"
         f"</div>"
     )
 
@@ -1068,7 +1096,14 @@ def render_global_feed(articles: list[dict]) -> str:
         f"<div style='font-size:12px;color:{C['text']};font-family:sans-serif;"
         f"line-height:1.4;'>"
         f"{a['title'].replace('<','&lt;').replace('>','&gt;')}</div>"
-        f"</div>"
+        + (
+            f"<div style='margin-top:3px;'>"
+            f"<a href='{a['url']}' target='_blank' rel='noopener' "
+            f"style='font-size:10px;color:#6b7280;font-family:monospace;"
+            f"text-decoration:none;'>↗ Read more</a></div>"
+            if a.get("url") else ""
+        )
+        + f"</div>"
         for a in articles
     )
 
@@ -1131,7 +1166,14 @@ def render_financial_feed(
             f"<a href='{url}' target='_blank' rel='noopener'"
             f"   style='color:{C['text']};text-decoration:none;font-size:12px;"
             f"          line-height:1.5;font-family:sans-serif;'>{title}</a>"
-            f"</div>"
+            + (
+                f"<div style='margin-top:3px;'>"
+                f"<a href='{url}' target='_blank' rel='noopener' "
+                f"style='font-size:10px;color:#6b7280;font-family:monospace;"
+                f"text-decoration:none;'>↗ Read more</a></div>"
+                if url and url != "#" else ""
+            )
+            + f"</div>"
         )
 
     err_banner = ""
