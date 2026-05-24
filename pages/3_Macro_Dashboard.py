@@ -127,6 +127,7 @@ INDICATOR_MAP: list[tuple[str, str]] = sorted(
 LOWER_IS_BETTER: dict[str, bool] = {
     "CPI m/m": False, "Interest Rate": False, "GDP Growth": False,
     "Unemployment Rate": True, "Manufacturing PMI": False, "Services PMI": False,
+    "Composite PMI": False,
     "Trade Balance": False, "Retail Sales": False,
     "Current Account": False, "Wage Growth": False, "PPI": False,
     "Consumer Confidence": False, "Government Debt": True, "Budget Balance": False,
@@ -137,7 +138,7 @@ LOWER_IS_BETTER: dict[str, bool] = {
 INDICATOR_ORDER = [
     # Core — scored
     "CPI m/m", "Interest Rate", "GDP Growth", "Unemployment Rate",
-    "Manufacturing PMI", "Services PMI", "Trade Balance", "Retail Sales",
+    "Manufacturing PMI", "Services PMI", "Composite PMI", "Trade Balance", "Retail Sales",
     "Current Account", "Wage Growth", "PPI", "Consumer Confidence",
     "Government Debt", "Core CPI", "Employment Change", "Industrial Production",
     "M2 Money Supply",
@@ -200,6 +201,63 @@ _TE_HEADERS = {
     "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Referer":         "https://www.google.com/",
 }
+
+# ── Investing.com economic calendar constants ─────────────────────────────────
+_INV_HDR = {
+    "User-Agent":       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "X-Requested-With": "XMLHttpRequest",
+    "Referer":          "https://www.investing.com/economic-calendar/",
+    "Accept":           "application/json, text/javascript, */*; q=0.01",
+    "Accept-Language":  "en-US,en;q=0.9",
+}
+_INV_URL = "https://www.investing.com/economic-calendar/Service/getCalendarFilteredData"
+_INV_CCY_CODE: dict[str, str] = {
+    "EUR": "72", "GBP": "4",  "JPY": "35", "AUD": "25",
+    "CAD": "6",  "CHF": "11", "NZD": "43",
+}
+
+# Investing.com event name fragments → our indicator keys (longest-first for matching)
+_INV_NAME_MAP: list[tuple[str, str]] = sorted([
+    ("manufacturing pmi",           "Manufacturing PMI"),
+    ("services pmi",                "Services PMI"),
+    ("composite pmi",               "Composite PMI"),
+    ("s&p global manufacturing",    "Manufacturing PMI"),
+    ("s&p global services",         "Services PMI"),
+    ("s&p global composite",        "Composite PMI"),
+    ("hcob eurozone manufacturing", "Manufacturing PMI"),
+    ("hcob eurozone services",      "Services PMI"),
+    ("hcob eurozone composite",     "Composite PMI"),
+    ("jibun bank manufacturing",    "Manufacturing PMI"),
+    ("jibun bank services",         "Services PMI"),
+    ("nab business confidence",     "Business Confidence"),
+    ("westpac consumer confidence", "Consumer Confidence"),
+    ("consumer confidence",         "Consumer Confidence"),
+    ("business confidence",         "Business Confidence"),
+    ("industrial production",       "Industrial Production"),
+    ("retail sales mom",            "Retail Sales"),
+    ("retail sales m/m",            "Retail Sales"),
+    ("retail sales",                "Retail Sales"),
+    ("core retail sales",           "Retail Sales"),
+    ("unemployment rate",           "Unemployment Rate"),
+    ("claimant count",              "Unemployment Rate"),
+    ("gdp annualized",              "GDP Growth"),
+    ("gdp q/q",                     "GDP Growth"),
+    ("gdp qoq",                     "GDP Growth"),
+    ("gdp",                         "GDP Growth"),
+    ("core cpi",                    "Core CPI"),
+    ("cpi y/y",                     "CPI YoY"),
+    ("cpi yoy",                     "CPI YoY"),
+    ("cpi m/m",                     "CPI m/m"),
+    ("cpi mom",                     "CPI m/m"),
+    ("cpi",                         "CPI m/m"),
+    ("ppi",                         "PPI"),
+    ("interest rate",               "Interest Rate"),
+    ("ivey pmi",                    "Manufacturing PMI"),
+    ("tankan",                      "Business Confidence"),
+    ("ifo",                         "Business Confidence"),
+    ("zew",                         "Business Confidence"),
+], key=lambda x: len(x[0]), reverse=True)
 
 # ── Trading Economics historical page map ─────────────────────────────────────
 # Maps currency → {indicator_name: (country_slug, indicator_slug)}
@@ -333,6 +391,7 @@ _IND_DIRECTION: dict[str, str] = {
     "GDP Growth":           "high",
     "Manufacturing PMI":    "high",
     "Services PMI":         "high",
+    "Composite PMI":        "high",
     "Retail Sales":         "high",
     "Employment Change":    "high",
     "Wage Growth":          "high",
@@ -362,6 +421,7 @@ _IND_WEIGHTS: dict[str, float] = {
     "Wage Growth":          1.0,
     "Manufacturing PMI":    0.9,
     "Services PMI":         0.9,
+    "Composite PMI":        0.9,
     "Retail Sales":         0.8,
     "Trade Balance":        0.8,
     "Industrial Production":0.7,
@@ -1483,6 +1543,136 @@ def fetch_ff_macro_data(currency: str) -> dict:
     return result
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_investing_history(currency: str) -> dict[str, list[float]]:
+    """
+    Fetch 12-month economic indicator history from Investing.com economic calendar.
+
+    Returns {indicator_name: [float list oldest→newest]} for:
+    Manufacturing PMI, Services PMI, Composite PMI, GDP Growth, Retail Sales,
+    Industrial Production, Consumer Confidence, Business Confidence,
+    Unemployment Rate, CPI m/m, Core CPI, PPI
+
+    Does NOT return Interest Rate (CB APIs are more precise).
+    Never raises — returns {} on any failure.
+    Cache: 1 hour.
+    """
+    import re as _re
+
+    if not _BS4:
+        return {}
+
+    cc = _INV_CCY_CODE.get(currency)
+    if not cc:
+        return {}
+
+    d1 = (datetime.today() - timedelta(days=400)).strftime("%Y-%m-%d")
+    d2 = datetime.today().strftime("%Y-%m-%d")
+
+    post_data = {
+        "dateFrom":     d1,
+        "dateTo":       d2,
+        "country[]":    cc,
+        "timeZone":     "55",
+        "timeFilter":   "timeRemain",
+        "currentTab":   "custom",
+        "submitFilters":"1",
+        "limit_from":   "0",
+        "importance[]": ["2", "3"],   # Medium + High only
+    }
+
+    try:
+        r = requests.post(_INV_URL, headers=_INV_HDR, data=post_data, timeout=20)
+        if r.status_code != 200:
+            return {}
+        html = r.json().get("data", "")
+        if not html:
+            return {}
+    except Exception:
+        return {}
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    def _num(txt: str) -> float | None:
+        s = str(txt).strip().replace(",", "").replace("%", "").replace(" ", "")
+        if s in ("", "-", "N/A", "None"):
+            return None
+        if s.upper().endswith("K"):
+            try:
+                return float(s[:-1]) * 1_000
+            except Exception:
+                return None
+        try:
+            return float(s)
+        except (ValueError, TypeError):
+            return None
+
+    def _map_name(raw: str) -> str | None:
+        """Map Investing.com event name to our indicator key."""
+        t = raw.lower().strip()
+        # Remove month/quarter suffixes like "(Apr)", "(Q1)"
+        t = _re.sub(r'\s*\([^)]*\)', '', t).strip()
+        for fragment, ind_key in _INV_NAME_MAP:
+            if fragment in t:
+                return ind_key
+        return None
+
+    # Skip indicators handled by more precise dedicated sources
+    _SKIP = {"Interest Rate"}
+
+    # Collect all events: {indicator → [(date_str, actual_float)]}
+    from collections import defaultdict
+    ind_events: dict[str, list[tuple[str, float]]] = defaultdict(list)
+
+    for row in soup.find_all("tr", id=_re.compile(r"^eventRowId_")):
+        row_id = row["id"].replace("eventRowId_", "")
+        dt_str = row.get("data-event-datetime", "")[:10]  # "2025/05/02"
+        if not dt_str:
+            continue
+
+        name_td = row.find("td", class_="event")
+        raw_name = name_td.get_text(strip=True) if name_td else ""
+        if not raw_name:
+            continue
+
+        ind_name = _map_name(raw_name)
+        if not ind_name or ind_name in _SKIP:
+            continue
+
+        act_td = soup.find(id=f"eventActual_{row_id}")
+        actual = _num(act_td.get_text(strip=True)) if act_td else None
+        if actual is None:
+            # Try span inside
+            if act_td:
+                sp = act_td.find("span")
+                actual = _num(sp.get_text(strip=True)) if sp else None
+
+        if actual is None:
+            continue
+
+        ind_events[ind_name].append((dt_str, actual))
+
+    # For each indicator: sort by date, deduplicate by month, return oldest→newest
+    result: dict[str, list[float]] = {}
+    for ind_name, events_list in ind_events.items():
+        # Sort ascending by date
+        events_list.sort(key=lambda x: x[0])
+        # Deduplicate: keep one value per month (prefer final/revised over flash)
+        # When multiple same month: keep last one (usually the final release)
+        monthly: dict[str, float] = {}
+        for dt, val in events_list:
+            # Convert "2025/05/02" → "2025-05"
+            month_key = dt.replace("/", "-")[:7]
+            monthly[month_key] = val  # overwrite → keeps later (final) release
+
+        # Sort months and take last 14
+        sorted_vals = [v for _, v in sorted(monthly.items())]
+        if len(sorted_vals) >= 2:
+            result[ind_name] = sorted_vals[-14:]  # oldest→newest, max 14
+
+    return result
+
+
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  12-MONTH HISTORY FETCHERS
 # ╚══════════════════════════════════════════════════════════════════════════════
@@ -2157,8 +2347,17 @@ def fetch_currency_history(currency: str, fred_api_key: str) -> dict[str, list[f
         if _nzd_rate:  live["Interest Rate"]     = _nzd_rate
         if _nzd_unemp: live["Unemployment Rate"] = _nzd_unemp
 
+    # ── Investing.com: primary 12-month source for non-USD, most indicators ──
+    # Goes in FIRST as a base layer; CB APIs below will override specific indicators
+    if currency != "USD":
+        inv_history = fetch_investing_history(currency)
+        # Only fill gaps not already covered by the CB API fetches above
+        for ind_name, vals in inv_history.items():
+            if ind_name not in live:
+                live[ind_name] = vals
+
     # ── TE historical data (PMI, GDP, Retail, Confidence, Industrial Production, etc.) ──
-    # Only for non-USD currencies; CB API data takes priority (already in live)
+    # Only for non-USD currencies; fill gaps not covered by Investing.com or CB APIs
     if currency != "USD":
         te_map = _TE_HISTORY_MAP.get(currency, {})
         for ind_name, (country_slug, ind_slug) in te_map.items():
@@ -2168,7 +2367,7 @@ def fetch_currency_history(currency: str, fred_api_key: str) -> dict[str, list[f
                     live[ind_name] = vals
 
     # ── FRED OECD series (Consumer/Business Confidence, Industrial Production) ──
-    # Only for non-USD currencies; only if not already fetched from TE or CB APIs
+    # Only for non-USD currencies; only if not already fetched from Investing.com/TE/CB APIs
     if currency != "USD":
         for ind_name, (sid, _) in _FRED_INTL.get(currency, {}).items():
             if ind_name not in live:
@@ -2517,7 +2716,7 @@ def _calc_bias_score_legacy(indicators_df: pd.DataFrame, currency: str) -> dict:
             if a <= normal:        return  0.2
             if a <= normal + 1.5:  return -0.6
             return -1.0
-        if ind in ("Manufacturing PMI", "Services PMI"):
+        if ind in ("Manufacturing PMI", "Services PMI", "Composite PMI"):
             if a > 54:   return  1.0
             if a >= 50:  return  0.2
             if a >= 48:  return -0.6
@@ -2715,6 +2914,7 @@ _D_THRESHOLDS: dict[str, tuple[float, float]] = {
     "Unemployment Rate":   (0.10, 0.30),
     "Manufacturing PMI":   (1.00, 3.00),
     "Services PMI":        (1.00, 3.00),
+    "Composite PMI":       (1.00, 3.00),
     "Wage Growth":         (0.20, 0.50),
     "Trade Balance":       (0.10, 0.30),   # tightened
     "Current Account":     (0.10, 0.30),   # tightened
@@ -2763,7 +2963,7 @@ def _d1_level(ind: str, val, currency: str = "USD") -> tuple[str, str]:
         if v <= 6.0:   return "NORMAL",    C["muted"]
         if v <= 8.0:   return "WEAK",      C["yellow"]
         return             "CRITICAL",     C["red"]
-    if ind in ("Manufacturing PMI", "Services PMI"):
+    if ind in ("Manufacturing PMI", "Services PMI", "Composite PMI"):
         if v > 57.0:   return "STRONG",    C["green"]
         if v >= 52.0:  return "NORMAL",    C["muted"]
         if v >= 50.0:  return "WEAK",      C["yellow"]   # barely expanding
@@ -3456,6 +3656,7 @@ def main():
         fetch_snb_history.clear()
         fetch_oecd_history.clear()
         fetch_te_history.clear()
+        fetch_investing_history.clear()
         st.session_state.last_refresh_ts = _now
         st.rerun()
 
@@ -3492,6 +3693,7 @@ def main():
             fetch_te_history.clear()
             fetch_ff_macro_data.clear()
             fetch_international_indicators.clear()
+            fetch_investing_history.clear()
             st.session_state.last_refresh_ts = time.time()
             st.rerun()
 
@@ -3598,6 +3800,17 @@ def main():
                 # ── Layer 1: ForexFactory — quick base for upcoming-event previous values ──
                 ff_data = fetch_ff_macro_data(currency)
                 official.update(ff_data)
+
+                # ── Layer 1b: Investing.com snapshot (current value from most recent release) ──
+                inv_hist = fetch_investing_history(currency)
+                for _ind_name, _vals in inv_hist.items():
+                    if _vals and _ind_name not in official:
+                        official[_ind_name] = {
+                            "actual":   _vals[-1],
+                            "previous": _vals[-2] if len(_vals) >= 2 else None,
+                            "date":     None,
+                            "source":   "Investing.com",
+                        }
 
                 # ── Layer 2: Trading Economics — PMI, GDP, Retail, Wage, Unemployment ──
                 te_data = fetch_te_indicators(currency)
