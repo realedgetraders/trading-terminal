@@ -1049,6 +1049,144 @@ def fetch_te_indicators(currency: str) -> dict:
         return {}
 
 
+# ── FRED series map for international currencies ──────────────────────────────
+# FRED international series — only include series with data within ~4 months
+# Verified current as of May 2026. Stale OECD MEI series removed.
+_FRED_INTL: dict[str, dict[str, tuple[str, str]]] = {
+    "GBP": {
+        # FRED OECD series stale ~2 months; ONS will override below (more current)
+        "Unemployment Rate":   ("LRHUTTTTGBM156S",    "pct"),   # data ~Dec 2025
+    },
+    "JPY": {
+        "Unemployment Rate":   ("LRUN74TTJPM156S",    "pct"),   # current ~Mar 2026
+        # CPI: DBnomics (PCPI_PC_PP_PT) used in history fetch; FRED OECD series stale
+    },
+    "CAD": {
+        "Unemployment Rate":   ("LRUNTTTTCAM156S",    "pct"),   # current ~Apr 2026
+        # CPI: BOC Valet used in history fetch (more current than FRED OECD)
+    },
+    "AUD": {
+        "Unemployment Rate":   ("LRUNTTTTAUM156S",    "pct"),   # current ~Mar 2026
+        # Rate + CPI: RBA CSVs used in render code below
+    },
+    "NZD": {
+        "Interest Rate":       ("IR3TIB01NZM156N",    "pct"),   # current ~Apr 2026
+        "Unemployment Rate":   ("LRUNTTTTNZQ156S",    "pct"),   # quarterly, ~Jan 2026
+    },
+    # CHF: SNB provides rate + CPI YoY (render code below); no FRED series current
+    # EUR: ECB provides rate + CPI YoY; FRED EUR unemployment stale (2023)
+}
+
+# ONS (UK) series via www.ons.gov.uk web API
+_ONS_SERIES: dict[str, str] = {
+    "CPI YoY":          "/economy/inflationandpriceindices/timeseries/d7g7/mm23",
+    "Unemployment Rate": "/employmentandlabourmarket/peoplenotinwork/unemployment/timeseries/mgsx/lms",
+}
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_international_indicators(currency: str, fred_api_key: str = "") -> dict:
+    """
+    Fetch current indicator values for non-USD currencies using:
+      - FRED international OECD/ILO series (unemployment, CPI where available)
+      - ONS web API for GBP (CPI YoY, Unemployment Rate — current data)
+    Returns {indicator_name: {actual, previous, date, source}} or {} on failure.
+    Never raises.
+    """
+    result: dict = {}
+    _key = fred_api_key or FRED_API_KEY
+
+    _max_stale_months = 5   # skip series with data older than this
+    _cutoff = (datetime.today() - timedelta(days=_max_stale_months * 31)).strftime("%Y-%m")
+
+    # ── 1. FRED international series ─────────────────────────────────────────
+    for ind_name, (sid, transform) in _FRED_INTL.get(currency, {}).items():
+        try:
+            url = (
+                f"https://api.stlouisfed.org/fred/series/observations"
+                f"?series_id={sid}&api_key={_key}&sort_order=desc&limit=4&file_type=json"
+            )
+            r = requests.get(url, timeout=10)
+            if r.status_code != 200:
+                continue
+            obs = [o for o in r.json().get("observations", []) if o.get("value") != "."]
+            if len(obs) < 2:
+                continue
+            date_str = obs[0]["date"][:7]
+            if date_str < _cutoff:
+                continue    # skip stale series
+            actual_val   = float(obs[0]["value"])
+            previous_val = float(obs[1]["value"])
+            result[ind_name] = {
+                "actual":   round(actual_val, 3),
+                "previous": round(previous_val, 3),
+                "date":     date_str,
+                "source":   "FRED",
+            }
+        except Exception:
+            continue
+
+    # ── 2. ONS for GBP (current data, higher priority than FRED) ─────────────
+    if currency == "GBP":
+        for ind_name, ons_path in _ONS_SERIES.items():
+            try:
+                r = requests.get(
+                    f"https://www.ons.gov.uk{ons_path}/data",
+                    timeout=10,
+                )
+                if r.status_code != 200:
+                    continue
+                d = r.json()
+                items = d.get("months") or d.get("quarters") or []
+                valid = [
+                    (m["date"], float(m["value"]))
+                    for m in items
+                    if m.get("value") and m["value"].replace(".", "").replace("-", "").isdigit()
+                ]
+                if len(valid) < 2:
+                    continue
+                actual_val   = valid[-1][1]
+                previous_val = valid[-2][1]
+                date_str     = valid[-1][0]
+                result[ind_name] = {
+                    "actual":   round(actual_val, 3),
+                    "previous": round(previous_val, 3),
+                    "date":     date_str,
+                    "source":   "ONS",
+                }
+            except Exception:
+                continue
+
+    # ── 3. ECB live values for EUR (interest rate + CPI YoY already in fetch_ecb_*) ──
+    if currency == "EUR":
+        try:
+            r = requests.get(
+                "https://data-api.ecb.europa.eu/service/data/ICP/M.U2.N.000000.4.ANR"
+                "?format=csvdata&startPeriod=2025-06",
+                timeout=10,
+            )
+            if r.ok:
+                lines = [l for l in r.text.splitlines() if l.strip()]
+                hdr = lines[0].split(",")
+                tc  = hdr.index("TIME_PERIOD");  vc = hdr.index("OBS_VALUE")
+                pairs = []
+                for l in lines[1:]:
+                    p = l.split(",")
+                    try: pairs.append((p[tc].strip(), float(p[vc].strip())))
+                    except: pass
+                pairs.sort()
+                if len(pairs) >= 2:
+                    result["CPI YoY"] = {
+                        "actual":   pairs[-1][1],
+                        "previous": pairs[-2][1],
+                        "date":     pairs[-1][0],
+                        "source":   "ECB",
+                    }
+        except Exception:
+            pass
+
+    return result
+
 
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  12-MONTH HISTORY FETCHERS
@@ -1576,6 +1714,34 @@ def fetch_oecd_history(country_code: str) -> dict[str, list[float]]:
     return result
 
 
+def _fetch_fred_series_history(series_id: str, fred_api_key: str = "",
+                                max_stale_months: int = 5) -> list[float]:
+    """
+    Fetch up to 14 months of history for a single FRED series.
+    Returns list of floats (oldest → newest) or [] if unavailable/stale.
+    """
+    _key = fred_api_key or FRED_API_KEY
+    try:
+        url = (
+            f"https://api.stlouisfed.org/fred/series/observations"
+            f"?series_id={series_id}&api_key={_key}&sort_order=desc&limit=16&file_type=json"
+        )
+        r = requests.get(url, timeout=10)
+        if r.status_code != 200:
+            return []
+        obs = [o for o in r.json().get("observations", []) if o.get("value") != "."]
+        if not obs:
+            return []
+        # Freshness check
+        cutoff = (datetime.today() - timedelta(days=max_stale_months * 31)).strftime("%Y-%m")
+        if obs[0]["date"][:7] < cutoff:
+            return []
+        vals = [float(o["value"]) for o in reversed(obs)]  # oldest first
+        return vals[-14:]
+    except Exception:
+        return []
+
+
 @st.cache_data(ttl=TTL_HISTORY, show_spinner=False)
 def fetch_currency_history(currency: str, fred_api_key: str) -> dict[str, list[float]]:
     """
@@ -1599,20 +1765,37 @@ def fetch_currency_history(currency: str, fred_api_key: str) -> dict[str, list[f
         live = fetch_ecb_history()
     elif currency == "GBP":
         live = fetch_boe_history()
+        # Supplement GBP with FRED unemployment history (current via ILO)
+        _gbr_unemp = _fetch_fred_series_history("LRHUTTTTGBM156S", fred_api_key)
+        if _gbr_unemp:
+            live["Unemployment Rate"] = _gbr_unemp
     elif currency == "AUD":
         live = fetch_rba_history()
+        # Supplement AUD with FRED unemployment (more months of history)
+        _aud_unemp = _fetch_fred_series_history("LRUNTTTTAUM156S", fred_api_key)
+        if _aud_unemp:
+            live["Unemployment Rate"] = _aud_unemp
     elif currency == "CAD":
         live = fetch_boc_history()
+        # Supplement CAD with FRED unemployment
+        _cad_unemp = _fetch_fred_series_history("LRUNTTTTCAM156S", fred_api_key)
+        if _cad_unemp:
+            live["Unemployment Rate"] = _cad_unemp
     elif currency == "CHF":
         live = fetch_snb_history()
-    elif currency in ("JPY", "NZD"):
+    elif currency == "JPY":
         live = fetch_dbnomics_cpi(currency)
-        # supplement with OECD for other indicators (best-effort)
-        _OECD = {"JPY": "JPN", "NZD": "NZL"}
-        oecd = fetch_oecd_history(_OECD[currency])
-        for k, v in oecd.items():
-            if k not in live:
-                live[k] = v
+        # Supplement JPY with FRED unemployment (ILO current)
+        _jpy_unemp = _fetch_fred_series_history("LRUN74TTJPM156S", fred_api_key)
+        if _jpy_unemp:
+            live["Unemployment Rate"] = _jpy_unemp
+    elif currency == "NZD":
+        live = {}
+        # NZD: FRED interest rate + unemployment
+        _nzd_rate  = _fetch_fred_series_history("IR3TIB01NZM156N", fred_api_key)
+        _nzd_unemp = _fetch_fred_series_history("LRUNTTTTNZQ156S", fred_api_key)
+        if _nzd_rate:  live["Interest Rate"]     = _nzd_rate
+        if _nzd_unemp: live["Unemployment Rate"] = _nzd_unemp
 
     fallback = HISTORY_FALLBACK.get(currency, {})
     result: dict[str, list[float]] = {}
@@ -3005,7 +3188,9 @@ def main():
             if currency == "USD":
                 official = fetch_fred_indicators(FRED_API_KEY)
             else:
-                official = dict(fetch_te_indicators(currency))
+                # International live data: FRED OECD/ILO + ONS (GBP) + ECB/BOE overrides
+                official = dict(fetch_international_indicators(currency, FRED_API_KEY))
+                # Per-currency rate/CPI overrides (highest precision sources)
                 if currency == "EUR":
                     ecb_rate = fetch_ecb_rate()
                     if ecb_rate:
@@ -3017,6 +3202,34 @@ def main():
                     boe_rate = fetch_boe_rate()
                     if boe_rate:
                         official["Interest Rate"] = boe_rate
+                elif currency == "AUD":
+                    # RBA history has rate + unemployment — pull current value from it
+                    _rba = fetch_rba_history()
+                    for _ind in ("Interest Rate", "Unemployment Rate"):
+                        if _ind in _rba and _rba[_ind]:
+                            official.setdefault(_ind, {
+                                "actual":   _rba[_ind][-1],
+                                "previous": _rba[_ind][-2] if len(_rba[_ind]) >= 2 else None,
+                                "source":   "RBA",
+                            })
+                elif currency == "CAD":
+                    _boc = fetch_boc_history()
+                    for _ind in ("Interest Rate", "CPI m/m"):
+                        if _ind in _boc and _boc[_ind]:
+                            official.setdefault(_ind, {
+                                "actual":   _boc[_ind][-1],
+                                "previous": _boc[_ind][-2] if len(_boc[_ind]) >= 2 else None,
+                                "source":   "BOC",
+                            })
+                elif currency == "CHF":
+                    _snb = fetch_snb_history()
+                    for _ind in ("Interest Rate", "CPI YoY"):
+                        if _ind in _snb and _snb[_ind]:
+                            official.setdefault(_ind, {
+                                "actual":   _snb[_ind][-1],
+                                "previous": _snb[_ind][-2] if len(_snb[_ind]) >= 2 else None,
+                                "source":   "SNB",
+                            })
         indicators_df, ind_source = build_indicators_table(currency, official)
         _cg = C["green"]; _cy = C["yellow"]; _cm2 = C["muted"]
         st.markdown(
