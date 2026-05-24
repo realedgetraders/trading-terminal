@@ -51,6 +51,48 @@ trading-terminal/
 - Module 4 (Geopolitics & News): COMPLETE ✓ — DO NOT MODIFY unless explicitly asked
 - Module 5 (News Feed): pending
 
+---
+
+## Project
+Forex trading terminal — Streamlit, Python, 8 currencies, 28 pairs.
+Main file: pages/3_Macro_Dashboard.py
+
+## Bias Scoring System (current state — fully working)
+- fetch_currency_history() returns dated pairs: {indicator: [(YYYY-MM, float), ...]}
+- All fetchers (FRED, ECB, Investing.com) return dated pairs
+- HISTORY_FALLBACK and plain-value sources wrapped with _assign_approximate_dates()
+- _strip_dates() converts at main() boundary — all scoring logic receives plain value lists
+- _score_indicator(name, vals) — scores one indicator, requires len >= 3
+- _calc_raw_score(history) — weighted average across all indicators, returns float
+- calc_all_biases(all_histories) — z-score normalization across all 8 currencies in one pass
+  - Computes raw score per currency, then normalizes: (raw - mean) / std * 1.2
+  - Labels: >= +1.5 STRONG BULLISH, >= +0.4 SLIGHT BULLISH, >= -0.4 NEUTRAL, >= -1.5 SLIGHT BEARISH, else STRONG BEARISH
+- 12M chart: true monthly re-score — for each month filters dated history to date <= month, then scores
+  - Rightmost point verified = live score (delta 0.000000)
+
+## Data Sources (per currency)
+- USD: FRED API (11 indicators live) + Investing.com (PMI only)
+- EUR: ECB API + Eurostat + Investing.com (11 indicators live)
+- GBP/JPY/AUD/CAD/CHF/NZD: Investing.com live + HISTORY_FALLBACK for gaps
+
+## Known remaining gaps
+- Consumer Confidence: no live source for most currencies (HISTORY_FALLBACK)
+- USD PMI: only 3-4 months depth from Investing.com (calendar too dense for 200-row cap)
+- EUR Consumer Confidence: Investing.com importance filter excludes EC survey
+
+## Cache
+- fetch_currency_history: TTL=3600s
+- Manual refresh button clears all caches
+- Auto-rerun every 300s (hits cache unless TTL expired)
+
+## Last commits
+- fbdc7b3: true monthly re-score chart rebuild
+- 6bc7d03: Trade Balance trend cap +/-15B
+- 0b7757d: Bug fixes (ZEW scale, CPI deflation floor, GDP QoQ/annualized detection)
+- 25aca03: z-score normalization across 8 currencies
+
+---
+
 ## Module 1 — Seasonality Tracker (COMPLETE)
 pages/1_Seasonality.py — DO NOT BREAK THIS FILE
 
@@ -143,13 +185,12 @@ Signal cards: below controls, show COT Index value + Bullish/Bearish/Neutral lab
 No inversion logic — raw CFTC numbers only for all markets
 
 ## Module 3 — Economic Bias Engine (COMPLETE)
-pages/3_Macro_Dashboard.py — DO NOT BREAK THIS FILE
+pages/3_Macro_Dashboard.py — DO NOT BREAK THIS FILE unless explicitly asked
 
 ### Overview
 Currency-filtered macro scanner for 8 major FX currencies (USD EUR GBP JPY AUD CAD CHF NZD).
 Combines static indicator data, live FRED API data, ForexFactory calendar, and
-a 4-Dimensional bias engine into a single dashboard.
-News feed removed — moved to Module 4 (Geopolitics & News).
+a bias engine into a single dashboard.
 
 ### Layout (top to bottom)
 1. Title row: "← Back to Hub" left | "ECONOMIC BIAS ENGINE" centered | refresh controls right
@@ -159,170 +200,86 @@ News feed removed — moved to Module 4 (Geopolitics & News).
 5. Footer: "Built by @realedgetraders"
 
 ### Data Sources
-- Live: FRED API (FRED_API_KEY set in file, line ~33) for USD indicators
+- Live: FRED API (FRED_API_KEY set in file, line ~34) for USD indicators
 - Live: ECB Data Portal for EUR indicators
+- Live: Investing.com economic calendar for PMI, GDP, CPI, Industrial Production across all currencies
 - Live: ForexFactory calendar (JSON + XML fallback, Windows NT UA)
-- Live: Google News RSS via feedparser for D3/D4 news signals (internal scoring only, not displayed)
-- Static: hardcoded indicator tables for all 8 currencies (lines ~100–576)
-- Cache TTLs: indicators 1h, calendar 30min, D3/D4 news 10min
-- Removed: RSS_FEEDS, CURRENCY_KEYWORDS, fetch_news(), render_news_feed() — all moved to Module 4
+- Static: HISTORY_FALLBACK hardcoded indicator tables for all 8 currencies
+- Cache TTLs: fetch_currency_history=3600s, calendar=30min
 
-### Scoring Architecture — Two-Layer Approach
+### Scoring Architecture
 
-**Layer 1: `calc_bias_score()` (lines ~1507–1770)**
-Internal 4-dimensional scorer. Returns dict with keys: `total` ∈ [-1,+1], `d1`-`d4` aggregates, `scores` list.
-Used only as input to Layer 2 (d3/d4 aggregates reused as D2 of the 4D engine).
+**`_score_indicator(name, vals)`**
+Scores one indicator from its plain value list (len >= 3 required).
+Handles special cases: Business Confidence ZEW vs IFO/OECD scale auto-detection,
+CPI deflation floor, Trade Balance trend cap ±15B, GDP QoQ vs annualized auto-detection.
 
-Dimensions (all ∈ [-1,+1], impact-weighted where stated):
-- D1 Absolute Level (15%): currency-specific neutral zones, equal-weighted avg
-- D2 Forecast Quality (10%): 50% absolute quality + 50% directional vs previous
-- D3 Beat/Miss (40%): actual vs forecast, impact-weighted (High=5×, Med=2×, Low=0.5×)
-- D4 Trend/Momentum (35%): actual vs previous, impact-weighted same
-- Final = (D1×0.15 + D2×0.10 + D3×0.40 + D4×0.35) × 1.4, clamped [-1,+1]
+**`_calc_raw_score(history)`**
+Weighted average of per-indicator scores. Returns (indicator_scores, raw_float, monthly_scores).
 
-_sdiff() thresholds: 7-level mapping (±1.0/±0.5/±0.3/0.0) using per-indicator _SLT/_STR dicts.
-IN LINE band = ±(slt×0.5), weak tier = ±(slt→slt×0.5).
+**`calc_all_biases(all_histories)`**
+Z-score normalization across all 8 currencies in one pass.
+Formula: (raw - mean) / max(std, 0.1) * 1.2, clamped [-3, +3].
+Labels: ≥+1.5 STRONG BULLISH, ≥+0.4 SLIGHT BULLISH, ≥-0.4 NEUTRAL,
+        ≥-1.5 SLIGHT BEARISH, else STRONG BEARISH.
 
-**Layer 2: `calc_4d_bias()` (lines ~2483–2609)**
-The display-facing 4-Dimensional engine. Each dimension ∈ [-3,+3], final = simple average.
-Returns: `total`, `level`, `level_color`, `dim1`–`dim4`.
+**`fetch_currency_history(currency, fred_api_key)`**
+Returns dict[str, list[tuple[str, float]]] — dated pairs.
+CB plain-value fetchers (BOE, RBA, BOC, SNB, TE) wrapped with _assign_approximate_dates().
+HISTORY_FALLBACK similarly wrapped.
 
-```
-D1 (25%) — Current values vs fundamental benchmarks (_d1_bench helper)
-           Impact weights: High=0.8, Med=0.6, Low=0.3, Critical=1.0
-           Per-indicator linear/piecewise mapping to [-3,+3]
+**`_assign_approximate_dates(plain_history)`**
+Assigns synthetic YYYY-MM dates counting backwards from today.
 
-D2 (25%) — Beat/miss + trend momentum
-           = (bias_old["d3"] + bias_old["d4"]) / 2.0 × 3.0
-           Reuses Layer 1 d3/d4 aggregates scaled to [-3,+3]
+**`_strip_dates(dated_history)`**
+Strips dates at main() boundary. All scoring functions receive plain value lists.
 
-D3 (25%) — Next CB action pricing + same-day web news adjustment
-           = _D3_BASE[ccy] + fetch_d3_d4_news()["d3"][ccy]
-           _D3_BASE hardcoded (EUR=+2.5, JPY=+1.5, AUD=+0.8, USD=+0.3,
-                               CAD=0.0, GBP=-0.3, CHF=-0.5, NZD=-1.0)
-           Web adjustment ∈ {-1.0,-0.5,0.0,+0.5,+1.0} via hawk/dove keyword scan
-
-D4 (25%) — Rate differential + macro structure + live news adjustment (NO geo)
-           = _D4_STRUCTURAL[ccy] + fetch_d3_d4_news()["d4"][ccy]
-           _D4_STRUCTURAL: USD=+0.7, GBP=+0.5, AUD=+0.4, CAD=+0.1,
-                           NZD=0.0, EUR=-0.1, CHF=-0.8, JPY=-1.5
-           Geo constants (_GEO_QUERY, _GEO_CCY_IMPACT etc.) kept in file — reserved for Module 4
-
-Final = (D1+D2+D3+D4) / 4  clamped [-3,+3]
-```
-
-Level thresholds: ≥2.0=STRONG BULLISH, ≥0.8=SLIGHT BULLISH, ≥-0.7=NEUTRAL,
-                  ≥-2.0=SLIGHT BEARISH, else=STRONG BEARISH
-
-### `fetch_d3_d4_news()` (line ~2433)
-@st.cache_data(ttl=600). Fetches Google News RSS for D3 (CB queries) + D4 (fundamental queries).
-_hawk_dove() counts hawk/dove keywords across up to 6 articles per currency.
-net score: ≥+2→+1.0, +1→+0.5, 0→0.0, -1→-0.5, ≤-2→-1.0.
-
-### Bias Panel UI — `render_bias_panel()` (line ~2005)
-- Gauge: ±3.0 → 0–100% via (score+3.0)/6.0×100. Pure CSS multi-layer gradient (no position:absolute).
-- D1/D2/D3/D4 grid: 4-column CSS grid, each cell shows label + large score number.
-- Collapsible indicator breakdown: `<details>` toggle "Show indicator breakdown ▼"
-- Score scale labels: STR.BEARISH | SLT.BEARISH | NEUTRAL | SLT.BULLISH | STR.BULLISH
-
-### Indicators Table UI — `render_indicators_table()` (line ~2108)
-- Columns: Indicator | Actual | Prev | Forecast | Beat/Miss | Trend | Date | Imp
-- D1 level pill below indicator name, D2 expectation pill below forecast value
-- Beat/Miss + Trend cells: arrow (13px) + score badge [±X.X] only — no text label
-- Impact: HIGH=red pill, MEDIUM=yellow pill, LOW=single dot (no pill)
-- Row alternating background (odd rows: C["dim"])
-- Left color border: green if _rc>0.3, yellow if _rc>-0.3, else red
-- max-height: 520px with overflow-y:auto scroll
-- Padding: 12px vertical on all body tds
-
-### Calendar error (if ForexFactory unavailable)
-Shows: "⚠ Calendar unavailable — all sources blocked" (no raw HTTP codes)
+### 12M Economic Strength Chart
+True monthly re-score: for each of last 12 months, filters each indicator's dated list
+to date <= month_str, calls _calc_raw_score() on filtered subset.
+Rightmost point verified to match live score exactly (delta = 0.000000).
 
 ### Session State Keys
-- `macro_scores_{CCY}`: dict with keys total, level, dim1–dim4, currency, fmt="4d"
+- `macro_scores_{CCY}`: dict with keys total, level, currency, fmt="indicator_12m"
 - `macro_last_rerun`: timestamp for 5-min auto-rerun timer
 - `macro_currency`: selected currency radio value
-
-### Constants (lines ~359–415)
-- _D3_BASE, _D4_STRUCTURAL, _D3_CB_QUERIES, _D4_NEWS_QUERIES
-- _CB_HAWK_KW, _CB_DOVE_KW — keyword tuples for hawk/dove detection
-- FRED_API_KEY — hardcoded, enables live USD data from FRED
-- _CY / _NY — current year / next year (computed at import time, used in f-string queries)
-- BOE_RATE_URL — FY/TY computed dynamically from datetime.today().year (rolling 2-year window)
-- _GEO_QUERY, _GEO_CCY_IMPACT, _GEO_BULL_KW, _GEO_BEAR_KW — geo constants retained, reserved for Module 4
-
-## Hub (app.py)
-- Dark navy landing page
-- Module cards grid — Seasonality + COT Analysis + Macro Dashboard are LIVE/active, others "Coming Soon"
-- Navigation via st.switch_page()
-- Footer: "Built by @realedgetraders"
-- Hub is always editable — add new modules here as they are completed
 
 ## Module 4 — Geopolitics & News (COMPLETE)
 pages/4_Geopolitics.py — DO NOT BREAK THIS FILE
 
 ### Overview
-Currency-filtered geo news reader for 8 major FX currencies (USD EUR GBP JPY AUD CAD CHF NZD).
+Currency-filtered geo news reader for 8 major FX currencies.
 NO directional trade signals — shows geopolitical headlines per selected currency plus a static
-geo-sensitivity profile explaining WHY those events matter for that currency.
-Strictly geo/political content: conflicts, sanctions, trade wars, political crises, diplomacy.
-Economic data (rates, CPI, GDP, payrolls) is explicitly filtered out via keyword list.
+geo-sensitivity profile. Strictly geo/political content only.
 
 ### Layout (top to bottom)
 1. Title row: "← Back to Hub" left | "GEOPOLITICAL INTELLIGENCE" centered | "🔄 Refresh" right
 2. Live pulse dot + tag line
-3. Currency selector: 8 radio pills with flag emoji (USD EUR GBP JPY AUD CAD CHF NZD)
+3. Currency selector: 8 radio pills with flag emoji
 4. Two-column layout [2:5]:
-   - Left: Currency geo profile card (flag, role, sensitivity badge, context bullets, key risks)
-            + Global Geo Events panel (Reuters / BBC / Al Jazeera, filtered to geo categories only)
+   - Left: Currency geo profile card + Global Geo Events panel (Reuters / BBC / Al Jazeera)
    - Right: Tab switcher ["🌍 Geo Events" | "📰 Financial News"]
-       - Geo Events: Google News RSS geo-only headlines for selected currency
-       - Financial News: FXStreet/ForexLive/CNBC/Bloomberg/MarketWatch/Investing (moved from Module 3)
-                         with per-source filter radio (All / per-source)
 5. Footer: sources + auto-refresh note
 
 ### Data Sources
-- Geo (primary): Google News RSS via feedparser — 2 geo-specific queries per currency (16 articles max)
-- Geo (secondary): Reuters, BBC World, Al Jazeera direct RSS feeds — global geo events panel
-- Financial: FXStreet, ForexLive, CNBC, Bloomberg, MarketWatch, Investing.com — `requests` + feedparser/XML
-- All geo sources: economic noise removed via `_ECON_SKIP_KW`, General category skipped from direct feeds
-- Cache TTLs: per-currency geo=300s, global geo=600s, financial=300s. Auto-rerun on TTL expiry.
-
-### Key Functions
-
-**`fetch_ccy_news(ccy)`** — @st.cache_data(ttl=300), one cache entry per currency
-- Runs `_CCY_GEO_QUERIES[ccy]` (2 queries × 8 articles via Google News RSS)
-- Skips articles matching `_ECON_SKIP_KW`; `_classify(title)` assigns geo category + color
-- Returns deduplicated list: title, source, url, time, category, cat_col
-
-**`fetch_global_news()`** — @st.cache_data(ttl=600)
-- Fetches Reuters + BBC + Al Jazeera RSS directly (up to 20 articles each)
-- Keeps only articles with a named geo category (skips "General" and economic noise)
-- Returns top 14 articles for the global events panel
-
-### Currency Profiles (`_CCY_PROFILE`)
-Each has: role string, sensitivity label + color, 3-4 context bullets, key_risks list.
-- USD/CHF/JPY: SAFE HAVEN | EUR: GEO-EXPOSED | AUD/NZD: RISK CORRELATED
-- CAD: OIL/TRADE LINKED | GBP: MODERATE EXPOSURE
-
-### Category Detection (`_CATEGORIES`)
-6 categories: Conflict (red), Sanctions (yellow), Political (blue), Diplomatic (green),
-Trade War (orange), Energy (purple). Each has keyword list. Default fallback: "General".
+- Geo: Google News RSS via feedparser — 2 geo-specific queries per currency
+- Geo secondary: Reuters, BBC World, Al Jazeera direct RSS feeds
+- Financial: FXStreet, ForexLive, CNBC, Bloomberg, MarketWatch, Investing.com
+- Cache TTLs: per-currency geo=300s, global geo=600s, financial=300s
 
 ### Key Constants
-- _CCY_GEO_QUERIES: dict[str, list[str]] — 2 geo-only RSS queries per currency
-- _DIRECT_FEEDS: list[(name, url)] — Reuters, BBC, Al Jazeera RSS URLs
-- _FIN_FEEDS: list[(name, url)] — FXStreet, ForexLive, CNBC, Bloomberg, MarketWatch, Investing
-- _FIN_HEADERS: dict — HTTP headers to reduce 403 rejections on financial RSS feeds
-- _CCY_FIN_KW: dict[str, list[str]] — currency keyword filter for financial news (from Module 3)
-- _FIN_SOURCE_NAMES: list[str] — ["All"] + financial source names for tab filter
-- _CATEGORIES: category → {color, keyword list}
-- _ECON_SKIP_KW: list[str] — economic noise filter for geo feeds
-- TTL_CCY=300, TTL_GLOBAL=600, TTL_FIN=300 — cache + auto-rerun intervals
+- _CCY_GEO_QUERIES: 2 geo-only RSS queries per currency
+- _DIRECT_FEEDS: Reuters, BBC, Al Jazeera RSS URLs
+- _FIN_FEEDS: FXStreet, ForexLive, CNBC, Bloomberg, MarketWatch, Investing
+- _ECON_SKIP_KW: economic noise filter for geo feeds
+- _CATEGORIES: Conflict / Sanctions / Political / Diplomatic / Trade War / Energy
 
-### Session State Keys
-- `geo_ccy`: selected currency (default "USD")
-- `geo_last_refresh`: float timestamp for 5-min auto-rerun timer
+## Hub (app.py)
+- Dark navy landing page
+- Module cards grid — Seasonality + COT Analysis + Macro Dashboard + Geopolitics are LIVE/active
+- Module 5 (News Feed): Coming Soon
+- Navigation via st.switch_page()
+- Footer: "Built by @realedgetraders"
 
 ## Design Rules
 - Never change completed modules unless explicitly asked
