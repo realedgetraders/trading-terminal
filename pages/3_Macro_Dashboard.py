@@ -2543,6 +2543,123 @@ def _score_indicator_series(values: list[float], indicator: str) -> float:
     return _score_indicator(indicator, values)
 
 
+def _calc_raw_score(
+    history: dict[str, list[float]],
+) -> tuple[dict[str, float], float, list[float]]:
+    """
+    Compute per-indicator scores and raw weighted average for one currency.
+    Returns (indicator_scores, raw_weighted_avg, monthly_scores).
+    raw_weighted_avg is in roughly [-1, +1] before any normalization.
+    """
+    indicator_scores: dict[str, float] = {}
+    for ind, values in history.items():
+        if len(values) >= 3 and ind in _IND_DIRECTION:
+            flat = max(values) - min(values) < 0.01
+            if flat:
+                if ind == "Interest Rate":
+                    level = values[-1]
+                    if level > 1.5:
+                        indicator_scores[ind] = 0.3
+                    elif level < 0.5:
+                        indicator_scores[ind] = -0.3
+                    else:
+                        indicator_scores[ind] = 0.0
+                continue
+            indicator_scores[ind] = _score_indicator(ind, values)
+
+    total_w = sum(_IND_WEIGHTS.get(ind, 0.5) for ind in indicator_scores)
+    if total_w > 0:
+        raw = sum(indicator_scores[ind] * _IND_WEIGHTS.get(ind, 0.5)
+                  for ind in indicator_scores) / total_w
+    else:
+        raw = 0.0
+
+    # Monthly rolling composite (absolute scale, for chart continuity)
+    n_months = max((len(v) for v in history.values()), default=0)
+    monthly_scores: list[float] = []
+    for m in range(1, n_months + 1):
+        m_total, m_w = 0.0, 0.0
+        for ind, values in history.items():
+            sub = values[:m]
+            if len(sub) >= 3 and ind in _IND_DIRECTION:
+                flat = max(sub) - min(sub) < 0.01
+                if flat:
+                    if ind == "Interest Rate":
+                        level = sub[-1]
+                        s = 0.3 if level > 1.5 else (-0.3 if level < 0.5 else 0.0)
+                    else:
+                        continue
+                else:
+                    s = _score_indicator(ind, sub)
+                w = _IND_WEIGHTS.get(ind, 0.5)
+                m_total += s * w
+                m_w     += w
+        if m_w > 0:
+            monthly_scores.append(round(max(-3.0, min(3.0, (m_total / m_w) * 6.0)), 3))
+        else:
+            monthly_scores.append(0.0)
+
+    return indicator_scores, raw, monthly_scores
+
+
+def _label_from_score(score: float) -> tuple[str, str]:
+    """Map a normalized [-3, +3] score to label + color."""
+    if   score >= 1.5:  return "STRONG BULLISH", C["green"]
+    elif score >= 0.4:  return "SLIGHT BULLISH",  C["teal"]
+    elif score >= -0.4: return "NEUTRAL",          C["muted"]
+    elif score >= -1.5: return "SLIGHT BEARISH",   C["yellow"]
+    else:               return "STRONG BEARISH",   C["red"]
+
+
+def calc_all_biases(
+    all_histories: dict[str, dict[str, list[float]]],
+) -> dict[str, dict]:
+    """
+    Compute z-score-normalized bias for all currencies in all_histories.
+
+    Step 1: Raw weighted score per currency (in roughly [-1, +1]).
+    Step 2: Z-normalize across the peer group:
+              normalized = (raw - mean) / max(std, 0.1)
+    Step 3: Scale to [-3, +3]:
+              final = clamp(normalized * 1.2, -3.0, +3.0)
+
+    Returns {currency: result_dict} with the same keys as calc_currency_bias().
+    Currencies rank relative to each other — the group mean always maps to ~0.
+    """
+    import math
+
+    # Step 1 — raw score per currency
+    raw_data: dict[str, tuple] = {}
+    for ccy, history in all_histories.items():
+        ind_scores, raw, monthly = _calc_raw_score(history)
+        raw_data[ccy] = (ind_scores, raw, monthly)
+
+    raw_vals = [raw_data[c][1] for c in raw_data]
+
+    # Step 2 — z-normalize
+    n = len(raw_vals)
+    mean = sum(raw_vals) / n if n else 0.0
+    variance = sum((v - mean) ** 2 for v in raw_vals) / n if n else 0.0
+    std = math.sqrt(variance)
+
+    # Step 3 — scale and label
+    results: dict[str, dict] = {}
+    for ccy, (ind_scores, raw, monthly) in raw_data.items():
+        normalized = (raw - mean) / max(std, 0.1)
+        final      = round(max(-3.0, min(3.0, normalized * 1.2)), 3)
+        label, lc  = _label_from_score(final)
+        results[ccy] = {
+            "score":            final,
+            "label":            label,
+            "label_color":      lc,
+            "indicator_scores": ind_scores,
+            "monthly_scores":   monthly,
+            "n_indicators":     len(ind_scores),
+        }
+
+    return results
+
+
 def calc_currency_bias(currency: str, history: dict[str, list[float]]) -> dict:
     """
     Calculate currency economic bias purely from 12-month indicator histories.
@@ -3583,6 +3700,19 @@ def render_all_currencies_overview(selected_ccy: str) -> str:
     Shows all 8 currencies ranked strongest → weakest with color-coded bias labels.
     Falls back to HISTORY_FALLBACK scores if session_state not populated.
     """
+    # If any currency is missing from session state, compute normalized fallback
+    # for all 8 at once so rankings remain relative.
+    _need_fallback = any(
+        not (st.session_state.get(f"macro_scores_{c}")
+             and st.session_state[f"macro_scores_{c}"].get("fmt") == "indicator_12m")
+        for c in SUPPORTED_CURRENCIES
+    )
+    _fb_biases: dict = {}
+    if _need_fallback:
+        _fb_biases = calc_all_biases(
+            {c: HISTORY_FALLBACK.get(c, {}) for c in SUPPORTED_CURRENCIES}
+        )
+
     rows_data = []
     for ccy in SUPPORTED_CURRENCIES:
         cached = st.session_state.get(f"macro_scores_{ccy}")
@@ -3590,11 +3720,10 @@ def render_all_currencies_overview(selected_ccy: str) -> str:
             total = cached["total"]
             level = cached["level"]
         else:
-            # Fallback: compute from HISTORY_FALLBACK
-            _h = HISTORY_FALLBACK.get(ccy, {})
-            _b = calc_currency_bias(ccy, _h)
-            total = _b["score"]
-            level = _b["label"]
+            # Use z-normalized fallback scores (computed once above)
+            _b    = _fb_biases.get(ccy, {})
+            total = _b.get("score", 0.0)
+            level = _b.get("label", "NEUTRAL")
         rows_data.append({"ccy": ccy, "total": total, "level": level})
 
     rows_data.sort(key=lambda x: x["total"], reverse=True)
@@ -3822,28 +3951,24 @@ def main():
     with st.spinner("⏳ Loading 12-month data…"):
         history = fetch_currency_history(currency, FRED_API_KEY)
 
-    # ── 2. Calculate new bias ─────────────────────────────────────────────────
-    bias_result = calc_currency_bias(currency, history)
-
-    # ── 3. Store in session state ─────────────────────────────────────────────
-    st.session_state[f"macro_scores_{currency}"] = {
-        "total":    bias_result["score"],
-        "level":    bias_result["label"],
-        "currency": currency,
-        "fmt":      "indicator_12m",
+    # ── 2. Normalized bias — all 8 currencies in one pass ────────────────────
+    # Live history for the selected currency; HISTORY_FALLBACK for the other 7.
+    # Scores are z-normalized relative to each other so rankings are meaningful.
+    _all_hist: dict[str, dict] = {
+        _ccy: (history if _ccy == currency else HISTORY_FALLBACK.get(_ccy, {}))
+        for _ccy in SUPPORTED_CURRENCIES
     }
+    _all_biases = calc_all_biases(_all_hist)
+    bias_result = _all_biases[currency]
 
-    # ── 4. Pre-compute other currencies from HISTORY_FALLBACK ─────────────────
-    for _ccy in SUPPORTED_CURRENCIES:
-        if f"macro_scores_{_ccy}" not in st.session_state:
-            _h = HISTORY_FALLBACK.get(_ccy, {})
-            _b = calc_currency_bias(_ccy, _h)
-            st.session_state[f"macro_scores_{_ccy}"] = {
-                "total":    _b["score"],
-                "level":    _b["label"],
-                "currency": _ccy,
-                "fmt":      "indicator_12m",
-            }
+    # ── 3. Store all 8 normalized scores in session state ────────────────────
+    for _ccy, _b in _all_biases.items():
+        st.session_state[f"macro_scores_{_ccy}"] = {
+            "total":    _b["score"],
+            "level":    _b["label"],
+            "currency": _ccy,
+            "fmt":      "indicator_12m",
+        }
 
     # ── 5. Bias gauge panel ───────────────────────────────────────────────────
     st.markdown(render_bias_panel(currency, bias_result), unsafe_allow_html=True)
