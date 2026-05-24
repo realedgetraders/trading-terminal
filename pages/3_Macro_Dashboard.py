@@ -1255,7 +1255,7 @@ def _score_indicator_series(values: list[float], indicator: str) -> float:
         else:
             trend_raw = -(recent_avg - early_avg)
 
-    trend_score = max(-1.0, min(1.0, trend_raw * 3.0))
+    trend_score = max(-1.0, min(1.0, trend_raw * 5.0))
 
     # Level: where is current value in own 12M range?
     v_min, v_max = min(values), max(values)
@@ -1303,7 +1303,7 @@ def calc_currency_bias(currency: str, history: dict[str, list[float]]) -> dict:
     if total_w > 0:
         raw   = sum(indicator_scores[ind] * _IND_WEIGHTS.get(ind, 0.5)
                     for ind in indicator_scores) / total_w
-        final = round(max(-3.0, min(3.0, raw * 3.0)), 3)
+        final = round(max(-3.0, min(3.0, raw * 5.0)), 3)
     else:
         final = 0.0
 
@@ -1320,7 +1320,7 @@ def calc_currency_bias(currency: str, history: dict[str, list[float]]) -> dict:
                 m_total += s * w
                 m_w     += w
         if m_w > 0:
-            monthly_scores.append(round(max(-3.0, min(3.0, (m_total / m_w) * 3.0)), 3))
+            monthly_scores.append(round(max(-3.0, min(3.0, (m_total / m_w) * 5.0)), 3))
         else:
             monthly_scores.append(0.0)
 
