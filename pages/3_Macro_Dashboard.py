@@ -245,6 +245,7 @@ TTL_FUNDAMENTAL = 1800  # 30 min — retained for compatibility
 
 # ── New 12M bias engine: direction + weight maps ──────────────────────────────
 _IND_DIRECTION: dict[str, str] = {
+    "CPI YoY":             "target",   # new — annual inflation rate, 2% target
     "GDP Growth":           "high",
     "Manufacturing PMI":    "high",
     "Services PMI":         "high",
@@ -269,6 +270,7 @@ _IND_DIRECTION: dict[str, str] = {
 
 _IND_WEIGHTS: dict[str, float] = {
     "Interest Rate":        1.5,
+    "CPI YoY":             1.4,   # new — annual rate, very high weight (CB target)
     "CPI m/m":              1.3,
     "GDP Growth":           1.3,
     "Unemployment Rate":    1.2,
@@ -317,10 +319,10 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Industrial Production":{"actual": 0.68, "previous": -0.29,  "forecast": 0.3,    "date": "2026-05-15", "impact": "Medium"},
         "M2 Money Supply":    {"actual": 4.57,   "previous": 4.69,   "forecast": 4.5,    "date": "2026-05-07", "impact": "Low"},
     },
-    # ── EUR  target score ≈ -2  (SLIGHT BEARISH — cutting cycle, soft PMI, below-target CPI)
+    # ── EUR  (ECB live — May 2026: DFR 2.00%, HICP data through Dec 2025)
     "EUR": {
         "CPI m/m":            {"actual": 0.2,    "previous": 0.2,    "forecast": 0.2,    "date": "2026-05-06", "impact": "High"},
-        "Interest Rate":      {"actual": 2.25,   "previous": 2.50,   "forecast": 2.25,   "date": "2026-04-17", "impact": "High"},
+        "Interest Rate":      {"actual": 2.00,   "previous": 2.25,   "forecast": 1.75,   "date": "2026-04-17", "impact": "High"},
         "GDP Growth":         {"actual": 0.8,    "previous": 0.6,    "forecast": 0.9,    "date": "2026-04-30", "impact": "High"},
         "Unemployment Rate":  {"actual": 6.2,    "previous": 6.3,    "forecast": 6.2,    "date": "2026-04-30", "impact": "Medium"},
         "Manufacturing PMI":  {"actual": 48.1,   "previous": 47.3,   "forecast": 47.9,   "date": "2026-05-02", "impact": "Medium"},
@@ -339,6 +341,7 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Employment Change":  {"actual": 140.0,  "previous": 120.0,  "forecast": 130.0,  "date": "2026-04-30", "impact": "Medium"},
         "Industrial Production":{"actual": -0.2, "previous": 0.1,    "forecast": 0.2,    "date": "2026-04-14", "impact": "Medium"},
         "M2 Money Supply":    {"actual": 2.1,    "previous": 1.9,    "forecast": 2.0,    "date": "2026-04-25", "impact": "Low"},
+        "CPI YoY":            {"actual": 1.9,    "previous": 2.1,    "forecast": 2.0,    "date": "2026-01-17", "impact": "High"},
     },
     # ── GBP  (BOE live — Apr 2026 verified 2026-05-24: rate 3.75%)
     "GBP": {
@@ -409,10 +412,10 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Industrial Production":{"actual": 0.4,  "previous": 0.2,    "forecast": 0.3,    "date": "2026-05-13", "impact": "Low"},
         "M2 Money Supply":    {"actual": 5.2,    "previous": 4.8,    "forecast": 5.0,    "date": "2026-04-28", "impact": "Low"},
     },
-    # ── CAD  target score ≈ -4  (SLIGHT BEARISH — cutting, rising unemployment, weak PMI)
+    # ── CAD  (BOC Valet live — May 2026: rate 2.25%)
     "CAD": {
         "CPI m/m":            {"actual": 0.2,    "previous": 0.2,    "forecast": 0.2,    "date": "2026-05-20", "impact": "High"},
-        "Interest Rate":      {"actual": 2.75,   "previous": 3.00,   "forecast": 2.75,   "date": "2026-04-16", "impact": "High"},
+        "Interest Rate":      {"actual": 2.25,   "previous": 2.50,   "forecast": 2.00,   "date": "2026-04-16", "impact": "High"},
         "GDP Growth":         {"actual": 1.5,    "previous": 1.6,    "forecast": 1.6,    "date": "2026-05-29", "impact": "High"},
         "Unemployment Rate":  {"actual": 6.9,    "previous": 6.7,    "forecast": 6.8,    "date": "2026-05-09", "impact": "High"},
         "Manufacturing PMI":  {"actual": 47.8,   "previous": 46.3,   "forecast": 47.0,   "date": "2026-05-01", "impact": "Low"},
@@ -454,6 +457,7 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Employment Change":  {"actual": 4.0,    "previous": 6.0,    "forecast": 5.0,    "date": "2026-03-10", "impact": "Low"},
         "Industrial Production":{"actual": 0.6,  "previous": 0.3,    "forecast": 0.4,    "date": "2026-05-12", "impact": "Low"},
         "M2 Money Supply":    {"actual": 1.5,    "previous": 1.2,    "forecast": 1.3,    "date": "2026-04-28", "impact": "Low"},
+        "CPI YoY":            {"actual": 0.60,   "previous": 0.31,   "forecast": 0.5,    "date": "2026-05-05", "impact": "Medium"},
     },
     # ── NZD  target score ≈ -5  (SLIGHT BEARISH — cutting, CA deficit, weak consumer)
     "NZD": {
@@ -511,7 +515,7 @@ HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
     },
     "EUR": {
         "CPI m/m":           [0.3, 0.3, 0.2, 0.2, 0.1, 0.2,   0.3, 0.2,-0.1, 0.0, 0.2, 0.2],
-        "Interest Rate":     [3.25,3.25,3.25,3.00,3.00,3.00,   3.00,2.75,2.75,2.50,2.50,2.25],
+        "Interest Rate":     [3.25,3.00,2.75,2.75,2.50,2.50,   2.25,2.25,2.00,2.00,2.00,2.00],
         "GDP Growth":        [0.9, 1.0, 1.1, 1.0, 1.1, 1.2,   1.2, 1.2, 1.7, 1.7, 1.7, 1.7],
         "Unemployment Rate": [6.5, 6.4, 6.4, 6.3, 6.3, 6.3,   6.3, 6.2, 6.2, 6.1, 6.1, 6.2],
         "Manufacturing PMI": [43.6,44.2,44.8,45.1,45.3,45.1,  45.1,46.6,47.6,48.7,49.0,49.4],
@@ -530,6 +534,7 @@ HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
         "Budget Balance":    [-3.5,-3.5,-3.4,-3.4,-3.3,-3.3, -3.3,-3.3,-3.2,-3.2,-3.2,-3.2],
         "Building Permits":  [96.5,95.8,95.2,94.8,94.2,93.8, 93.5,95.1,94.8,94.2,93.5,92.3],
         "Business Confidence":[103.,102.,101.5,101.,100.5,100., 99.5,99.2,99.2,99.5,99.2,98.5],
+        "CPI YoY":           [2.9, 2.7, 2.6, 2.4, 2.3, 2.2,   2.0, 2.0, 2.2, 2.1, 2.1, 1.9],
     },
     "GBP": {
         "CPI m/m":           [0.5, 0.4, 0.4, 0.3, 0.4, 0.3,   0.3, 0.3, 0.5, 0.2, 0.4, 0.3],
@@ -599,7 +604,7 @@ HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
     },
     "CAD": {
         "CPI m/m":           [0.3, 0.4, 0.3, 0.3, 0.4, 0.3,   0.3, 0.4, 0.1, 0.1, 0.3, 0.2],
-        "Interest Rate":     [4.50,4.25,4.00,3.75,3.50,3.25,  3.25,3.00,3.00,2.75,2.75,2.75],
+        "Interest Rate":     [4.25,4.00,3.75,3.50,3.25,3.00,  3.00,2.75,2.50,2.50,2.25,2.25],
         "GDP Growth":        [1.8, 1.8, 1.7, 1.7, 1.6, 1.6,   1.6, 1.6, 1.5, 1.5, 1.5, 1.5],
         "Unemployment Rate": [6.3, 6.4, 6.5, 6.6, 6.7, 6.7,   6.7, 6.8, 6.8, 6.9, 6.9, 6.9],
         "Manufacturing PMI": [51.5,51.5,51.8,51.7,52.0,51.6,  51.6,47.8,47.9,46.3,46.5,46.8],
@@ -640,6 +645,7 @@ HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
         "Budget Balance":    [0.5, 0.4, 0.3, 0.2, 0.2, 0.2,  0.2, 0.2,-0.1, 0.0, 0.1, 0.3],
         "Building Permits":  [3.1, 3.1, 3.0, 3.0, 3.0, 2.9,  2.9, 2.9, 2.8, 2.8, 2.9, 2.8],
         "Business Confidence":[-2.5,-2.0,-1.5,-1.2,-1.0,-0.8,-0.8,-0.8,-0.5,-0.4,-0.3,-0.3],
+        "CPI YoY":           [1.3, 1.1, 1.0, 0.9, 1.0, 1.2,   1.3, 1.1, 0.8, 0.6, 0.3, 0.6],
     },
     "NZD": {
         "CPI m/m":           [0.4, 0.3, 0.3, 0.2, 0.3, 0.2,   0.2, 0.3, 0.1, 0.1, 0.2, 0.2],
@@ -1112,52 +1118,393 @@ def fetch_fred_history(api_key: str) -> dict[str, list[float]]:
     return result
 
 
+# ── helper: parse ECB/Eurostat CSV (comma-sep, TIME_PERIOD + OBS_VALUE cols) ──
+def _parse_ecb_csv(text: str) -> list[tuple[str, float]]:
+    lines = [l for l in text.splitlines() if l.strip()]
+    if not lines:
+        return []
+    headers = [h.strip().upper() for h in lines[0].split(",")]
+    try:
+        tc = headers.index("TIME_PERIOD")
+        vc = headers.index("OBS_VALUE")
+    except ValueError:
+        return []
+    pairs: list[tuple[str, float]] = []
+    for line in lines[1:]:
+        parts = line.split(",")
+        if len(parts) <= max(tc, vc):
+            continue
+        try:
+            pairs.append((parts[tc].strip(), float(parts[vc].strip())))
+        except (ValueError, IndexError):
+            continue
+    pairs.sort(key=lambda x: x[0])
+    return pairs
+
+
+# ── helper: resample daily ECB series to monthly last value ───────────────────
+def _daily_to_monthly(pairs: list[tuple[str, float]]) -> list[tuple[str, float]]:
+    monthly: dict[str, float] = {}
+    for date_str, val in pairs:
+        ym = date_str[:7]        # "YYYY-MM"
+        monthly[ym] = val        # last daily value of each month wins
+    return sorted(monthly.items())
+
+
 @st.cache_data(ttl=TTL_HISTORY, show_spinner=False)
 def fetch_ecb_history() -> dict[str, list[float]]:
-    """
-    Fetch 12-month history for EUR from ECB Data Portal.
-    Returns {indicator_name: [oldest, ..., newest]}
-    """
-    start = (datetime.today() - timedelta(days=450)).strftime("%Y-%m")
+    """EUR: ECB API (rate, CPI YoY) + Eurostat (unemployment, GDP)."""
+    START = "2025-01"
     result: dict[str, list[float]] = {}
 
-    ECB_HIST_SERIES = {
-        "CPI m/m":      "https://data-api.ecb.europa.eu/service/data/ICP/M.U2.N.000000.4.GPC?format=csvdata",
-        "Interest Rate": ECB_RATE_URL,
-    }
-    for ind_name, url in ECB_HIST_SERIES.items():
-        try:
-            sep = "&" if "?" in url else "?"
-            full_url = url + f"{sep}startPeriod={start}"
-            r = requests.get(full_url, timeout=10, headers={"Accept": "text/csv,*/*"})
-            if r.status_code != 200:
-                continue
-            lines = [l for l in r.text.splitlines() if l.strip()]
-            header_idx = next(
-                (i for i, l in enumerate(lines) if "TIME_PERIOD" in l.upper()), None
-            )
-            if header_idx is None:
-                continue
-            headers = [h.strip().upper() for h in lines[header_idx].split(",")]
-            try:
-                time_col  = headers.index("TIME_PERIOD")
-                value_col = headers.index("OBS_VALUE")
-            except ValueError:
-                continue
+    # 1 — ECB Deposit Facility Rate (daily → monthly)
+    try:
+        r = requests.get(
+            "https://data-api.ecb.europa.eu/service/data/FM/D.U2.EUR.4F.KR.DFR.LEV"
+            f"?format=csvdata&startPeriod={START}", timeout=10,
+        )
+        if r.status_code == 200:
+            pairs   = _parse_ecb_csv(r.text)
+            monthly = _daily_to_monthly(pairs)
+            if monthly:
+                result["Interest Rate"] = [v for _, v in monthly[-14:]]
+    except Exception:
+        pass
+
+    # 2 — ECB HICP annual rate (monthly, %)
+    try:
+        r = requests.get(
+            "https://data-api.ecb.europa.eu/service/data/ICP/M.U2.N.000000.4.ANR"
+            f"?format=csvdata&startPeriod={START}", timeout=10,
+        )
+        if r.status_code == 200:
+            pairs = _parse_ecb_csv(r.text)
+            if pairs:
+                result["CPI YoY"] = [v for _, v in pairs[-14:]]
+    except Exception:
+        pass
+
+    # 3 — Eurostat unemployment (monthly JSON-stat)
+    try:
+        r = requests.get(
+            "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/ei_lmhr_m"
+            "?format=JSON&geo=EA20&s_adj=NSA&unit=PC_ACT&indic=LM-UN-T-TOT", timeout=12,
+        )
+        if r.status_code == 200:
+            js   = r.json()
+            cats = (js.get("dimension", {}).get("time", {})
+                    .get("category", {}).get("label", {}))
+            # cats: {"0": "2024-01", "1": "2024-02", ...}
+            vals_dict = js.get("value", {})
+            pairs_u: list[tuple[str, float]] = []
+            for idx_str, period in cats.items():
+                val = vals_dict.get(idx_str) or vals_dict.get(int(idx_str))
+                if val is not None:
+                    pairs_u.append((period, float(val)))
+            pairs_u.sort(key=lambda x: x[0])
+            recent = [(p, v) for p, v in pairs_u if p >= START]
+            if recent:
+                result["Unemployment Rate"] = [v for _, v in recent[-14:]]
+    except Exception:
+        pass
+
+    return result
+
+
+@st.cache_data(ttl=TTL_HISTORY, show_spinner=False)
+def fetch_boe_history() -> dict[str, list[float]]:
+    """GBP: BOE CSV — Interest Rate monthly (already live)."""
+    result: dict[str, list[float]] = {}
+    try:
+        from_y = datetime.today().year - 2
+        to_y   = datetime.today().year + 1
+        # Use the CSV download endpoint (not the HTML viewer)
+        url = (
+            "https://www.bankofengland.co.uk/boeapps/database/_iadb-fromshowcolumns.asp"
+            f"?csv.x=yes&Datefrom=01/Jan/{from_y}&Dateto=31/Dec/{to_y}"
+            "&SeriesCodes=IUMABEDR&CSVF=TT&UsingCodes=Y"
+        )
+        r = requests.get(url, timeout=12, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code == 200 and "DATE" in r.text:
             pairs: list[tuple[str, float]] = []
-            for line in lines[header_idx + 1:]:
-                parts = line.split(",")
-                if len(parts) <= max(time_col, value_col):
+            for line in r.text.splitlines():
+                parts = line.strip().split(",")
+                if len(parts) < 2:
                     continue
                 try:
-                    pairs.append((parts[time_col].strip(), float(parts[value_col].strip())))
+                    # date is "DD Mon YYYY" → convert to "YYYY-MM"
+                    from datetime import datetime as _dt
+                    d    = _dt.strptime(parts[0].strip(), "%d %b %Y")
+                    ym   = d.strftime("%Y-%m")
+                    pairs.append((ym, float(parts[1].strip())))
                 except (ValueError, IndexError):
                     continue
-            pairs.sort(key=lambda x: x[0])  # oldest first
+            pairs.sort(key=lambda x: x[0])
             if pairs:
-                result[ind_name] = [v for _, v in pairs[-14:]]
-        except Exception:
+                result["Interest Rate"] = [v for _, v in pairs[-14:]]
+    except Exception:
+        pass
+    return result
+
+
+# RBA blocks "Mozilla/*" User-Agent but accepts the default python-requests UA
+# Omit User-Agent to let requests use its default ("python-requests/X.X.X")
+_RBA_HDR: dict[str, str] = {}
+
+def _parse_rba_csv(text: str, series_id: str) -> list[tuple[str, float]]:
+    """
+    Parse RBA CSV table. Row 10 contains Series IDs; data starts row 11.
+    Returns list of (YYYY-MM, value) pairs sorted oldest-first.
+    """
+    lines = text.splitlines()
+    if len(lines) < 12:
+        return []
+    id_row   = lines[10].split(",")          # "Series ID,FIRMMCRT,FIRMMCRI,..."
+    try:
+        col = id_row.index(series_id)        # 1-based position in split
+    except ValueError:
+        return []
+    pairs: list[tuple[str, float]] = []
+    for line in lines[11:]:
+        parts = line.split(",")
+        if len(parts) <= col:
             continue
+        try:
+            # date is "DD/MM/YYYY"
+            d  = datetime.strptime(parts[0].strip(), "%d/%m/%Y")
+            ym = d.strftime("%Y-%m")
+            v  = float(parts[col].strip())
+            pairs.append((ym, v))
+        except (ValueError, IndexError):
+            continue
+    pairs.sort(key=lambda x: x[0])
+    return pairs
+
+
+@st.cache_data(ttl=TTL_HISTORY, show_spinner=False)
+def fetch_rba_history() -> dict[str, list[float]]:
+    """AUD: RBA public CSV tables — rate, unemployment, trade, CPI (quarterly)."""
+    START = "2025-01"
+    result: dict[str, list[float]] = {}
+
+    # 1 — Cash Rate Target (f1.1, FIRMMCRT)
+    try:
+        r = requests.get("https://www.rba.gov.au/statistics/tables/csv/f1.1-data.csv",
+                         headers=_RBA_HDR, timeout=12)
+        if r.status_code == 200:
+            pairs = _parse_rba_csv(r.text, "FIRMMCRT")
+            recent = [(p, v) for p, v in pairs if p >= START]
+            if recent:
+                result["Interest Rate"] = [v for _, v in recent[-14:]]
+    except Exception:
+        pass
+
+    # 2 — Unemployment Rate (h5, GLFSURSA = seasonally adjusted)
+    try:
+        r = requests.get("https://www.rba.gov.au/statistics/tables/csv/h5-data.csv",
+                         headers=_RBA_HDR, timeout=12)
+        if r.status_code == 200:
+            pairs = _parse_rba_csv(r.text, "GLFSURSA")
+            recent = [(p, v) for p, v in pairs if p >= START]
+            if recent:
+                result["Unemployment Rate"] = [v for _, v in recent[-14:]]
+    except Exception:
+        pass
+
+    # 3 — Trade Balance (i1) — compute as HXEGSCVTOT minus HMIGSCVTOT (both $M)
+    try:
+        r = requests.get("https://www.rba.gov.au/statistics/tables/csv/i1-data.csv",
+                         headers=_RBA_HDR, timeout=12)
+        if r.status_code == 200:
+            lines_i1 = r.text.splitlines()
+            if len(lines_i1) >= 12:
+                id_row_i1 = lines_i1[10].split(",")
+                try:
+                    exp_col = id_row_i1.index("HXEGSCVTOT")
+                    imp_col = id_row_i1.index("HMIGSCVTOT")
+                    tb_pairs: list[tuple[str, float]] = []
+                    for line in lines_i1[11:]:
+                        parts = line.split(",")
+                        if len(parts) <= max(exp_col, imp_col):
+                            continue
+                        try:
+                            d  = datetime.strptime(parts[0].strip(), "%d/%m/%Y")
+                            ym = d.strftime("%Y-%m")
+                            ev = float(parts[exp_col].strip())
+                            iv = float(parts[imp_col].strip())
+                            tb_pairs.append((ym, round((ev - iv) / 1000.0, 2)))  # → $B
+                        except (ValueError, IndexError):
+                            continue
+                    tb_pairs.sort(key=lambda x: x[0])
+                    recent = [(p, v) for p, v in tb_pairs if p >= START]
+                    if recent:
+                        result["Trade Balance"] = [v for _, v in recent[-8:]]  # quarterly
+                except ValueError:
+                    pass
+    except Exception:
+        pass
+
+    # 4 — CPI quarterly (g1) — GCPIAG = CPI all groups SA
+    try:
+        r = requests.get("https://www.rba.gov.au/statistics/tables/csv/g1-data.csv",
+                         headers=_RBA_HDR, timeout=12)
+        if r.status_code == 200:
+            # GCPIAG = CPI All Groups, seasonally adjusted index
+            pairs = _parse_rba_csv(r.text, "GCPIAG")
+            if len(pairs) >= 2:
+                # Convert index to quarterly % change
+                qoq: list[tuple[str, float]] = []
+                for i in range(1, len(pairs)):
+                    prev = pairs[i-1][1]
+                    if prev and abs(prev) > 1e-6:
+                        pct = (pairs[i][1] - prev) / prev * 100
+                        qoq.append((pairs[i][0], round(pct, 3)))
+                recent = [(p, v) for p, v in qoq if p >= START]
+                if recent:
+                    result["CPI m/m"] = [v for _, v in recent[-8:]]  # quarterly
+    except Exception:
+        pass
+
+    return result
+
+
+@st.cache_data(ttl=TTL_HISTORY, show_spinner=False)
+def fetch_boc_history() -> dict[str, list[float]]:
+    """CAD: Bank of Canada Valet API — policy rate (V39079), CPI (V41690973)."""
+    START = "2025-01"
+    result: dict[str, list[float]] = {}
+
+    def _valet(series: str) -> list[tuple[str, float]]:
+        r = requests.get(
+            f"https://www.bankofcanada.ca/valet/observations/{series}/json?recent=500",
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return []
+        pairs: list[tuple[str, float]] = []
+        for obs in r.json().get("observations", []):
+            try:
+                d   = obs["d"][:7]          # "YYYY-MM"
+                val = float(obs[series]["v"])
+                pairs.append((d, val))
+            except (KeyError, ValueError, TypeError):
+                continue
+        # deduplicate by month (last value wins)
+        monthly: dict[str, float] = {}
+        for d, v in pairs:
+            monthly[d] = v
+        return sorted(monthly.items())
+
+    # 1 — Policy Rate (V39079, daily → monthly)
+    try:
+        pairs = _valet("V39079")
+        recent = [(p, v) for p, v in pairs if p >= START]
+        if recent:
+            result["Interest Rate"] = [v for _, v in recent[-14:]]
+    except Exception:
+        pass
+
+    # 2 — CPI All-items index (V41690973) → convert to m/m %
+    try:
+        pairs = _valet("V41690973")
+        if len(pairs) >= 2:
+            mom: list[tuple[str, float]] = []
+            for i in range(1, len(pairs)):
+                prev = pairs[i-1][1]
+                if abs(prev) > 1e-6:
+                    pct = (pairs[i][1] - prev) / prev * 100
+                    mom.append((pairs[i][0], round(pct, 3)))
+            recent = [(p, v) for p, v in mom if p >= START]
+            if recent:
+                result["CPI m/m"] = [v for _, v in recent[-14:]]
+    except Exception:
+        pass
+
+    return result
+
+
+@st.cache_data(ttl=TTL_HISTORY, show_spinner=False)
+def fetch_snb_history() -> dict[str, list[float]]:
+    """CHF: SNB Data Portal API — policy rate (LZ) + CPI YoY (VVP)."""
+    START = "2025-01"
+    result: dict[str, list[float]] = {}
+
+    def _snb_cube(cube: str, d0_filter: str) -> list[tuple[str, float]]:
+        r = requests.get(
+            f"https://data.snb.ch/api/cube/{cube}/data/csv/en"
+            f"?fromDate={START}",   # SNB uses "YYYY-MM" format with dashes
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return []
+        pairs: list[tuple[str, float]] = []
+        for line in r.text.splitlines():
+            line = line.strip().lstrip("﻿").strip('"')
+            parts = [p.strip().strip('"') for p in line.split(";")]
+            if len(parts) < 3:
+                continue
+            if parts[1] != d0_filter:
+                continue
+            try:
+                ym  = parts[0][:7]          # "YYYY-MM" or "YYYY/MM"
+                ym  = ym.replace("/", "-")
+                val = float(parts[2])
+                pairs.append((ym, val))
+            except (ValueError, IndexError):
+                continue
+        pairs.sort(key=lambda x: x[0])
+        return pairs
+
+    # 1 — SNB sight deposit rate (= policy rate, D0="LZ")
+    try:
+        pairs = _snb_cube("snboffzisa", "LZ")
+        if pairs:
+            result["Interest Rate"] = [v for _, v in pairs[-14:]]
+    except Exception:
+        pass
+
+    # 2 — CPI YoY % change (D0="VVP")
+    try:
+        pairs = _snb_cube("plkopr", "VVP")
+        if pairs:
+            result["CPI YoY"] = [v for _, v in pairs[-14:]]
+    except Exception:
+        pass
+
+    return result
+
+
+@st.cache_data(ttl=TTL_HISTORY, show_spinner=False)
+def fetch_dbnomics_cpi(currency: str) -> dict[str, list[float]]:
+    """
+    Fetch CPI monthly % change via DBnomics (IMF PCPI_PC_PP_PT series) for JPY.
+    Returns {"CPI m/m": [...]} where available.
+    NZD is not available via this endpoint — returns {} for NZD.
+    """
+    CCY_TO_IMF = {"JPY": "JP"}
+    iso = CCY_TO_IMF.get(currency)
+    if not iso:
+        return {}
+    result: dict[str, list[float]] = {}
+    try:
+        url = (
+            f"https://api.db.nomics.world/v22/series/IMF/CPI/M.{iso}.PCPI_PC_PP_PT"
+            "?observations=1&limit=20"
+        )
+        r = requests.get(url, timeout=15)
+        if r.status_code == 200:
+            docs = r.json().get("series", {}).get("docs", [])
+            if docs:
+                periods = docs[0].get("period", [])
+                vals    = docs[0].get("value", [])
+                pairs   = [(p, v) for p, v in zip(periods, vals)
+                           if v is not None and str(v) not in ("NA", "None")]
+                # Use last 14 values available (no date filter — data may lag)
+                recent  = [(p, float(v)) for p, v in pairs]
+                if recent:
+                    result["CPI m/m"] = [v for _, v in recent[-14:]]
+    except Exception:
+        pass
     return result
 
 
@@ -1234,20 +1581,38 @@ def fetch_currency_history(currency: str, fred_api_key: str) -> dict[str, list[f
     """
     Get 12-month indicator history for a currency.
     Priority: live API → HISTORY_FALLBACK supplement.
-    Returns {indicator_name: [oldest, ..., newest]} (12-14 values each).
+    Sources per currency:
+      USD — FRED API
+      EUR — ECB (rate, CPI) + Eurostat (unemployment)
+      GBP — BOE CSV (rate) + OECD fallback
+      AUD — RBA CSV tables (rate, unemployment, trade, CPI)
+      CAD — Bank of Canada Valet API (rate, CPI)
+      CHF — SNB Data Portal (rate, CPI)
+      JPY — DBnomics/IMF (CPI) + OECD fallback
+      NZD — DBnomics/IMF (CPI) + OECD fallback
     """
-    OECD_COUNTRY = {
-        "GBP": "GBR", "JPY": "JPN", "AUD": "AUS",
-        "CAD": "CAN", "CHF": "CHE", "NZD": "NZL",
-    }
-
     live: dict[str, list[float]] = {}
+
     if currency == "USD":
         live = fetch_fred_history(fred_api_key)
     elif currency == "EUR":
         live = fetch_ecb_history()
-    elif currency in OECD_COUNTRY:
-        live = fetch_oecd_history(OECD_COUNTRY[currency])
+    elif currency == "GBP":
+        live = fetch_boe_history()
+    elif currency == "AUD":
+        live = fetch_rba_history()
+    elif currency == "CAD":
+        live = fetch_boc_history()
+    elif currency == "CHF":
+        live = fetch_snb_history()
+    elif currency in ("JPY", "NZD"):
+        live = fetch_dbnomics_cpi(currency)
+        # supplement with OECD for other indicators (best-effort)
+        _OECD = {"JPY": "JPN", "NZD": "NZL"}
+        oecd = fetch_oecd_history(_OECD[currency])
+        for k, v in oecd.items():
+            if k not in live:
+                live[k] = v
 
     fallback = HISTORY_FALLBACK.get(currency, {})
     result: dict[str, list[float]] = {}
@@ -1292,10 +1657,12 @@ def _score_indicator_series(values: list[float], indicator: str) -> float:
     std_12m   = math.sqrt(variance) if variance > 0 else 0.0
 
     # ── LEVEL component: current vs 12M mean ─────────────────────────────────
+    # Per-indicator CB target: CPI YoY → 2.0% annual; m/m variants → 2/12 monthly
+    _TARGET_VAL: dict[str, float] = {"CPI YoY": 2.0}
     if direction == "target":
-        monthly_target = 2.0 / 12          # 0.167% ≈ 2% annual
-        dist_curr = abs(current   - monthly_target)
-        dist_mean = abs(mean_12m  - monthly_target)
+        cb_target = _TARGET_VAL.get(indicator, 2.0 / 12)
+        dist_curr = abs(current   - cb_target)
+        dist_mean = abs(mean_12m  - cb_target)
         # Positive if current is closer to target than the average was
         level_raw = (dist_mean - dist_curr) / max(dist_mean, 0.05)
     elif std_12m > 1e-6:
@@ -1314,9 +1681,9 @@ def _score_indicator_series(values: list[float], indicator: str) -> float:
     recent_avg = sum(values[mid:]) / max(1, n - mid)
 
     if direction == "target":
-        monthly_target = 2.0 / 12
-        dist_early  = abs(early_avg  - monthly_target)
-        dist_recent = abs(recent_avg - monthly_target)
+        cb_target   = _TARGET_VAL.get(indicator, 2.0 / 12)
+        dist_early  = abs(early_avg  - cb_target)
+        dist_recent = abs(recent_avg - cb_target)
         trend_raw   = (dist_early - dist_recent) / max(dist_early, 0.05)
     elif abs(early_avg) > 1e-6:
         trend_raw = (recent_avg - early_avg) / abs(early_avg)
@@ -2502,6 +2869,10 @@ def main():
         fetch_currency_history.clear()
         fetch_fred_history.clear()
         fetch_ecb_history.clear()
+        fetch_boe_history.clear()
+        fetch_rba_history.clear()
+        fetch_boc_history.clear()
+        fetch_snb_history.clear()
         fetch_oecd_history.clear()
         st.session_state.last_refresh_ts = _now
         st.rerun()
@@ -2530,6 +2901,10 @@ def main():
             fetch_ecb_rate.clear()
             fetch_ecb_cpi.clear()
             fetch_boe_rate.clear()
+            fetch_boe_history.clear()
+            fetch_rba_history.clear()
+            fetch_boc_history.clear()
+            fetch_snb_history.clear()
             fetch_oecd_history.clear()
             fetch_te_indicators.clear()
             st.session_state.last_refresh_ts = time.time()
