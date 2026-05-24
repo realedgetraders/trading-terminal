@@ -66,9 +66,34 @@ Main file: pages/3_Macro_Dashboard.py
 - _calc_raw_score(history) — weighted average across all indicators, returns float
 - calc_all_biases(all_histories) — z-score normalization across all 8 currencies in one pass
   - Computes raw score per currency, then normalizes: (raw - mean) / std * 1.2
-  - Labels: >= +1.5 STRONG BULLISH, >= +0.4 SLIGHT BULLISH, >= -0.4 NEUTRAL, >= -1.5 SLIGHT BEARISH, else STRONG BEARISH
+  - Labels: > +0.4 BULLISH, < -0.4 BEARISH, else NEUTRAL
 - 12M chart: true monthly re-score — for each month filters dated history to date <= month, then scores
   - Rightmost point verified = live score (delta 0.000000)
+
+## Indicator Weights (_IND_WEIGHTS in pages/3_Macro_Dashboard.py ~line 415)
+Tier 1 — CB-critical (directly drives rate decisions & FX moves):
+- Interest Rate: 2.0
+- CPI YoY: 2.0
+- CPI m/m: 2.0
+- GDP Growth: 2.0
+- Core CPI: 1.8
+
+Tier 2 — activity / labour (swing-relevant, market-moving):
+- Unemployment Rate, Employment Change, Wage Growth: 1.0
+- Manufacturing PMI, Services PMI, Composite PMI, Trade Balance: 1.0
+- Retail Sales, Industrial Production, Current Account: 0.8
+
+Tier 3 — sentiment / structural (low swing relevance):
+- Consumer Confidence, Business Confidence: 0.5
+- PPI, M2 Money Supply: 0.4
+- Budget Balance, Government Debt, Building Permits: 0.3
+
+Tier-1 share of total weight (USD active set): 43.1% (was 31.2% before)
+Verified before/after scores (2026-05-24):
+  USD +1.452 → +1.154 | EUR +0.283 → +0.180 | GBP -1.558 → -1.327
+  JPY +1.360 → +1.477 | AUD +0.622 → +0.739 | CAD -1.953 → -2.126
+  CHF +0.543 → +0.707 | NZD -0.747 → -0.803
+  Ranking change: JPY #1, USD #2 (swapped). All others unchanged.
 
 ## Data Sources (per currency)
 - USD: FRED API (11 indicators live) + Investing.com (PMI only)
@@ -86,9 +111,10 @@ Main file: pages/3_Macro_Dashboard.py
 - Auto-rerun every 300s (hits cache unless TTL expired)
 
 ## Last commits
+- (pending): tiered indicator weight rebalancing
+- 4ee439b: disclaimer moved to full-width row below gauge bar
+- 90e5b09: simplify bias labels to 3 levels (BULLISH/NEUTRAL/BEARISH)
 - fbdc7b3: true monthly re-score chart rebuild
-- 6bc7d03: Trade Balance trend cap +/-15B
-- 0b7757d: Bug fixes (ZEW scale, CPI deflation floor, GDP QoQ/annualized detection)
 - 25aca03: z-score normalization across 8 currencies
 
 ---

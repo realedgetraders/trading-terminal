@@ -413,27 +413,30 @@ _IND_DIRECTION: dict[str, str] = {
 }
 
 _IND_WEIGHTS: dict[str, float] = {
-    "Interest Rate":        1.5,
-    "CPI YoY":             1.4,   # new — annual rate, very high weight (CB target)
-    "CPI m/m":              1.3,
-    "GDP Growth":           1.3,
-    "Unemployment Rate":    1.2,
-    "Employment Change":    1.1,
+    # Tier 1 — CB-critical (directly drives rate decisions & FX moves)
+    "Interest Rate":        2.0,
+    "CPI YoY":              2.0,
+    "CPI m/m":              2.0,
+    "GDP Growth":           2.0,
+    "Core CPI":             1.8,
+    # Tier 2 — activity / labour (swing-relevant, market-moving)
+    "Unemployment Rate":    1.0,
+    "Employment Change":    1.0,
     "Wage Growth":          1.0,
-    "Manufacturing PMI":    0.9,
-    "Services PMI":         0.9,
-    "Composite PMI":        0.9,
+    "Manufacturing PMI":    1.0,
+    "Services PMI":         1.0,
+    "Composite PMI":        1.0,
+    "Trade Balance":        1.0,
     "Retail Sales":         0.8,
-    "Trade Balance":        0.8,
-    "Industrial Production":0.7,
-    "Core CPI":             0.7,
-    "Consumer Confidence":  0.6,
-    "Current Account":      0.6,
+    "Industrial Production":0.8,
+    "Current Account":      0.8,
+    # Tier 3 — sentiment / structural (low swing relevance)
+    "Consumer Confidence":  0.5,
     "Business Confidence":  0.5,
-    "M2 Money Supply":      0.5,
-    "PPI":                  0.5,
-    "Government Debt":      0.4,
-    "Budget Balance":       0.4,
+    "PPI":                  0.4,
+    "M2 Money Supply":      0.4,
+    "Budget Balance":       0.3,
+    "Government Debt":      0.3,
     "Building Permits":     0.3,
 }
 
