@@ -213,6 +213,7 @@ _INV_HDR = {
 }
 _INV_URL = "https://www.investing.com/economic-calendar/Service/getCalendarFilteredData"
 _INV_CCY_CODE: dict[str, str] = {
+    "USD": "5",
     "EUR": "72", "GBP": "4",  "JPY": "35", "AUD": "25",
     "CAD": "6",  "CHF": "11", "NZD": "43",
 }
@@ -1548,9 +1549,12 @@ def fetch_investing_history(currency: str) -> dict[str, list[float]]:
     """
     Fetch 12-month economic indicator history from Investing.com economic calendar.
 
+    Fetches in two ~210-day chunks to stay under the 200-row API cap per request,
+    merges both results, and deduplicates by row-id and by month.
+
     Returns {indicator_name: [float list oldest→newest]} for:
-    Manufacturing PMI, Services PMI, Composite PMI, GDP Growth, Retail Sales,
-    Industrial Production, Consumer Confidence, Business Confidence,
+    Manufacturing PMI, Services PMI, Composite PMI, GDP Growth (QoQ only),
+    Retail Sales, Industrial Production, Consumer Confidence, Business Confidence,
     Unemployment Rate, CPI m/m, Core CPI, PPI
 
     Does NOT return Interest Rate (CB APIs are more precise).
@@ -1558,6 +1562,7 @@ def fetch_investing_history(currency: str) -> dict[str, list[float]]:
     Cache: 1 hour.
     """
     import re as _re
+    from collections import defaultdict
 
     if not _BS4:
         return {}
@@ -1566,32 +1571,37 @@ def fetch_investing_history(currency: str) -> dict[str, list[float]]:
     if not cc:
         return {}
 
-    d1 = (datetime.today() - timedelta(days=400)).strftime("%Y-%m-%d")
-    d2 = datetime.today().strftime("%Y-%m-%d")
+    today = datetime.today()
+    # Two overlapping chunks each ~210 days — keeps event count per request < 200
+    # Small 5-day overlap ensures no gap at the boundary
+    chunks = [
+        ((today - timedelta(days=420)).strftime("%Y-%m-%d"),
+         (today - timedelta(days=210)).strftime("%Y-%m-%d")),
+        ((today - timedelta(days=215)).strftime("%Y-%m-%d"),
+         today.strftime("%Y-%m-%d")),
+    ]
 
-    post_data = {
-        "dateFrom":     d1,
-        "dateTo":       d2,
-        "country[]":    cc,
-        "timeZone":     "55",
-        "timeFilter":   "timeRemain",
-        "currentTab":   "custom",
-        "submitFilters":"1",
-        "limit_from":   "0",
-        "importance[]": ["2", "3"],   # Medium + High only
-    }
-
-    try:
-        r = requests.post(_INV_URL, headers=_INV_HDR, data=post_data, timeout=20)
-        if r.status_code != 200:
-            return {}
-        html = r.json().get("data", "")
-        if not html:
-            return {}
-    except Exception:
-        return {}
-
-    soup = BeautifulSoup(html, "html.parser")
+    def _fetch_chunk(d_from: str, d_to: str):
+        """POST one request and return a BeautifulSoup or None."""
+        post_data = {
+            "dateFrom":      d_from,
+            "dateTo":        d_to,
+            "country[]":     cc,
+            "timeZone":      "55",
+            "timeFilter":    "timeRemain",
+            "currentTab":    "custom",
+            "submitFilters": "1",
+            "limit_from":    "0",
+            "importance[]":  ["2", "3"],
+        }
+        try:
+            r = requests.post(_INV_URL, headers=_INV_HDR, data=post_data, timeout=20)
+            if r.status_code != 200:
+                return None
+            html = r.json().get("data", "")
+            return BeautifulSoup(html, "html.parser") if html else None
+        except Exception:
+            return None
 
     def _num(txt: str) -> float | None:
         s = str(txt).strip().replace(",", "").replace("%", "").replace(" ", "")
@@ -1610,65 +1620,77 @@ def fetch_investing_history(currency: str) -> dict[str, list[float]]:
     def _map_name(raw: str) -> str | None:
         """Map Investing.com event name to our indicator key."""
         t = raw.lower().strip()
-        # Remove month/quarter suffixes like "(Apr)", "(Q1)"
         t = _re.sub(r'\s*\([^)]*\)', '', t).strip()
         for fragment, ind_key in _INV_NAME_MAP:
             if fragment in t:
                 return ind_key
         return None
 
+    # GDP: only keep QoQ official releases; skip YoY, GDPNow, Atlanta Fed
+    _GDP_KEEP_KW = ("q/q", "qoq", "advance", "second", "third", "annualized")
+    _GDP_SKIP_KW = ("y/y", "yoy", "atlanta", "gdpnow")
+
     # Skip indicators handled by more precise dedicated sources
     _SKIP = {"Interest Rate"}
 
-    # Collect all events: {indicator → [(date_str, actual_float)]}
-    from collections import defaultdict
     ind_events: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    seen_row_ids: set[str] = set()
 
-    for row in soup.find_all("tr", id=_re.compile(r"^eventRowId_")):
-        row_id = row["id"].replace("eventRowId_", "")
-        dt_str = row.get("data-event-datetime", "")[:10]  # "2025/05/02"
-        if not dt_str:
+    for d_from, d_to in chunks:
+        soup = _fetch_chunk(d_from, d_to)
+        if not soup:
             continue
 
-        name_td = row.find("td", class_="event")
-        raw_name = name_td.get_text(strip=True) if name_td else ""
-        if not raw_name:
-            continue
+        for row in soup.find_all("tr", id=_re.compile(r"^eventRowId_")):
+            row_id = row["id"].replace("eventRowId_", "")
+            if row_id in seen_row_ids:
+                continue                        # already processed from other chunk
+            seen_row_ids.add(row_id)
 
-        ind_name = _map_name(raw_name)
-        if not ind_name or ind_name in _SKIP:
-            continue
+            dt_str = row.get("data-event-datetime", "")[:10]  # "2025/05/02"
+            if not dt_str:
+                continue
 
-        act_td = soup.find(id=f"eventActual_{row_id}")
-        actual = _num(act_td.get_text(strip=True)) if act_td else None
-        if actual is None:
-            # Try span inside
-            if act_td:
+            name_td = row.find("td", class_="event")
+            raw_name = name_td.get_text(strip=True) if name_td else ""
+            if not raw_name:
+                continue
+
+            ind_name = _map_name(raw_name)
+            if not ind_name or ind_name in _SKIP:
+                continue
+
+            # GDP: enforce QoQ-only, exclude GDPNow / Atlanta estimates
+            if ind_name == "GDP Growth":
+                rl = raw_name.lower()
+                if any(kw in rl for kw in _GDP_SKIP_KW):
+                    continue
+                if not any(kw in rl for kw in _GDP_KEEP_KW):
+                    continue
+
+            act_td = soup.find(id=f"eventActual_{row_id}")
+            actual = _num(act_td.get_text(strip=True)) if act_td else None
+            if actual is None and act_td:
                 sp = act_td.find("span")
                 actual = _num(sp.get_text(strip=True)) if sp else None
 
-        if actual is None:
-            continue
+            if actual is None:
+                continue
 
-        ind_events[ind_name].append((dt_str, actual))
+            ind_events[ind_name].append((dt_str, actual))
 
-    # For each indicator: sort by date, deduplicate by month, return oldest→newest
+    # For each indicator: sort by date, deduplicate by month (keep final/revised),
+    # return oldest→newest, capped at 14 values
     result: dict[str, list[float]] = {}
     for ind_name, events_list in ind_events.items():
-        # Sort ascending by date
         events_list.sort(key=lambda x: x[0])
-        # Deduplicate: keep one value per month (prefer final/revised over flash)
-        # When multiple same month: keep last one (usually the final release)
         monthly: dict[str, float] = {}
         for dt, val in events_list:
-            # Convert "2025/05/02" → "2025-05"
-            month_key = dt.replace("/", "-")[:7]
-            monthly[month_key] = val  # overwrite → keeps later (final) release
-
-        # Sort months and take last 14
+            month_key = dt.replace("/", "-")[:7]   # "2025/05/02" → "2025-05"
+            monthly[month_key] = val               # overwrite → keeps later (final) release
         sorted_vals = [v for _, v in sorted(monthly.items())]
         if len(sorted_vals) >= 2:
-            result[ind_name] = sorted_vals[-14:]  # oldest→newest, max 14
+            result[ind_name] = sorted_vals[-14:]
 
     return result
 
@@ -2350,14 +2372,16 @@ def fetch_currency_history(currency: str, fred_api_key: str) -> dict[str, list[f
         if _nzd_rate:  live["Interest Rate"]     = _nzd_rate
         if _nzd_unemp: live["Unemployment Rate"] = _nzd_unemp
 
-    # ── Investing.com: primary 12-month source for non-USD, most indicators ──
-    # Goes in FIRST as a base layer; CB APIs below will override specific indicators
-    if currency != "USD":
-        inv_history = fetch_investing_history(currency)
-        # Only fill gaps not already covered by the CB API fetches above
-        for ind_name, vals in inv_history.items():
-            if ind_name not in live:
-                live[ind_name] = vals
+    # ── Investing.com: primary 12-month source for most indicators ──────────────
+    # For non-USD: fills all gaps not already covered by CB API fetches above.
+    # For USD: FRED doesn't carry PMI or GDP — supplement those three only.
+    _USD_INV_INDS = {"Manufacturing PMI", "Services PMI", "GDP Growth"}
+    inv_history = fetch_investing_history(currency)
+    for ind_name, vals in inv_history.items():
+        if currency == "USD" and ind_name not in _USD_INV_INDS:
+            continue   # FRED is authoritative for all other USD indicators
+        if ind_name not in live:
+            live[ind_name] = vals
 
     # ── TE historical data (PMI, GDP, Retail, Confidence, Industrial Production, etc.) ──
     # Only for non-USD currencies; fill gaps not covered by Investing.com or CB APIs
