@@ -2627,11 +2627,9 @@ def _calc_raw_score(
 
 def _label_from_score(score: float) -> tuple[str, str]:
     """Map a normalized [-3, +3] score to label + color."""
-    if   score >= 1.5:  return "STRONG BULLISH", C["green"]
-    elif score >= 0.4:  return "SLIGHT BULLISH",  C["teal"]
-    elif score >= -0.4: return "NEUTRAL",          C["muted"]
-    elif score >= -1.5: return "SLIGHT BEARISH",   C["yellow"]
-    else:               return "STRONG BEARISH",   C["red"]
+    if   score >  0.4: return "BULLISH", C["teal"]
+    elif score < -0.4: return "BEARISH", C["red"]
+    else:              return "NEUTRAL", C["muted"]
 
 
 def calc_all_biases(
@@ -3333,6 +3331,10 @@ def render_bias_panel(currency: str, bias_result: dict) -> str:
                     letter-spacing:1.5px;text-transform:uppercase;'>Economic Bias — 12M Trend</div>
         <div style='font-size:18px;font-weight:800;color:{lc};
                     font-family:monospace;letter-spacing:1px;'>{label}</div>
+        <div style='font-size:9px;color:{_cm};font-family:monospace;
+                    margin-top:3px;line-height:1.4;max-width:260px;'>
+          Long-term macroeconomic indicator only · Short-term price action may be
+          overridden by geopolitical events, central bank surprises, or market sentiment</div>
       </div>
     </div>
     <div style='text-align:right;'>
@@ -3355,8 +3357,7 @@ def render_bias_panel(currency: str, bias_result: dict) -> str:
                   {_cg} 80%, #00a36c 100%);'></div>
   <div style='display:flex;justify-content:space-between;font-size:9px;
               font-family:monospace;color:{_cm};'>
-    <span>STR. BEARISH</span><span>SLT. BEARISH</span>
-    <span>NEUTRAL</span><span>SLT. BULLISH</span><span>STR. BULLISH</span>
+    <span>BEARISH</span><span>NEUTRAL</span><span>BULLISH</span>
   </div>
 </div>"""
 
@@ -3778,11 +3779,9 @@ def render_all_currencies_overview(selected_ccy: str) -> str:
     rows_data.sort(key=lambda x: x["total"], reverse=True)
 
     _LEVEL_COLOR = {
-        "STRONG BULLISH": C["green"],
-        "SLIGHT BULLISH": C["teal"],
-        "NEUTRAL":        C["muted"],
-        "SLIGHT BEARISH": C["yellow"],
-        "STRONG BEARISH": C["red"],
+        "BULLISH": C["teal"],
+        "NEUTRAL": C["muted"],
+        "BEARISH": C["red"],
     }
 
     rows_html = ""
