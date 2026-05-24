@@ -2493,6 +2493,9 @@ def calc_currency_bias(currency: str, history: dict[str, list[float]]) -> dict:
     indicator_scores: dict[str, float] = {}
     for ind, values in history.items():
         if len(values) >= 3 and ind in _IND_DIRECTION:
+            # Skip flat/static arrays (zero variance = fallback data, no real signal)
+            if max(values) - min(values) < 0.01:
+                continue
             indicator_scores[ind] = _score_indicator(ind, values)
 
     # Weighted average → scale to [-3, +3]
@@ -2500,7 +2503,7 @@ def calc_currency_bias(currency: str, history: dict[str, list[float]]) -> dict:
     if total_w > 0:
         raw   = sum(indicator_scores[ind] * _IND_WEIGHTS.get(ind, 0.5)
                     for ind in indicator_scores) / total_w
-        final = round(max(-3.0, min(3.0, raw * 5.0)), 3)
+        final = round(max(-3.0, min(3.0, raw * 6.0)), 3)   # 6× amplifier (was 5×)
     else:
         final = 0.0
 
@@ -2512,19 +2515,21 @@ def calc_currency_bias(currency: str, history: dict[str, list[float]]) -> dict:
         for ind, values in history.items():
             sub = values[:m]
             if len(sub) >= 3 and ind in _IND_DIRECTION:
+                if max(sub) - min(sub) < 0.01:
+                    continue
                 s  = _score_indicator(ind, sub)
                 w  = _IND_WEIGHTS.get(ind, 0.5)
                 m_total += s * w
                 m_w     += w
         if m_w > 0:
-            monthly_scores.append(round(max(-3.0, min(3.0, (m_total / m_w) * 5.0)), 3))
+            monthly_scores.append(round(max(-3.0, min(3.0, (m_total / m_w) * 6.0)), 3))
         else:
             monthly_scores.append(0.0)
 
     # Label
     if   final >= 1.5:  label, lc = "STRONG BULLISH", C["green"]
-    elif final >= 0.5:  label, lc = "SLIGHT BULLISH", C["teal"]
-    elif final >= -0.5: label, lc = "NEUTRAL",         C["muted"]
+    elif final >= 0.3:  label, lc = "SLIGHT BULLISH", C["teal"]
+    elif final >= -0.3: label, lc = "NEUTRAL",         C["muted"]
     elif final >= -1.5: label, lc = "SLIGHT BEARISH",  C["yellow"]
     else:               label, lc = "STRONG BEARISH",  C["red"]
 
