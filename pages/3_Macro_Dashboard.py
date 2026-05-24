@@ -1545,14 +1545,14 @@ def fetch_ff_macro_data(currency: str) -> dict:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_investing_history(currency: str) -> dict[str, list[float]]:
+def fetch_investing_history(currency: str) -> dict[str, list[tuple[str, float]]]:
     """
     Fetch 12-month economic indicator history from Investing.com economic calendar.
 
     Fetches in two ~210-day chunks to stay under the 200-row API cap per request,
     merges both results, and deduplicates by row-id and by month.
 
-    Returns {indicator_name: [float list oldest→newest]} for:
+    Returns {indicator_name: [(YYYY-MM, value) pairs oldest→newest]} for:
     Manufacturing PMI, Services PMI, Composite PMI, GDP Growth (QoQ only),
     Retail Sales, Industrial Production, Consumer Confidence, Business Confidence,
     Unemployment Rate, CPI m/m, Core CPI, PPI
@@ -1705,9 +1705,9 @@ def fetch_investing_history(currency: str) -> dict[str, list[float]]:
         for dt, val in events_list:
             month_key = dt.replace("/", "-")[:7]   # "2025/05/02" → "2025-05"
             monthly[month_key] = val               # overwrite → keeps later (final) release
-        sorted_vals = [v for _, v in sorted(monthly.items())]
-        if len(sorted_vals) >= 2:
-            result[ind_name] = sorted_vals[-14:]
+        sorted_pairs = sorted(monthly.items())   # [(YYYY-MM, value), ...] oldest→newest
+        if len(sorted_pairs) >= 2:
+            result[ind_name] = sorted_pairs[-14:]
 
     return result
 
@@ -1717,10 +1717,10 @@ def fetch_investing_history(currency: str) -> dict[str, list[float]]:
 # ╚══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_data(ttl=TTL_HISTORY, show_spinner=False)
-def fetch_fred_history(api_key: str) -> dict[str, list[float]]:
+def fetch_fred_history(api_key: str) -> dict[str, list[tuple[str, float]]]:
     """
     Fetch 12-month rolling history for USD indicators via FRED.
-    Returns {indicator_name: [oldest, ..., newest]} up to 14 values.
+    Returns {indicator_name: [(YYYY-MM, value), ...]} oldest→newest, up to 14 entries.
     """
     if not api_key or api_key.strip() in ("", "your_key_here", "your_fred_api_key_here"):
         return {}
@@ -1739,7 +1739,7 @@ def fetch_fred_history(api_key: str) -> dict[str, list[float]]:
         # Quarterly, already annualised QoQ rate — no derivation needed
         "GDP Growth":             ("A191RL1Q225SBEA",   "latest"),
     }
-    result: dict[str, list[float]] = {}
+    result: dict[str, list[tuple[str, float]]] = {}
     for ind, (sid, mode) in FRED_HIST.items():
         try:
             limit = 28 if mode == "yoy" else 18
@@ -1756,30 +1756,34 @@ def fetch_fred_history(api_key: str) -> dict[str, list[float]]:
                 continue
             obs.reverse()  # oldest first
 
+            # Each pair: (YYYY-MM, derived_value). Date = observation month of obs[i].
             if mode == "latest":
-                vals = [float(o["value"]) for o in obs]
+                pairs = [(o["date"][:7], float(o["value"])) for o in obs]
             elif mode == "mom":
-                vals = []
+                pairs = []
                 for i in range(1, len(obs)):
                     c = float(obs[i]["value"]); p = float(obs[i - 1]["value"])
-                    vals.append(round((c - p) / max(abs(p), 0.001) * 100, 3))
+                    pairs.append((obs[i]["date"][:7],
+                                  round((c - p) / max(abs(p), 0.001) * 100, 3)))
             elif mode == "diff":
-                vals = []
+                pairs = []
                 for i in range(1, len(obs)):
-                    vals.append(round(float(obs[i]["value"]) - float(obs[i - 1]["value"]), 1))
+                    pairs.append((obs[i]["date"][:7],
+                                  round(float(obs[i]["value"]) - float(obs[i - 1]["value"]), 1)))
             elif mode == "yoy":
                 if len(obs) < 13:
                     continue
-                vals = []
+                pairs = []
                 for i in range(12, len(obs)):
                     c = float(obs[i]["value"]); y = float(obs[i - 12]["value"])
-                    vals.append(round((c - y) / max(abs(y), 0.001) * 100, 3))
+                    pairs.append((obs[i]["date"][:7],
+                                  round((c - y) / max(abs(y), 0.001) * 100, 3)))
             else:
                 continue
             # FRED Trade Balance is in millions USD — convert to billions
             if ind == "Trade Balance":
-                vals = [round(v / 1000.0, 2) for v in vals]
-            result[ind] = vals[-14:]
+                pairs = [(d, round(v / 1000.0, 2)) for d, v in pairs]
+            result[ind] = pairs[-14:]
         except Exception:
             continue
     return result
@@ -1819,10 +1823,11 @@ def _daily_to_monthly(pairs: list[tuple[str, float]]) -> list[tuple[str, float]]
 
 
 @st.cache_data(ttl=TTL_HISTORY, show_spinner=False)
-def fetch_ecb_history() -> dict[str, list[float]]:
-    """EUR: ECB API (rate, CPI YoY) + Eurostat (unemployment, GDP)."""
+def fetch_ecb_history() -> dict[str, list[tuple[str, float]]]:
+    """EUR: ECB API (rate, CPI YoY) + Eurostat (unemployment).
+    Returns {indicator: [(YYYY-MM, value), ...]} oldest→newest."""
     START = "2025-01"
-    result: dict[str, list[float]] = {}
+    result: dict[str, list[tuple[str, float]]] = {}
 
     # 1 — ECB Deposit Facility Rate (daily → monthly)
     try:
@@ -1834,7 +1839,7 @@ def fetch_ecb_history() -> dict[str, list[float]]:
             pairs   = _parse_ecb_csv(r.text)
             monthly = _daily_to_monthly(pairs)
             if monthly:
-                result["Interest Rate"] = [v for _, v in monthly[-14:]]
+                result["Interest Rate"] = list(monthly[-14:])
     except Exception:
         pass
 
@@ -1847,7 +1852,7 @@ def fetch_ecb_history() -> dict[str, list[float]]:
         if r.status_code == 200:
             pairs = _parse_ecb_csv(r.text)
             if pairs:
-                result["CPI YoY"] = [v for _, v in pairs[-14:]]
+                result["CPI YoY"] = list(pairs[-14:])
     except Exception:
         pass
 
@@ -1874,7 +1879,7 @@ def fetch_ecb_history() -> dict[str, list[float]]:
             pairs_u.sort(key=lambda x: x[0])  # ISO date strings sort correctly
             recent = [(p, v) for p, v in pairs_u if p >= START]
             if recent:
-                result["Unemployment Rate"] = [v for _, v in recent[-14:]]
+                result["Unemployment Rate"] = list(recent[-14:])
     except Exception:
         pass
 
@@ -2312,10 +2317,10 @@ def fetch_te_history(country_slug: str, indicator_slug: str) -> list[float]:
 
 
 def _fetch_fred_series_history(series_id: str, fred_api_key: str = "",
-                                max_stale_months: int = 5) -> list[float]:
+                                max_stale_months: int = 5) -> list[tuple[str, float]]:
     """
     Fetch up to 14 months of history for a single FRED series.
-    Returns list of floats (oldest → newest) or [] if unavailable/stale.
+    Returns [(YYYY-MM, value), ...] oldest→newest, or [] if unavailable/stale.
     """
     _key = fred_api_key or FRED_API_KEY
     try:
@@ -2329,110 +2334,128 @@ def _fetch_fred_series_history(series_id: str, fred_api_key: str = "",
         obs = [o for o in r.json().get("observations", []) if o.get("value") != "."]
         if not obs:
             return []
-        # Freshness check
+        # Freshness check — obs[0] is newest (sort_order=desc)
         cutoff = (datetime.today() - timedelta(days=max_stale_months * 31)).strftime("%Y-%m")
         if obs[0]["date"][:7] < cutoff:
             return []
-        vals = [float(o["value"]) for o in reversed(obs)]  # oldest first
-        return vals[-14:]
+        pairs = [(o["date"][:7], float(o["value"])) for o in reversed(obs)]  # oldest first
+        return pairs[-14:]
     except Exception:
         return []
 
 
+def _assign_approximate_dates(
+    plain_history: dict[str, list[float]],
+) -> dict[str, list[tuple[str, float]]]:
+    """
+    Assign approximate calendar dates to plain value lists.
+    Assumes vals[-1] corresponds to the current month, vals[-2] to last month, etc.
+    Used for CB fetchers and HISTORY_FALLBACK that carry no date metadata.
+    """
+    today = datetime.today()
+    dated: dict[str, list[tuple[str, float]]] = {}
+    for ind, vals in plain_history.items():
+        n = len(vals)
+        pairs: list[tuple[str, float]] = []
+        for i, v in enumerate(vals):
+            months_back = n - 1 - i          # vals[0] = oldest
+            total_month = today.month - months_back
+            yr = today.year + (total_month - 1) // 12
+            mo = ((total_month - 1) % 12) + 1
+            pairs.append((f"{yr:04d}-{mo:02d}", v))
+        dated[ind] = pairs
+    return dated
+
+
+def _strip_dates(
+    dated_history: dict[str, list[tuple[str, float]]],
+) -> dict[str, list[float]]:
+    """Strip date strings from a dated history dict, returning plain value lists."""
+    return {ind: [v for _, v in pairs] for ind, pairs in dated_history.items()}
+
+
 @st.cache_data(ttl=TTL_HISTORY, show_spinner=False)
-def fetch_currency_history(currency: str, fred_api_key: str) -> dict[str, list[float]]:
+def fetch_currency_history(
+    currency: str, fred_api_key: str
+) -> dict[str, list[tuple[str, float]]]:
     """
     Get 12-month indicator history for a currency.
-    Priority: live API → HISTORY_FALLBACK supplement.
-    Sources per currency:
-      USD — FRED API
-      EUR — ECB (rate, CPI) + Eurostat (unemployment)
-      GBP — BOE CSV (rate) + OECD fallback
-      AUD — RBA CSV tables (rate, unemployment, trade, CPI)
-      CAD — Bank of Canada Valet API (rate, CPI)
-      CHF — SNB Data Portal (rate, CPI)
-      JPY — DBnomics/IMF (CPI) + OECD fallback
-      NZD — DBnomics/IMF (CPI) + OECD fallback
+    Returns {indicator: [(YYYY-MM, value), ...]} oldest→newest.
+
+    Priority: live API (dated) → HISTORY_FALLBACK with approximate dates.
+    Sources that return real dates: FRED, ECB, Investing.com, _fetch_fred_series_history.
+    Sources that return plain values (BOE, RBA, BOC, SNB, dbnomics, TE, FRED OECD):
+      approximate dates are assigned by counting backwards from today.
     """
-    live: dict[str, list[float]] = {}
+    live: dict[str, list[tuple[str, float]]] = {}
 
     if currency == "USD":
-        live = fetch_fred_history(fred_api_key)
+        live = fetch_fred_history(fred_api_key)   # returns dated pairs
     elif currency == "EUR":
-        live = fetch_ecb_history()
+        live = fetch_ecb_history()                 # returns dated pairs
     elif currency == "GBP":
-        live = fetch_boe_history()
-        # Supplement GBP with FRED unemployment history (current via ILO)
+        live = _assign_approximate_dates(fetch_boe_history())
         _gbr_unemp = _fetch_fred_series_history("LRHUTTTTGBM156S", fred_api_key)
         if _gbr_unemp:
-            live["Unemployment Rate"] = _gbr_unemp
+            live["Unemployment Rate"] = _gbr_unemp   # dated pairs from FRED
     elif currency == "AUD":
-        live = fetch_rba_history()
-        # Supplement AUD with FRED unemployment (more months of history)
+        live = _assign_approximate_dates(fetch_rba_history())
         _aud_unemp = _fetch_fred_series_history("LRUNTTTTAUM156S", fred_api_key)
         if _aud_unemp:
             live["Unemployment Rate"] = _aud_unemp
     elif currency == "CAD":
-        live = fetch_boc_history()
-        # Supplement CAD with FRED unemployment
+        live = _assign_approximate_dates(fetch_boc_history())
         _cad_unemp = _fetch_fred_series_history("LRUNTTTTCAM156S", fred_api_key)
         if _cad_unemp:
             live["Unemployment Rate"] = _cad_unemp
     elif currency == "CHF":
-        live = fetch_snb_history()
+        live = _assign_approximate_dates(fetch_snb_history())
     elif currency == "JPY":
-        live = fetch_dbnomics_cpi(currency)
-        # Supplement JPY with FRED unemployment (ILO current)
+        live = _assign_approximate_dates(fetch_dbnomics_cpi(currency))
         _jpy_unemp = _fetch_fred_series_history("LRUN74TTJPM156S", fred_api_key)
         if _jpy_unemp:
             live["Unemployment Rate"] = _jpy_unemp
     elif currency == "NZD":
-        live = {}
-        # NZD: FRED interest rate + unemployment
         _nzd_rate  = _fetch_fred_series_history("IR3TIB01NZM156N", fred_api_key)
         _nzd_unemp = _fetch_fred_series_history("LRUNTTTTNZQ156S", fred_api_key)
         if _nzd_rate:  live["Interest Rate"]     = _nzd_rate
         if _nzd_unemp: live["Unemployment Rate"] = _nzd_unemp
 
-    # ── Investing.com: primary 12-month source for most indicators ──────────────
-    # For non-USD: fills all gaps not already covered by CB API fetches above.
-    # For USD: FRED doesn't carry PMI — supplement those two only.
-    #          GDP is now fetched from FRED (A191RL1Q225SBEA), so excluded here.
+    # ── Investing.com: returns dated pairs, fills gaps ────────────────────────
     _USD_INV_INDS = {"Manufacturing PMI", "Services PMI"}
-    inv_history = fetch_investing_history(currency)
-    for ind_name, vals in inv_history.items():
+    inv_history = fetch_investing_history(currency)   # now returns dated pairs
+    for ind_name, dated_vals in inv_history.items():
         if currency == "USD" and ind_name not in _USD_INV_INDS:
             continue   # FRED is authoritative for all other USD indicators
         if ind_name not in live:
-            live[ind_name] = vals
+            live[ind_name] = dated_vals
 
-    # ── TE historical data (PMI, GDP, Retail, Confidence, Industrial Production, etc.) ──
-    # Only for non-USD currencies; fill gaps not covered by Investing.com or CB APIs
+    # ── TE historical (plain values → approximate dates) ─────────────────────
     if currency != "USD":
         te_map = _TE_HISTORY_MAP.get(currency, {})
         for ind_name, (country_slug, ind_slug) in te_map.items():
             if ind_name not in live:
-                vals = fetch_te_history(country_slug, ind_slug)
-                if vals:
-                    live[ind_name] = vals
+                plain_vals = fetch_te_history(country_slug, ind_slug)
+                if plain_vals:
+                    live[ind_name] = _assign_approximate_dates({ind_name: plain_vals})[ind_name]
 
-    # ── FRED OECD series (Consumer/Business Confidence, Industrial Production) ──
-    # Only for non-USD currencies; only if not already fetched from Investing.com/TE/CB APIs
+    # ── FRED OECD series (returns dated pairs) ────────────────────────────────
     if currency != "USD":
         for ind_name, (sid, _) in _FRED_INTL.get(currency, {}).items():
             if ind_name not in live:
-                vals = _fetch_fred_series_history(sid, fred_api_key, max_stale_months=6)
-                if vals:
-                    live[ind_name] = vals
+                dated = _fetch_fred_series_history(sid, fred_api_key, max_stale_months=6)
+                if dated:
+                    live[ind_name] = dated
 
-    fallback = HISTORY_FALLBACK.get(currency, {})
-    result: dict[str, list[float]] = {}
-    all_indicators = set(list(live.keys()) + list(fallback.keys()))
+    # ── HISTORY_FALLBACK — assign approximate dates for anything missing ──────
+    fallback_dated = _assign_approximate_dates(HISTORY_FALLBACK.get(currency, {}))
+    result: dict[str, list[tuple[str, float]]] = {}
+    all_indicators = set(list(live.keys()) + list(fallback_dated.keys()))
     for ind in all_indicators:
         if ind in live and len(live[ind]) >= 3:
             result[ind] = live[ind]
-        elif ind in fallback:
-            result[ind] = fallback[ind]
+        elif ind in fallback_dated:
+            result[ind] = fallback_dated[ind]
     return result
 
 
@@ -3338,25 +3361,51 @@ def render_bias_panel(currency: str, bias_result: dict) -> str:
 </div>"""
 
 
-def render_economic_charts(currency: str, bias_result: dict, history: dict) -> None:
-    """Render two Plotly charts side by side: 12M strength timeline + indicator bar chart."""
-    monthly_scores   = bias_result.get("monthly_scores", [])
+def render_economic_charts(
+    currency: str,
+    bias_result: dict,
+    history_dated: dict[str, list[tuple[str, float]]],
+) -> None:
+    """Render two Plotly charts side by side: 12M strength timeline + indicator bar chart.
+
+    Chart 1 is a true monthly re-score: for each of the last 12 calendar months,
+    each indicator's dated history is filtered to data available at or before that
+    month, then _calc_raw_score() is called on the filtered subset.
+    The rightmost point uses all available data (filter = current month) and matches
+    the current live score on the absolute scale.
+    """
     indicator_scores = bias_result.get("indicator_scores", {})
     flag = CURRENCY_FLAG.get(currency, "")
 
     col1, col2 = st.columns([6, 4], gap="medium")
 
-    # ── Chart 1: 12-month economic strength timeline ──────────────────────────
+    # ── Chart 1: true monthly re-score (12 calendar months) ──────────────────
     with col1:
-        n = len(monthly_scores)
         today = datetime.today()
-        month_labels = []
-        for i in range(n - 1, -1, -1):
-            # Proper calendar-month subtraction — avoids 30-day rounding duplicates
+        # Build last 12 calendar months oldest→newest
+        chart_month_strs: list[str] = []
+        month_labels:     list[str] = []
+        for i in range(11, -1, -1):
             total_month = today.month - i
-            yr  = today.year + (total_month - 1) // 12
-            mo  = ((total_month - 1) % 12) + 1
+            yr = today.year + (total_month - 1) // 12
+            mo = ((total_month - 1) % 12) + 1
+            chart_month_strs.append(f"{yr:04d}-{mo:02d}")
             month_labels.append(datetime(yr, mo, 1).strftime("%b %y"))
+
+        monthly_scores: list[float] = []
+        for month_str in chart_month_strs:
+            # Filter each indicator to data available at this month
+            filtered: dict[str, list[float]] = {}
+            for ind, dated_pairs in history_dated.items():
+                vals_up_to = [v for d, v in dated_pairs if d <= month_str]
+                if len(vals_up_to) >= 3:
+                    filtered[ind] = vals_up_to
+            if filtered:
+                _, raw, _ = _calc_raw_score(filtered)
+                score = round(max(-3.0, min(3.0, raw * 6.0)), 3)
+            else:
+                score = 0.0
+            monthly_scores.append(score)
 
         point_colors = [C["green"] if s >= 0 else C["red"] for s in monthly_scores]
         scores_pos   = [max(0.0, s) for s in monthly_scores]
@@ -3949,7 +3998,9 @@ def main():
 
     # ── 1. Fetch 12-month history ─────────────────────────────────────────────
     with st.spinner("⏳ Loading 12-month data…"):
-        history = fetch_currency_history(currency, FRED_API_KEY)
+        history_dated = fetch_currency_history(currency, FRED_API_KEY)
+    # Strip dates for scoring (plain value lists); keep dated for the chart
+    history = _strip_dates(history_dated)
 
     # ── 2. Normalized bias — all 8 currencies in one pass ────────────────────
     # Live history for the selected currency; HISTORY_FALLBACK for the other 7.
@@ -3990,7 +4041,7 @@ def main():
     )
 
     # ── 7. Two economic charts ────────────────────────────────────────────────
-    render_economic_charts(currency, bias_result, history)
+    render_economic_charts(currency, bias_result, history_dated)
 
     st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
 
@@ -4019,12 +4070,12 @@ def main():
                 official.update(ff_data)
 
                 # ── Layer 1b: Investing.com snapshot (current value from most recent release) ──
-                inv_hist = fetch_investing_history(currency)
-                for _ind_name, _vals in inv_hist.items():
-                    if _vals and _ind_name not in official:
+                inv_hist = fetch_investing_history(currency)  # returns dated pairs
+                for _ind_name, _pairs in inv_hist.items():
+                    if _pairs and _ind_name not in official:
                         official[_ind_name] = {
-                            "actual":   _vals[-1],
-                            "previous": _vals[-2] if len(_vals) >= 2 else None,
+                            "actual":   _pairs[-1][1],                              # extract float
+                            "previous": _pairs[-2][1] if len(_pairs) >= 2 else None,
                             "date":     None,
                             "source":   "Investing.com",
                         }
