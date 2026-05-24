@@ -1203,8 +1203,12 @@ def main():
           box-shadow: 0 0 0 1px {C['teal']} !important;
       }}
       div[data-testid="stRadio"] label input {{ display:none !important; }}
-      div[data-testid="stRadio"] label > div,
-      div[data-testid="stRadio"] label > div > p {{
+      /* Hide the Streamlit radio indicator circle (outer red / inner white dot) —
+         its pseudo-element positioning breaks under display:inline */
+      div[data-testid="stRadio"] label > div:not(:has(p)) {{ display:none !important; }}
+      /* Apply inline only to the text-content wrapper and its <p> */
+      div[data-testid="stRadio"] label > div:has(p),
+      div[data-testid="stRadio"] label > div:has(p) > p {{
           display:inline !important; font-family:monospace !important;
           font-size:13px !important; font-weight:700 !important;
       }}
