@@ -1984,8 +1984,11 @@ def render_economic_charts(currency: str, bias_result: dict, history: dict) -> N
         today = datetime.today()
         month_labels = []
         for i in range(n - 1, -1, -1):
-            d = (today.replace(day=1) - timedelta(days=30 * i))
-            month_labels.append(d.strftime("%b %y"))
+            # Proper calendar-month subtraction — avoids 30-day rounding duplicates
+            total_month = today.month - i
+            yr  = today.year + (total_month - 1) // 12
+            mo  = ((total_month - 1) % 12) + 1
+            month_labels.append(datetime(yr, mo, 1).strftime("%b %y"))
 
         point_colors = [C["green"] if s >= 0 else C["red"] for s in monthly_scores]
         scores_pos   = [max(0.0, s) for s in monthly_scores]
