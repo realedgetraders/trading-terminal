@@ -2601,13 +2601,18 @@ def main():
 
     st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
 
-    # ── 8. Calendar (left) + All Currencies Ranking (right) ───────────────────
-    col_left, col_right = st.columns([3, 2], gap="medium")
+    # ── 8. All Currencies Ranking (left) + Raw Indicator Data (right) ───────────
+    col_rank, col_raw = st.columns([2, 3], gap="medium")
 
-    with col_left:
-        # Fetch current snapshot for collapsible table
+    with col_rank:
+        st.markdown(_section_header("All Currencies — Bias Ranking"), unsafe_allow_html=True)
+        st.markdown(render_all_currencies_overview(currency), unsafe_allow_html=True)
+
+    with col_raw:
+        st.markdown(_section_header(f"Raw Indicator Data — {currency}"), unsafe_allow_html=True)
+        # Fetch current snapshot
         official: dict = {}
-        with st.spinner("⏳ Fetching current snapshot…"):
+        with st.spinner("⏳ Fetching current data…"):
             if currency == "USD":
                 official = fetch_fred_indicators(FRED_API_KEY)
             else:
@@ -2623,20 +2628,6 @@ def main():
                     boe_rate = fetch_boe_rate()
                     if boe_rate:
                         official["Interest Rate"] = boe_rate
-
-        st.markdown(_section_header(f"Economic Calendar — {currency}"), unsafe_allow_html=True)
-        st.markdown(
-            _empty_state("Economic calendar coming soon — check ForexFactory for upcoming releases."),
-            unsafe_allow_html=True,
-        )
-
-    with col_right:
-        st.markdown(_section_header("All Currencies — Bias Ranking"), unsafe_allow_html=True)
-        st.markdown(render_all_currencies_overview(currency), unsafe_allow_html=True)
-
-    # ── 9. Collapsible raw indicator data ─────────────────────────────────────
-    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-    with st.expander("📊 Raw Indicator Data", expanded=False):
         indicators_df, ind_source = build_indicators_table(currency, official)
         _cg = C["green"]; _cy = C["yellow"]; _cm2 = C["muted"]
         st.markdown(
@@ -2644,8 +2635,8 @@ def main():
             f"margin-bottom:8px;'>"
             f"<span style='color:{_cg};'>●</span> Live/fresh "
             f"&nbsp; <span style='color:{_cy};'>●</span> Stale "
-            f"&nbsp; <span style='color:{_cm2};'>◎</span> Static fallback "
-            f"&nbsp; Source: {ind_source}</div>",
+            f"&nbsp; <span style='color:{_cm2};'>◎</span> Static "
+            f"&nbsp;·&nbsp; Source: {ind_source}</div>",
             unsafe_allow_html=True,
         )
         st.markdown(
