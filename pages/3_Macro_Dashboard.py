@@ -989,6 +989,9 @@ def fetch_boe_rate() -> dict:
 def fetch_te_indicators(currency: str) -> dict:
     """
     Scrape the Trading Economics indicators page for a given currency.
+    Provides live values for PMI, GDP Growth, Retail Sales, Wage Growth,
+    Unemployment Rate, Trade Balance, Current Account.
+    Does NOT return Interest Rate or CPI (those use dedicated CB APIs).
     Returns {indicator_key: {actual, previous, date, source}} or {} on any failure.
     Cached 30 min.  Never raises — always returns {} on error.
     """
@@ -997,13 +1000,36 @@ def fetch_te_indicators(currency: str) -> dict:
     url = _TE_URLS.get(currency)
     if not url:
         return {}
+    # Indicators we accept from TE (only %-based or index values with consistent units)
+    # Skipped: Interest Rate, CPI — handled by dedicated CB APIs
+    # Skipped: Trade Balance, Current Account — TE shows local-currency millions (not normalised)
+    # Skipped: Wage Growth — TE shows absolute wage levels for most currencies, not % change
+    _TE_SKIP = {
+        "Interest Rate", "CPI m/m", "CPI YoY",
+        "Trade Balance", "Current Account", "Wage Growth",
+    }
+
+    def _parse_te_date(txt: str) -> str:
+        """Convert TE date 'Mar/26' → '2026-03' → '2026-03-01' approx."""
+        txt = txt.strip()
+        if not txt:
+            return ""
+        _MONTHS = {"jan":"01","feb":"02","mar":"03","apr":"04","may":"05","jun":"06",
+                   "jul":"07","aug":"08","sep":"09","oct":"10","nov":"11","dec":"12"}
+        parts = txt.lower().replace("/", " ").split()
+        if len(parts) == 2:
+            mon = _MONTHS.get(parts[0][:3], "")
+            yr  = parts[1] if len(parts[1]) == 4 else f"20{parts[1]}" if len(parts[1]) == 2 else ""
+            if mon and yr:
+                return f"{yr}-{mon}-01"
+        return txt
+
     try:
         r = requests.get(url, headers=_TE_HEADERS, timeout=12)
         if r.status_code != 200:
             return {}
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # TE renders indicators in a <table> — find all rows
         result: dict = {}
         assigned: set[str] = set()
 
@@ -1012,12 +1038,13 @@ def fetch_te_indicators(currency: str) -> dict:
             if len(cells) < 3:
                 continue
             row_name = cells[0].get_text(strip=True).lower()
-            # Match against our map (first match wins; skip already-assigned keys)
+
             matched_key: str | None = None
             for fragment, ind_key in _TE_ROW_MAP:
                 if fragment in row_name and ind_key not in assigned:
-                    matched_key = ind_key
-                    break
+                    if ind_key not in _TE_SKIP:
+                        matched_key = ind_key
+                    break  # still mark as seen so we don't re-match later
             if matched_key is None:
                 continue
 
@@ -1031,7 +1058,8 @@ def fetch_te_indicators(currency: str) -> dict:
             # TE columns: Name | Last | Previous | Highest | Lowest | Unit | Reference
             actual   = _cell_float(cells[1]) if len(cells) > 1 else None
             previous = _cell_float(cells[2]) if len(cells) > 2 else None
-            date_txt = cells[6].get_text(strip=True) if len(cells) > 6 else ""
+            date_raw = cells[6].get_text(strip=True) if len(cells) > 6 else ""
+            date_fmt = _parse_te_date(date_raw)
 
             if actual is None:
                 continue
@@ -1039,7 +1067,7 @@ def fetch_te_indicators(currency: str) -> dict:
             result[matched_key] = {
                 "actual":   actual,
                 "previous": previous,
-                "date":     date_txt,
+                "date":     date_fmt,
                 "source":   "TE",
             }
             assigned.add(matched_key)
@@ -1184,6 +1212,167 @@ def fetch_international_indicators(currency: str, fred_api_key: str = "") -> dic
                     }
         except Exception:
             pass
+
+    return result
+
+
+# ╔══════════════════════════════════════════════════════════════════════════════
+# ║  FOREXFACTORY MACRO DATA MINER
+# ╚══════════════════════════════════════════════════════════════════════════════
+
+_FF_MACRO_HDR = {
+    "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept":          "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer":         "https://www.forexfactory.com/",
+    "Origin":          "https://www.forexfactory.com",
+}
+_FF_MACRO_URLS = [
+    "https://nfs.faireconomy.media/ff_calendar_month.json",
+    "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+    "https://nfs.faireconomy.media/ff_calendar_nextweek.json",
+]
+
+# Indicator names in FF we want to skip (interest rate/CPI handled by precise APIs)
+_FF_SKIP_INDICATORS = {"Interest Rate", "CPI m/m"}
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_ff_macro_data(currency: str) -> dict:
+    """
+    Mine ForexFactory JSON calendar feeds for live macro indicator values:
+    PMI, GDP, Retail Sales, Unemployment, Wage Growth, Trade Balance, etc.
+
+    Strategy:
+    - Past events (actual != null): use actual as current value, previous as prior
+    - Future/upcoming events (actual == null): use 'previous' field as most recent release
+    - Returns most recent entry per indicator (by date, preferring events with actuals)
+    - Never overrides Interest Rate / CPI (those have more precise dedicated sources)
+    - Returns {indicator_name: {actual, previous, forecast, date, source}} or {} on failure
+    """
+    events: list[dict] = []
+    for url in _FF_MACRO_URLS:
+        try:
+            r = requests.get(url, timeout=10, headers=_FF_MACRO_HDR)
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, list) and data:
+                    events.extend(data)
+        except Exception:
+            pass
+        time.sleep(0.05)
+
+    if not events:
+        return {}
+
+    ccy_lower = currency.lower()
+
+    def _num(val) -> float | None:
+        """Parse numeric string: strips %, $, K/M/B multipliers."""
+        if val is None:
+            return None
+        s = str(val).strip().replace(",", "").replace("$", "").replace(" ", "")
+        if s in ("", "-", "N/A", "None", "null"):
+            return None
+        if s.endswith("%"):
+            s = s[:-1]
+        mult = 1.0
+        if s.upper().endswith("K"):
+            mult = 1_000; s = s[:-1]
+        elif s.upper().endswith("M"):
+            mult = 1_000_000; s = s[:-1]
+        elif s.upper().endswith("B"):
+            mult = 1_000_000_000; s = s[:-1]
+        try:
+            return float(s) * mult
+        except (ValueError, TypeError):
+            return None
+
+    def _map_ind(title: str) -> str | None:
+        t = title.lower().strip()
+        for fragment, ind_key in INDICATOR_MAP:  # longest-first sorted
+            if fragment in t:
+                return ind_key
+        return None
+
+    # Collect best candidate per indicator
+    # key: ind_name → {actual, previous, forecast, date_str, has_actual: bool}
+    best: dict[str, dict] = {}
+
+    for ev in events:
+        # Match currency — FF uses 'currency' field (e.g. "USD", "EUR")
+        ev_ccy = str(ev.get("currency") or ev.get("country") or "").lower().strip()
+        if ev_ccy != ccy_lower:
+            continue
+
+        impact = str(ev.get("impact") or "Low").lower()
+        if impact in ("low", "holiday", ""):
+            continue
+
+        title    = str(ev.get("title") or ev.get("name") or "").strip()
+        ind_name = _map_ind(title)
+        if not ind_name or ind_name in _FF_SKIP_INDICATORS:
+            continue
+
+        actual_val   = _num(ev.get("actual"))
+        previous_val = _num(ev.get("previous"))
+        forecast_val = _num(ev.get("forecast"))
+
+        # Parse event date
+        try:
+            ev_date = pd.to_datetime(ev.get("date"), errors="coerce")
+            if pd.isna(ev_date):
+                continue
+            if ev_date.tzinfo is not None:
+                ev_date = ev_date.tz_localize(None)
+            date_str = ev_date.strftime("%Y-%m-%d")
+        except Exception:
+            continue
+
+        # Build candidate
+        if actual_val is not None:
+            candidate = {
+                "actual":     actual_val,
+                "previous":   previous_val,
+                "forecast":   forecast_val,
+                "date":       date_str,
+                "has_actual": True,
+            }
+        elif previous_val is not None:
+            # Event not yet released: 'previous' = last release's actual value
+            candidate = {
+                "actual":     previous_val,
+                "previous":   None,
+                "forecast":   forecast_val,
+                "date":       None,          # date unknown for prev release
+                "has_actual": False,
+            }
+        else:
+            continue
+
+        existing = best.get(ind_name)
+        if existing is None:
+            best[ind_name] = candidate
+        elif candidate["has_actual"] and not existing["has_actual"]:
+            best[ind_name] = candidate  # prefer confirmed actual over estimate
+        elif candidate["has_actual"] == existing["has_actual"]:
+            # same quality → take most recent
+            c_date = candidate["date"] or ""
+            e_date = existing["date"] or ""
+            if c_date > e_date:
+                best[ind_name] = candidate
+
+    # Convert to official-dict format
+    result: dict = {}
+    for ind_name, b in best.items():
+        result[ind_name] = {
+            "actual":   b["actual"],
+            "previous": b["previous"],
+            "forecast": b["forecast"],
+            "date":     b["date"],
+            "source":   "ForexFactory",
+        }
 
     return result
 
@@ -3090,6 +3279,8 @@ def main():
             fetch_snb_history.clear()
             fetch_oecd_history.clear()
             fetch_te_indicators.clear()
+            fetch_ff_macro_data.clear()
+            fetch_international_indicators.clear()
             st.session_state.last_refresh_ts = time.time()
             st.rerun()
 
@@ -3183,14 +3374,29 @@ def main():
     with col_raw:
         st.markdown(_section_header(f"Raw Indicator Data — {currency}"), unsafe_allow_html=True)
         # Fetch current snapshot
+        # Priority (lowest → highest, each layer can override the previous):
+        #   1. ForexFactory calendar  — PMI/GDP/Retail/Wage via 'previous' field (base)
+        #   2. Trading Economics      — PMI, GDP, Retail, Wage, Unemployment (more complete)
+        #   3. FRED OECD/ILO + ONS   — Unemployment (GBP/JPY/CAD/AUD/NZD), CPI YoY (GBP ONS)
+        #   4. Central bank APIs     — Rate + CPI (ECB, BOE, RBA, BOC, SNB) — highest precision
         official: dict = {}
         with st.spinner("⏳ Fetching current data…"):
             if currency == "USD":
                 official = fetch_fred_indicators(FRED_API_KEY)
             else:
-                # International live data: FRED OECD/ILO + ONS (GBP) + ECB/BOE overrides
-                official = dict(fetch_international_indicators(currency, FRED_API_KEY))
-                # Per-currency rate/CPI overrides (highest precision sources)
+                # ── Layer 1: ForexFactory — quick base for upcoming-event previous values ──
+                ff_data = fetch_ff_macro_data(currency)
+                official.update(ff_data)
+
+                # ── Layer 2: Trading Economics — PMI, GDP, Retail, Wage, Unemployment ──
+                te_data = fetch_te_indicators(currency)
+                official.update(te_data)   # TE overrides FF where available
+
+                # ── Layer 3: FRED OECD/ILO + ONS — more authoritative unemployment/CPI ──
+                intl_data = fetch_international_indicators(currency, FRED_API_KEY)
+                official.update(intl_data)
+
+                # ── Layer 3: Central bank APIs — highest precision, always win ──
                 if currency == "EUR":
                     ecb_rate = fetch_ecb_rate()
                     if ecb_rate:
@@ -3203,33 +3409,32 @@ def main():
                     if boe_rate:
                         official["Interest Rate"] = boe_rate
                 elif currency == "AUD":
-                    # RBA history has rate + unemployment — pull current value from it
                     _rba = fetch_rba_history()
                     for _ind in ("Interest Rate", "Unemployment Rate"):
                         if _ind in _rba and _rba[_ind]:
-                            official.setdefault(_ind, {
+                            official[_ind] = {
                                 "actual":   _rba[_ind][-1],
                                 "previous": _rba[_ind][-2] if len(_rba[_ind]) >= 2 else None,
                                 "source":   "RBA",
-                            })
+                            }
                 elif currency == "CAD":
                     _boc = fetch_boc_history()
                     for _ind in ("Interest Rate", "CPI m/m"):
                         if _ind in _boc and _boc[_ind]:
-                            official.setdefault(_ind, {
+                            official[_ind] = {
                                 "actual":   _boc[_ind][-1],
                                 "previous": _boc[_ind][-2] if len(_boc[_ind]) >= 2 else None,
                                 "source":   "BOC",
-                            })
+                            }
                 elif currency == "CHF":
                     _snb = fetch_snb_history()
                     for _ind in ("Interest Rate", "CPI YoY"):
                         if _ind in _snb and _snb[_ind]:
-                            official.setdefault(_ind, {
+                            official[_ind] = {
                                 "actual":   _snb[_ind][-1],
                                 "previous": _snb[_ind][-2] if len(_snb[_ind]) >= 2 else None,
                                 "source":   "SNB",
-                            })
+                            }
         indicators_df, ind_source = build_indicators_table(currency, official)
         _cg = C["green"]; _cy = C["yellow"]; _cm2 = C["muted"]
         st.markdown(
