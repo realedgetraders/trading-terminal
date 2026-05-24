@@ -3331,10 +3331,6 @@ def render_bias_panel(currency: str, bias_result: dict) -> str:
                     letter-spacing:1.5px;text-transform:uppercase;'>Economic Bias — 12M Trend</div>
         <div style='font-size:18px;font-weight:800;color:{lc};
                     font-family:monospace;letter-spacing:1px;'>{label}</div>
-        <div style='font-size:9px;color:{_cm};font-family:monospace;
-                    margin-top:3px;line-height:1.4;max-width:260px;'>
-          Long-term macroeconomic indicator only · Short-term price action may be
-          overridden by geopolitical events, central bank surprises, or market sentiment</div>
       </div>
     </div>
     <div style='text-align:right;'>
@@ -3356,8 +3352,14 @@ def render_bias_panel(currency: str, bias_result: dict) -> str:
                   #cc1a2a 0%, {_cr} 20%, {_cy} 50%,
                   {_cg} 80%, #00a36c 100%);'></div>
   <div style='display:flex;justify-content:space-between;font-size:9px;
-              font-family:monospace;color:{_cm};'>
+              font-family:monospace;color:{_cm};margin-bottom:10px;'>
     <span>BEARISH</span><span>NEUTRAL</span><span>BULLISH</span>
+  </div>
+  <!-- Disclaimer -->
+  <div style='border-top:1px solid {_cb};padding-top:8px;font-size:9px;
+              color:{_cm};font-family:monospace;line-height:1.6;letter-spacing:0.3px;'>
+    ⚠ Long-term macroeconomic indicator only · Short-term price action may be overridden
+    by geopolitical events, central bank surprises, or market sentiment
   </div>
 </div>"""
 
