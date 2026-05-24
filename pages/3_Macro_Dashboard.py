@@ -294,28 +294,28 @@ _IND_WEIGHTS: dict[str, float] = {
 # ║  STATIC FALLBACK DATA  (May 2026 — displayed when live fetch fails)
 # ╚══════════════════════════════════════════════════════════════════════════════
 STATIC_INDICATORS: dict[str, dict[str, dict]] = {
-    # ── USD  target score ≈ +5  (SLIGHT BULLISH — high rates, solid growth, wage inflation)
+    # ── USD  (FRED live — Apr 2026 verified 2026-05-24)
     "USD": {
-        "CPI m/m":            {"actual": 0.4,    "previous": 0.3,    "forecast": 0.3,    "date": "2026-05-13", "impact": "High"},
-        "Interest Rate":      {"actual": 4.50,   "previous": 4.25,   "forecast": 4.50,   "date": "2026-05-07", "impact": "High"},
-        "GDP Growth":         {"actual": 2.8,    "previous": 2.4,    "forecast": 2.6,    "date": "2026-04-30", "impact": "High"},
-        "Unemployment Rate":  {"actual": 4.0,    "previous": 4.2,    "forecast": 4.0,    "date": "2026-05-02", "impact": "High"},
+        "CPI m/m":            {"actual": 0.64,   "previous": 0.87,   "forecast": 0.3,    "date": "2026-05-13", "impact": "High"},
+        "Interest Rate":      {"actual": 3.64,   "previous": 3.64,   "forecast": 3.50,   "date": "2026-05-07", "impact": "High"},
+        "GDP Growth":         {"actual": 2.0,    "previous": 0.5,    "forecast": 1.5,    "date": "2026-04-30", "impact": "High"},
+        "Unemployment Rate":  {"actual": 4.3,    "previous": 4.3,    "forecast": 4.3,    "date": "2026-05-02", "impact": "High"},
         "Manufacturing PMI":  {"actual": 49.8,   "previous": 49.3,   "forecast": 50.0,   "date": "2026-05-01", "impact": "Medium"},
         "Services PMI":       {"actual": 51.2,   "previous": 51.7,   "forecast": 51.5,   "date": "2026-05-05", "impact": "Medium"},
-        "Trade Balance":      {"actual": -61.1,  "previous": -64.5,  "forecast": -63.0,  "date": "2026-05-06", "impact": "Medium"},
-        "Retail Sales":       {"actual": 0.1,    "previous": -0.2,   "forecast": 0.3,    "date": "2026-05-15", "impact": "High"},
+        "Trade Balance":      {"actual": -60.3,  "previous": -57.8,  "forecast": -59.0,  "date": "2026-05-06", "impact": "Medium"},
+        "Retail Sales":       {"actual": 0.49,   "previous": 1.63,   "forecast": 0.4,    "date": "2026-05-15", "impact": "High"},
         "Current Account":    {"actual": -3.2,   "previous": -3.5,   "forecast": -3.3,   "date": "2026-03-20", "impact": "Medium"},
-        "Wage Growth":        {"actual": 4.5,    "previous": 4.1,    "forecast": 4.0,    "date": "2026-05-02", "impact": "High"},
+        "Wage Growth":        {"actual": 3.57,   "previous": 3.43,   "forecast": 3.5,    "date": "2026-05-02", "impact": "High"},
         "PPI":                {"actual": 3.8,    "previous": 3.4,    "forecast": 3.5,    "date": "2026-05-14", "impact": "Medium"},
-        "Consumer Confidence":{"actual": 82.0,   "previous": 77.8,   "forecast": 78.0,   "date": "2026-05-16", "impact": "Medium"},
+        "Consumer Confidence":{"actual": 49.8,   "previous": 53.3,   "forecast": 50.0,   "date": "2026-05-16", "impact": "Medium"},
         "Government Debt":    {"actual": 124.0,  "previous": 121.3,  "forecast": 122.0,  "date": "2026-04-01", "impact": "Low"},
         "Budget Balance":     {"actual": -5.8,   "previous": -6.1,   "forecast": -6.0,   "date": "2026-04-15", "impact": "Low"},
-        "Building Permits":   {"actual": 1482.0, "previous": 1465.0, "forecast": 1460.0, "date": "2026-05-16", "impact": "Medium"},
+        "Building Permits":   {"actual": 1442.0, "previous": 1363.0, "forecast": 1420.0, "date": "2026-05-16", "impact": "Medium"},
         "Business Confidence":{"actual": 52.3,   "previous": 50.1,   "forecast": 50.5,   "date": "2026-05-15", "impact": "Low"},
-        "Core CPI":           {"actual": 0.3,    "previous": 0.4,    "forecast": 0.3,    "date": "2026-05-13", "impact": "High"},
-        "Employment Change":  {"actual": 177.0,  "previous": 142.0,  "forecast": 155.0,  "date": "2026-05-02", "impact": "High"},
-        "Industrial Production":{"actual": 0.3,  "previous": 0.1,    "forecast": 0.2,    "date": "2026-05-15", "impact": "Medium"},
-        "M2 Money Supply":    {"actual": 3.8,    "previous": 3.5,    "forecast": 3.6,    "date": "2026-05-07", "impact": "Low"},
+        "Core CPI":           {"actual": 0.38,   "previous": 0.20,   "forecast": 0.3,    "date": "2026-05-13", "impact": "High"},
+        "Employment Change":  {"actual": 115.0,  "previous": 185.0,  "forecast": 150.0,  "date": "2026-05-02", "impact": "High"},
+        "Industrial Production":{"actual": 0.68, "previous": -0.29,  "forecast": 0.3,    "date": "2026-05-15", "impact": "Medium"},
+        "M2 Money Supply":    {"actual": 4.57,   "previous": 4.69,   "forecast": 4.5,    "date": "2026-05-07", "impact": "Low"},
     },
     # ── EUR  target score ≈ -2  (SLIGHT BEARISH — cutting cycle, soft PMI, below-target CPI)
     "EUR": {
@@ -340,10 +340,10 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
         "Industrial Production":{"actual": -0.2, "previous": 0.1,    "forecast": 0.2,    "date": "2026-04-14", "impact": "Medium"},
         "M2 Money Supply":    {"actual": 2.1,    "previous": 1.9,    "forecast": 2.0,    "date": "2026-04-25", "impact": "Low"},
     },
-    # ── GBP  target score ≈ -4  (SLIGHT BEARISH — stagflation, cutting, weak manufacturing)
+    # ── GBP  (BOE live — Apr 2026 verified 2026-05-24: rate 3.75%)
     "GBP": {
         "CPI m/m":            {"actual": 0.3,    "previous": 0.4,    "forecast": 0.3,    "date": "2026-05-21", "impact": "High"},
-        "Interest Rate":      {"actual": 4.25,   "previous": 4.50,   "forecast": 4.25,   "date": "2026-05-08", "impact": "High"},
+        "Interest Rate":      {"actual": 3.75,   "previous": 3.75,   "forecast": 3.50,   "date": "2026-05-08", "impact": "High"},
         "GDP Growth":         {"actual": 1.4,    "previous": 1.1,    "forecast": 1.2,    "date": "2026-05-13", "impact": "High"},
         "Unemployment Rate":  {"actual": 4.7,    "previous": 4.5,    "forecast": 4.5,    "date": "2026-05-13", "impact": "Medium"},
         "Manufacturing PMI":  {"actual": 46.1,   "previous": 44.9,   "forecast": 45.5,   "date": "2026-05-01", "impact": "Medium"},
@@ -488,26 +488,26 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
 # ╚══════════════════════════════════════════════════════════════════════════════
 HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
     "USD": {
-        # Jun-Nov 2025 prepended, then Dec 2025-May 2026 from old STATIC_HISTORY
-        "CPI m/m":           [0.3, 0.4, 0.3, 0.4, 0.3, 0.2,  0.4, 0.5, 0.2, 0.1, 0.3, 0.4],
-        "Interest Rate":     [4.25,4.25,4.25,4.25,4.25,4.25,  4.25,4.25,4.50,4.50,4.50,4.50],
-        "GDP Growth":        [2.3, 2.4, 2.5, 2.4, 2.5, 2.4,  2.4, 2.4, 2.8, 2.8, 2.8, 2.8],
-        "Unemployment Rate": [3.9, 4.0, 4.1, 4.2, 4.1, 4.2,  4.2, 4.1, 4.0, 4.1, 4.0, 4.0],
-        "Manufacturing PMI": [48.7,49.3,50.1,50.9,51.3,50.5,  49.7,51.2,52.7,49.0,50.2,49.8],
-        "Services PMI":      [53.8,54.2,53.7,55.1,54.8,55.0,  56.1,52.9,51.0,54.4,50.8,51.2],
-        "Retail Sales":      [0.2, 0.3,-0.1, 0.5, 0.4, 0.3,   0.4,-0.9, 0.2, 1.4,-0.2, 0.1],
-        "Wage Growth":       [4.3, 4.2, 4.1, 4.0, 4.0, 4.1,   4.1, 4.1, 4.0, 4.0, 4.1, 4.5],
-        "Trade Balance":     [-67.,-72.,-75.,-80.,-82.,-79.,  -78.9,-131.4,-122.7,-140.5,-64.5,-61.1],
-        "Core CPI":          [0.3, 0.3, 0.3, 0.4, 0.3, 0.3,   0.3, 0.4, 0.4, 0.1, 0.3, 0.3],
-        "Employment Change": [200, 220, 215, 230, 245, 210,   227, 256, 117, 228, 142, 177],
-        "Industrial Production":[0.2,0.3,-0.1,0.4,0.3,0.1,  -0.1, 0.5,-0.8,-0.3, 0.1, 0.3],
-        "M2 Money Supply":   [3.2, 3.3, 3.3, 3.4, 3.5, 3.5,   3.5, 3.5, 3.6, 3.6, 3.8, 3.8],
-        "Consumer Confidence":[118.,115.,113.,112.,112.,111., 110.7,104.1,98.3,92.9,85.7,82.0],
-        "Government Debt":   [120.,121.,121.,122.,122.,122.,  122.,122.,123.,123.,124.,124.],
-        "PPI":               [0.2, 0.3, 0.4, 0.3, 0.2, 0.3,   0.3, 0.5, 0.0,-0.4,-0.5, 0.2],
-        "Budget Balance":    [-6.1,-6.0,-5.9,-5.9,-5.8,-5.8, -5.8,-5.9,-6.0,-5.9,-5.9,-5.8],
-        "Building Permits":  [1460,1455,1460,1462,1465,1462, 1465,1465,1465,1460,1465,1482],
-        "Business Confidence":[54.5,54.2,53.8,53.5,53.2,52.5, 52.3,51.5,51.0,51.5,51.0,52.3],
+        # FRED live — verified 2026-05-24  (Jun 2025 → Apr/May 2026, oldest first)
+        "CPI m/m":           [0.25, 0.23, 0.35, 0.30, 0.25, 0.25,  0.30, 0.17, 0.27, 0.87, 0.64, 0.64],
+        "Interest Rate":     [4.33, 4.33, 4.33, 4.22, 4.09, 3.88,  3.72, 3.64, 3.64, 3.64, 3.64, 3.64],
+        "GDP Growth":        [3.8,  3.8,  3.8,  4.4,  4.4,  4.4,   0.5,  0.5,  0.5,  2.0,  2.0,  2.0],
+        "Unemployment Rate": [4.1,  4.3,  4.3,  4.4,  4.5,  4.4,   4.3,  4.4,  4.3,  4.3,  4.3,  4.3],
+        "Manufacturing PMI": [48.7, 49.3, 50.1, 50.9, 51.3, 50.5,  49.7, 51.2, 52.7, 49.0, 50.2, 49.8],
+        "Services PMI":      [53.8, 54.2, 53.7, 55.1, 54.8, 55.0,  56.1, 52.9, 51.0, 54.4, 50.8, 51.2],
+        "Retail Sales":      [0.97, 0.65, 0.55, 0.07,-0.16, 0.50,   0.00,-0.03, 0.92, 1.63, 0.49, 0.50],
+        "Wage Growth":       [3.86, 3.96, 3.98, 3.85, 3.92, 3.93,  3.73, 3.66, 3.70, 3.43, 3.57, 3.57],
+        "Trade Balance":     [-57.6,-74.2,-56.0,-49.2,-31.1,-56.0,-72.9,-54.7,-57.8,-60.3,-60.0,-60.0],
+        "Core CPI":          [0.23, 0.31, 0.31, 0.22, 0.19, 0.23,  0.30, 0.22, 0.20, 0.38, 0.38, 0.38],
+        "Employment Change": [-20,   64,  -70,   76, -140,   41,   -17,  160, -156,  185,  115,  115],
+        "Industrial Production":[0.51,0.41,-0.26,0.04,-0.44,-0.18, 0.48,-0.05, 0.62,-0.29, 0.68, 0.68],
+        "M2 Money Supply":   [4.13, 4.38, 4.25, 4.24, 4.28, 3.85,  4.04, 4.09, 4.69, 4.57, 4.57, 4.57],
+        "Consumer Confidence":[60.7, 61.7, 58.2, 55.1, 53.6, 51.0, 52.9, 56.4, 56.6, 53.3, 49.8, 49.8],
+        "Government Debt":   [120., 121., 121., 122., 122., 122.,  122., 122., 123., 123., 124., 124.],
+        "PPI":               [0.2,  0.3,  0.4,  0.3,  0.2,  0.3,   0.3,  0.5,  0.0, -0.4, -0.5,  0.2],
+        "Budget Balance":    [-6.1,-6.0, -5.9, -5.9, -5.8, -5.8,  -5.8, -5.9, -6.0, -5.9, -5.9, -5.8],
+        "Building Permits":  [1399,1400, 1347, 1444, 1418, 1414,  1482, 1393, 1540, 1363, 1442, 1442],
+        "Business Confidence":[54.5,54.2,53.8, 53.5, 53.2, 52.5,  52.3, 51.5, 51.0, 51.5, 51.0, 52.3],
     },
     "EUR": {
         "CPI m/m":           [0.3, 0.3, 0.2, 0.2, 0.1, 0.2,   0.3, 0.2,-0.1, 0.0, 0.2, 0.2],
@@ -533,7 +533,7 @@ HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
     },
     "GBP": {
         "CPI m/m":           [0.5, 0.4, 0.4, 0.3, 0.4, 0.3,   0.3, 0.3, 0.5, 0.2, 0.4, 0.3],
-        "Interest Rate":     [5.00,5.00,5.00,4.75,4.75,4.75,  4.75,4.75,4.50,4.50,4.25,4.25],
+        "Interest Rate":     [4.25,4.25,4.05,4.00,4.00,4.00,  3.90,3.75,3.75,3.75,3.75,3.75],
         "GDP Growth":        [0.3, 0.4, 0.4, 0.5, 0.5, 0.5,   0.5, 0.5, 1.1, 1.1, 1.6, 1.6],
         "Unemployment Rate": [4.2, 4.2, 4.3, 4.3, 4.3, 4.3,   4.3, 4.4, 4.4, 4.5, 4.5, 4.5],
         "Manufacturing PMI": [46.2,47.0,47.3,47.3,48.1,47.5,  47.3,48.3,46.9,44.9,45.4,46.0],
@@ -555,7 +555,7 @@ HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
     },
     "JPY": {
         "CPI m/m":           [0.5, 0.4, 0.4, 0.4, 0.3, 0.4,   0.4, 0.4, 0.3, 0.2, 0.3, 0.3],
-        "Interest Rate":     [0.10,0.10,0.10,0.25,0.25,0.25,  0.25,0.25,0.50,0.50,0.75,0.75],
+        "Interest Rate":     [0.50,0.50,0.50,0.50,0.50,0.50,  0.50,0.50,0.50,0.50,0.50,0.50],
         "GDP Growth":        [0.8, 0.9, 1.0, 1.1, 1.0, 1.0,   1.0, 1.0, 1.2, 1.2, 1.2, 1.2],
         "Unemployment Rate": [2.6, 2.5, 2.6, 2.5, 2.5, 2.5,   2.5, 2.4, 2.5, 2.4, 2.5, 2.4],
         "Manufacturing PMI": [49.4,49.2,49.5,49.5,50.1,49.8,  49.5,50.1,49.0,48.4,48.7,48.5],
@@ -621,7 +621,7 @@ HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
     },
     "CHF": {
         "CPI m/m":           [0.2, 0.1, 0.1, 0.1, 0.2, 0.1,   0.1, 0.2,-0.1, 0.0, 0.1, 0.1],
-        "Interest Rate":     [1.25,1.00,1.00,0.75,0.75,0.75,  0.75,0.50,0.25,0.25,0.25,0.25],
+        "Interest Rate":     [0.25,0.25,0.25,0.00,0.00,0.00,  0.00,0.00,0.00,0.00,0.00,0.00],
         "GDP Growth":        [0.8, 1.0, 1.2, 1.3, 1.4, 1.5,   1.5, 1.5, 1.7, 1.7, 2.0, 2.0],
         "Unemployment Rate": [2.4, 2.4, 2.5, 2.5, 2.5, 2.5,   2.5, 2.6, 2.5, 2.5, 2.6, 2.5],
         "Manufacturing PMI": [47.8,48.0,48.3,48.5,48.4,48.5,  48.5,48.4,49.0,48.8,49.1,48.9],
@@ -1164,32 +1164,34 @@ def fetch_ecb_history() -> dict[str, list[float]]:
 @st.cache_data(ttl=TTL_HISTORY, show_spinner=False)
 def fetch_oecd_history(country_code: str) -> dict[str, list[float]]:
     """
-    Fetch 12-month history from OECD SDMX API.
+    Fetch 12-month history from OECD stats.oecd.org SDMX-JSON endpoint.
     country_code: GBR, JPN, AUS, CAN, CHE, NZL
     Returns {indicator_name: [val_oldest, ..., val_newest]} (up to 14 values)
     Falls back to empty dict on any failure.
+    Note: response may contain multiple countries — always filter by LOCATION column.
     """
     OECD_MAP = {
-        "CPI m/m":               "CPALTT01.GP.M",
-        "Core CPI":              "CPGRLE01.GP.M",
-        "Unemployment Rate":     "LRUNTTTT.ST.M",
-        "Industrial Production": "PRINTO01.GP.M",
-        "Retail Sales":          "SLRTTO01.GP.M",
-        "Interest Rate":         "IR3TIB01.ST.M",
+        "CPI m/m":               "CPALTT01",
+        "Core CPI":              "CPGRLE01",
+        "Unemployment Rate":     "LRUNTTTT",
+        "Industrial Production": "PRINTO01",
+        "Retail Sales":          "SLRTTO01",
+        "Interest Rate":         "IR3TIB01",
     }
     start = (datetime.today() - timedelta(days=450)).strftime("%Y-%m")
     result: dict[str, list[float]] = {}
-    for ind_name, series_key in OECD_MAP.items():
+    for ind_name, subject in OECD_MAP.items():
         try:
             url = (
-                f"https://sdmx.oecd.org/public/rest/data/OECD,DF_MEI,1.0/"
-                f"{country_code}.{series_key}"
-                f"?format=csvdata&startPeriod={start}"
+                f"https://stats.oecd.org/SDMX-JSON/data/MEI/"
+                f"{subject}.{country_code}.GP.M"
+                f"?startTime={start}&contentType=csv"
             )
-            r = requests.get(url, timeout=12, headers={"Accept": "text/csv,*/*"})
+            r = requests.get(url, timeout=14, headers={"Accept": "text/csv,*/*"})
             if r.status_code != 200:
                 continue
             lines = [l for l in r.text.splitlines() if l.strip()]
+            # Find header row
             header_idx = next(
                 (i for i, l in enumerate(lines) if "TIME_PERIOD" in l.upper()), None
             )
@@ -1201,13 +1203,22 @@ def fetch_oecd_history(country_code: str) -> dict[str, list[float]]:
                 value_col = headers.index("OBS_VALUE")
             except ValueError:
                 continue
+            # LOCATION column — used to filter when API returns multiple countries
+            loc_col = headers.index("LOCATION") if "LOCATION" in headers else None
             pairs: list[tuple[str, float]] = []
             for line in lines[header_idx + 1:]:
                 parts = line.split(",")
                 if len(parts) <= max(time_col, value_col):
                     continue
+                # Skip rows that don't belong to the requested country
+                if loc_col is not None and len(parts) > loc_col:
+                    if parts[loc_col].strip().upper() != country_code.upper():
+                        continue
                 try:
-                    pairs.append((parts[time_col].strip(), float(parts[value_col].strip())))
+                    val_str = parts[value_col].strip()
+                    if not val_str:
+                        continue
+                    pairs.append((parts[time_col].strip(), float(val_str)))
                 except (ValueError, IndexError):
                     continue
             pairs.sort(key=lambda x: x[0])  # oldest first
