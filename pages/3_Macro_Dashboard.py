@@ -1776,6 +1776,9 @@ def fetch_fred_history(api_key: str) -> dict[str, list[float]]:
                     vals.append(round((c - y) / max(abs(y), 0.001) * 100, 3))
             else:
                 continue
+            # FRED Trade Balance is in millions USD — convert to billions
+            if ind == "Trade Balance":
+                vals = [round(v / 1000.0, 2) for v in vals]
             result[ind] = vals[-14:]
         except Exception:
             continue
@@ -2461,6 +2464,9 @@ def _score_indicator(name: str, vals: list[float]) -> float:
     if name in ("CPI m/m", "CPI YoY", "Core CPI", "PPI"):
         target = 2.0 / 12 if name in ("CPI m/m", "Core CPI") else 2.0
         overshoot   = current - target
+        # Deflation (current < 0) is not bullish — cap bullish contribution at 0
+        if current < 0:
+            overshoot = max(overshoot, 0)
         trend_punish = trend * 0.5
         raw = -(overshoot / 3.0) - trend_punish
         return max(-1.0, min(1.0, raw))
@@ -2473,18 +2479,30 @@ def _score_indicator(name: str, vals: list[float]) -> float:
 
     # --- GDP Growth (positive = good, rising = better) ---
     if name in ("GDP Growth",):
-        level_score = current / 2.0            # +1 at +2%, -1 at -2%
-        trend_score = trend / 2.0
-        return max(-1.0, min(1.0, level_score * 0.6 + trend_score * 0.4))
+        # Detect scale: abs(current) < 3.0 → QoQ % (e.g. 0.3%), else annualized % (e.g. 2.0%)
+        if abs(current) < 3.0:
+            level_norm = current / 0.5   # 0.3% QoQ → 0.6 normalized (≈ comparable to 1.2% annualized)
+            trend_norm = trend  / 0.5
+        else:
+            level_norm = current / 2.0   # 2.0% annualized → 1.0 normalized
+            trend_norm = trend  / 2.0
+        return max(-1.0, min(1.0, level_norm * 0.6 + trend_norm * 0.4))
 
-    # --- Consumer / Business Confidence (OECD CCI index, neutral ~100) ---
+    # --- Consumer / Business Confidence ---
     if name in ("Consumer Confidence", "Business Confidence"):
-        # OECD CCI/BCI are indexed around 100; non-OECD surveys vary widely
-        # Use trend-based scoring that handles both scale types
-        mean_val = sum(vals) / len(vals)
-        level_score = (current - mean_val) / max(abs(mean_val) * 0.1 + 1.0, 1.0)
-        trend_score = trend / max(abs(mean_val) * 0.05 + 0.5, 0.5)
-        return max(-1.0, min(1.0, level_score * 0.5 + trend_score * 0.5))
+        # ZEW scale: range −100..+100, baseline 0 (detected when abs(current)>20 or min<50)
+        # IFO/OECD scale: indexed ~100 (e.g. IFO Business Climate 95–105)
+        if abs(current) > 20 or min(vals) < 50:
+            # ZEW-style scale
+            level_score = current / 100.0
+            trend_score = trend / 50.0
+            return max(-1.0, min(1.0, level_score * 0.6 + trend_score * 0.4))
+        else:
+            # IFO/OECD-style scale — relative-to-mean scoring
+            mean_val = sum(vals) / len(vals)
+            level_score = (current - mean_val) / max(abs(mean_val) * 0.1 + 1.0, 1.0)
+            trend_score = trend / max(abs(mean_val) * 0.05 + 0.5, 0.5)
+            return max(-1.0, min(1.0, level_score * 0.5 + trend_score * 0.5))
 
     # --- Interest Rate (higher = bullish for currency, rising trend = bullish) ---
     if name in ("Interest Rate",):
