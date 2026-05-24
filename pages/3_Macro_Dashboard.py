@@ -1409,13 +1409,46 @@ _FF_SKIP_INDICATORS = {"Interest Rate", "CPI m/m"}
 
 # ── Upcoming calendar: keyword sets for Tier classification ───────────────
 _CAL_CURRENCIES: frozenset[str] = frozenset({"usd","eur","gbp","jpy","aud","cad","chf","nzd"})
+
+# Positive match → Tier 1 (CB-critical)
 _CAL_TIER1_KW: tuple[str, ...] = (
-    "cpi", "inflation", "gdp", "growth product",
-    "interest rate", "rate decision", "monetary policy", "core cpi",
+    "interest rate",      # Interest Rate Decision
+    "rate decision",      # explicit decision label
+    "cash rate",          # Official Cash Rate (RBA, RBNZ)
+    "policy rate",        # ECB / SNB style
+    "monetary policy",    # Monetary Policy Statement / Decision
+    "press conference",   # CB press conference (always follows decision)
+    "cpi",                # CPI m/m, CPI y/y
+    "core cpi",           # Core CPI
+    "inflation",          # Inflation Rate / Index
+    "gdp",                # GDP q/q, GDP Growth, GDP Annualized
+    "gross domestic",     # alternate GDP naming
+    "non-farm",           # NFP (US Nonfarm Payrolls)
+    "nonfarm",
+    "employment change",  # AUD / CAD Employment Change
 )
+
+# Positive match → Tier 2 (Activity indicators in _IND_WEIGHTS)
 _CAL_TIER2_KW: tuple[str, ...] = (
-    "pmi", "non-farm", "nonfarm", "employment change", "unemployment",
-    "jobless", "trade balance", "current account", "wage",
+    "pmi",                # Manufacturing PMI, Services PMI, Composite PMI
+    "trade balance",      # Trade Balance
+    "unemployment",       # Unemployment Rate
+    "jobless",            # Jobless Claims (USD)
+    "wage",               # Wage Growth / Average Earnings
+)
+
+# Negative filter — skip regardless of impact or tier match
+# Covers duplicates, speeches without data, and non-standard variants
+_CAL_SKIP_KW: tuple[str, ...] = (
+    "trimmed mean",       # non-standard CPI variant (AUD) — duplicate noise
+    "rate statement",     # e.g. "RBNZ Rate Statement" — words only, no new number
+    "speech",             # speeches without a data release
+    "speaks",
+    "remarks",
+    "testimony",
+    "minutes",            # FOMC / BOE minutes — backward-looking, no new data
+    "forum",
+    "vote count",
 )
 
 
@@ -1567,8 +1600,9 @@ def fetch_upcoming_events() -> list[dict]:
     - actual is null (not yet released)
     - date is in the future
     - currency in the 8 major FX currencies
-    - impact is High or Medium
-    - title matches Tier-1 or Tier-2 keyword sets
+    - impact is High (Medium excluded — too noisy)
+    - title NOT in _CAL_SKIP_KW (removes duplicates / speeches / noise)
+    - title matches Tier-1 or Tier-2 keyword sets (no High-impact fallback)
 
     Returns list of dicts sorted by date (max 7 events):
       {dt, date_str, weekday, currency, title, tier, impact, forecast}
@@ -1601,9 +1635,9 @@ def fetch_upcoming_events() -> list[dict]:
         ccy = (ev.get("country") or "").lower().strip()
         if ccy not in _CAL_CURRENCIES:
             continue
-        # Impact filter
+        # Impact filter — High only (Medium too noisy for direct-bias events)
         impact = (ev.get("impact") or "").strip()
-        if impact not in ("High", "Medium"):
+        if impact != "High":
             continue
         # Parse ISO date
         date_raw = ev.get("date") or ""
@@ -1619,12 +1653,17 @@ def fetch_upcoming_events() -> list[dict]:
         title = (ev.get("title") or "").strip()
         tl = title.lower()
 
+        # Skip noise: duplicates, speeches, non-standard variants
+        if any(kw in tl for kw in _CAL_SKIP_KW):
+            continue
+
+        # Tier classification — explicit keyword match required, no High-impact fallback
         if any(kw in tl for kw in _CAL_TIER1_KW):
             tier = "1"
-        elif any(kw in tl for kw in _CAL_TIER2_KW) or impact == "High":
+        elif any(kw in tl for kw in _CAL_TIER2_KW):
             tier = "2"
         else:
-            continue  # Medium impact with no Tier-1/2 keyword → skip
+            continue  # High-impact but no matching keyword → skip
 
         upcoming.append({
             "dt":       dt,
@@ -3476,7 +3515,7 @@ def render_upcoming_calendar(events: list[dict]) -> str:
         f"margin-top:8px;border-top:1px solid {cb};padding-top:6px;'>"
         f"ForexFactory · auto-refresh 15 min · "
         f"<span style='color:{cteal};'>T1</span> = CB-critical &nbsp;"
-        f"<span style='color:{cy};'>T2</span> = Activity</div>"
+        f"<span style='color:{cy};'>T2</span> = Activity &nbsp;· Only High-Impact events shown</div>"
     )
 
     return (
