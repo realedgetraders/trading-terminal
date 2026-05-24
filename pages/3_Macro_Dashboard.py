@@ -1817,14 +1817,17 @@ def fetch_ecb_history() -> dict[str, list[float]]:
             js   = r.json()
             cats = (js.get("dimension", {}).get("time", {})
                     .get("category", {}).get("label", {}))
-            # cats: {"0": "2024-01", "1": "2024-02", ...}
+            # cats: {"0": "2024-01", "1": "2024-02", ...} — keys are numeric strings
             vals_dict = js.get("value", {})
             pairs_u: list[tuple[str, float]] = []
             for idx_str, period in cats.items():
-                val = vals_dict.get(idx_str) or vals_dict.get(int(idx_str))
+                # Keys in vals_dict may be int or string — try both without int() on period
+                val = vals_dict.get(idx_str)
+                if val is None:
+                    val = vals_dict.get(int(idx_str)) if idx_str.isdigit() else None
                 if val is not None:
                     pairs_u.append((period, float(val)))
-            pairs_u.sort(key=lambda x: x[0])
+            pairs_u.sort(key=lambda x: x[0])  # ISO date strings sort correctly
             recent = [(p, v) for p, v in pairs_u if p >= START]
             if recent:
                 result["Unemployment Rate"] = [v for _, v in recent[-14:]]
@@ -2493,8 +2496,18 @@ def calc_currency_bias(currency: str, history: dict[str, list[float]]) -> dict:
     indicator_scores: dict[str, float] = {}
     for ind, values in history.items():
         if len(values) >= 3 and ind in _IND_DIRECTION:
-            # Skip flat/static arrays (zero variance = fallback data, no real signal)
-            if max(values) - min(values) < 0.01:
+            flat = max(values) - min(values) < 0.01
+            if flat:
+                # Flat Interest Rate: holding position IS a signal
+                if ind == "Interest Rate":
+                    level = values[-1]
+                    if level > 1.5:
+                        indicator_scores[ind] = 0.3   # held at restrictive level
+                    elif level < 0.5:
+                        indicator_scores[ind] = -0.3  # held at accommodative level
+                    else:
+                        indicator_scores[ind] = 0.0   # neutral hold
+                # All other flat series: no real signal — skip
                 continue
             indicator_scores[ind] = _score_indicator(ind, values)
 
@@ -2515,10 +2528,21 @@ def calc_currency_bias(currency: str, history: dict[str, list[float]]) -> dict:
         for ind, values in history.items():
             sub = values[:m]
             if len(sub) >= 3 and ind in _IND_DIRECTION:
-                if max(sub) - min(sub) < 0.01:
-                    continue
-                s  = _score_indicator(ind, sub)
-                w  = _IND_WEIGHTS.get(ind, 0.5)
+                flat = max(sub) - min(sub) < 0.01
+                if flat:
+                    if ind == "Interest Rate":
+                        level = sub[-1]
+                        if level > 1.5:
+                            s = 0.3
+                        elif level < 0.5:
+                            s = -0.3
+                        else:
+                            s = 0.0
+                    else:
+                        continue
+                else:
+                    s = _score_indicator(ind, sub)
+                w = _IND_WEIGHTS.get(ind, 0.5)
                 m_total += s * w
                 m_w     += w
         if m_w > 0:
