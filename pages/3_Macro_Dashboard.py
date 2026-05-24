@@ -2520,7 +2520,8 @@ def _score_indicator(name: str, vals: list[float]) -> float:
     # --- Trade Balance, Current Account (improving = positive) ---
     if name in ("Trade Balance", "Current Account"):
         mean_val = sum(vals) / len(vals) if vals else 0.0
-        trend_score = trend / max(abs(mean_val) + 0.5, 1.0)
+        trend_capped = max(-15.0, min(15.0, trend))   # cap ±15B to prevent single-month swings dominating
+        trend_score = trend_capped / max(abs(mean_val) + 0.5, 1.0)
         return max(-1.0, min(1.0, trend_score * 0.5))
 
     # --- Wage Growth (moderate positive optimal, very high = inflationary) ---
