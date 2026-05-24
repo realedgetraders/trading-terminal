@@ -105,8 +105,21 @@ Verified before/after scores (2026-05-24):
 - USD PMI: only 3-4 months depth from Investing.com (calendar too dense for 200-row cap)
 - EUR Consumer Confidence: Investing.com importance filter excludes EC survey
 
+## Upcoming Events Calendar (lower-left panel)
+- Function: fetch_upcoming_events() — @st.cache_data(ttl=900)
+- Source: ForexFactory JSON feeds (nfs.faireconomy.media) — same _FF_MACRO_URLS/headers already in use
+- Filters: actual==null (not yet released), date in future, currency in 8 majors, impact High/Medium
+- Tier classification: keyword match on title (_CAL_TIER1_KW / _CAL_TIER2_KW); High-impact fallback → T2
+- Returns up to 7 events sorted by date; deduplicates by (currency, title[:20], date)
+- Render: render_upcoming_calendar(events) → HTML card, dark-theme, date-grouped rows
+- Fallback: empty list → "⚠ Calendar unavailable" message, no crash
+- Placement: col_rank (left column), below "All Currencies — Bias Ranking"
+- Known edge case: "Official Cash Rate" (NZD) classifies as T2 instead of T1 — title doesn't match
+  "interest rate" / "rate decision" keywords; cosmetic only (tag colour), no scoring impact
+
 ## Cache
 - fetch_currency_history: TTL=3600s
+- fetch_upcoming_events: TTL=900s (15 min)
 - Manual refresh button clears all caches
 - Auto-rerun every 300s (hits cache unless TTL expired)
 

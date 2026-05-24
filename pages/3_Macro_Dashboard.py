@@ -1407,6 +1407,17 @@ _FF_MACRO_URLS = [
 # Indicator names in FF we want to skip (interest rate/CPI handled by precise APIs)
 _FF_SKIP_INDICATORS = {"Interest Rate", "CPI m/m"}
 
+# ── Upcoming calendar: keyword sets for Tier classification ───────────────
+_CAL_CURRENCIES: frozenset[str] = frozenset({"usd","eur","gbp","jpy","aud","cad","chf","nzd"})
+_CAL_TIER1_KW: tuple[str, ...] = (
+    "cpi", "inflation", "gdp", "growth product",
+    "interest rate", "rate decision", "monetary policy", "core cpi",
+)
+_CAL_TIER2_KW: tuple[str, ...] = (
+    "pmi", "non-farm", "nonfarm", "employment change", "unemployment",
+    "jobless", "trade balance", "current account", "wage",
+)
+
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_ff_macro_data(currency: str) -> dict:
@@ -1543,6 +1554,100 @@ def fetch_ff_macro_data(currency: str) -> dict:
             "date":     b["date"],
             "source":   "ForexFactory",
         }
+
+    return result
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_upcoming_events() -> list[dict]:
+    """
+    Fetch upcoming Tier-1/2 economic events for all 8 currencies from ForexFactory feeds.
+
+    Filters:
+    - actual is null (not yet released)
+    - date is in the future
+    - currency in the 8 major FX currencies
+    - impact is High or Medium
+    - title matches Tier-1 or Tier-2 keyword sets
+
+    Returns list of dicts sorted by date (max 7 events):
+      {dt, date_str, weekday, currency, title, tier, impact, forecast}
+    Returns [] on any failure — callers must handle empty list gracefully.
+    """
+    from datetime import timezone as _tz
+    events: list[dict] = []
+    for url in _FF_MACRO_URLS:
+        try:
+            r = requests.get(url, timeout=10, headers=_FF_MACRO_HDR)
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, list):
+                    events.extend(data)
+        except Exception:
+            pass
+        time.sleep(0.05)
+
+    if not events:
+        return []
+
+    now = datetime.now(_tz.utc)
+    upcoming: list[dict] = []
+
+    for ev in events:
+        # Skip already-released events
+        if ev.get("actual") not in (None, ""):
+            continue
+        # Currency filter
+        ccy = (ev.get("country") or "").lower().strip()
+        if ccy not in _CAL_CURRENCIES:
+            continue
+        # Impact filter
+        impact = (ev.get("impact") or "").strip()
+        if impact not in ("High", "Medium"):
+            continue
+        # Parse ISO date
+        date_raw = ev.get("date") or ""
+        try:
+            dt = datetime.fromisoformat(date_raw.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=_tz.utc)
+        except Exception:
+            continue
+        if dt <= now:
+            continue
+
+        title = (ev.get("title") or "").strip()
+        tl = title.lower()
+
+        if any(kw in tl for kw in _CAL_TIER1_KW):
+            tier = "1"
+        elif any(kw in tl for kw in _CAL_TIER2_KW) or impact == "High":
+            tier = "2"
+        else:
+            continue  # Medium impact with no Tier-1/2 keyword → skip
+
+        upcoming.append({
+            "dt":       dt,
+            "date_str": dt.strftime("%b %d"),
+            "weekday":  dt.strftime("%a"),
+            "currency": ccy.upper(),
+            "title":    title,
+            "tier":     tier,
+            "impact":   impact,
+            "forecast": (ev.get("forecast") or "—").strip() or "—",
+        })
+
+    # Sort chronologically, deduplicate same event on same day, cap at 7
+    upcoming.sort(key=lambda x: x["dt"])
+    seen: set[tuple] = set()
+    result: list[dict] = []
+    for ev in upcoming:
+        key = (ev["currency"], ev["title"][:20], ev["date_str"])
+        if key not in seen:
+            seen.add(key)
+            result.append(ev)
+        if len(result) >= 7:
+            break
 
     return result
 
@@ -3309,6 +3414,78 @@ def _d4_trend(ind: str, actual, previous) -> tuple[str, str]:
 # ║  HTML RENDER FUNCTIONS
 # ╚══════════════════════════════════════════════════════════════════════════════
 
+def render_upcoming_calendar(events: list[dict]) -> str:
+    """Render mini upcoming economic events calendar as a dark-theme HTML card."""
+    cb = C["border"]; cm = C["muted"]; ct = C["text"]
+    cy = C["yellow"]; cteal = C["teal"]; card = C["card"]
+
+    header = (
+        f"<div style='font-size:10px;color:{cm};font-family:monospace;"
+        f"letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px;'>"
+        f"📅 Upcoming Events</div>"
+    )
+
+    if not events:
+        return (
+            f"<div style='background:{card};border:1px solid {cb};"
+            f"border-radius:12px;padding:14px 16px;margin-top:12px;'>"
+            f"{header}"
+            f"<div style='font-size:10px;color:{cm};font-family:monospace;'>"
+            f"⚠ Calendar unavailable — ForexFactory feeds unreachable</div></div>"
+        )
+
+    rows_html = ""
+    prev_date = None
+    for ev in events:
+        # Date separator
+        if ev["date_str"] != prev_date:
+            border_top = f"border-top:1px solid {cb};margin-top:4px;" if prev_date else ""
+            rows_html += (
+                f"<div style='font-size:9px;color:{cm};font-family:monospace;"
+                f"letter-spacing:0.8px;padding:5px 0 2px 0;{border_top}'>"
+                f"{ev['weekday']} {ev['date_str']}</div>"
+            )
+            prev_date = ev["date_str"]
+
+        tier_color = cteal if ev["tier"] == "1" else cy
+        tier_label = "T1" if ev["tier"] == "1" else "T2"
+        flag = CURRENCY_FLAG.get(ev["currency"], "")
+        fc   = ev["forecast"]
+        fc_html = (
+            f"<span style='font-size:8px;color:{cm};font-family:monospace;"
+            f"margin-left:4px;'>{fc}</span>"
+            if fc != "—" else ""
+        )
+
+        rows_html += (
+            f"<div style='display:flex;align-items:center;gap:5px;padding:2px 0;'>"
+            f"<span style='font-size:11px;line-height:1;'>{flag}</span>"
+            f"<span style='font-size:8px;color:{cm};font-family:monospace;"
+            f"width:26px;flex-shrink:0;'>{ev['currency']}</span>"
+            f"<span style='font-size:9px;color:{ct};font-family:monospace;"
+            f"flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"
+            f"{ev['title']}{fc_html}</span>"
+            f"<span style='font-size:7px;color:{tier_color};font-family:monospace;"
+            f"background:{tier_color}20;border:1px solid {tier_color}40;"
+            f"border-radius:3px;padding:1px 4px;flex-shrink:0;'>{tier_label}</span>"
+            f"</div>"
+        )
+
+    footer = (
+        f"<div style='font-size:8px;color:{cm};font-family:monospace;"
+        f"margin-top:8px;border-top:1px solid {cb};padding-top:6px;'>"
+        f"ForexFactory · auto-refresh 15 min · "
+        f"<span style='color:{cteal};'>T1</span> = CB-critical &nbsp;"
+        f"<span style='color:{cy};'>T2</span> = Activity</div>"
+    )
+
+    return (
+        f"<div style='background:{card};border:1px solid {cb};"
+        f"border-radius:12px;padding:14px 16px;margin-top:12px;'>"
+        f"{header}{rows_html}{footer}</div>"
+    )
+
+
 def render_bias_panel(currency: str, bias_result: dict) -> str:
     """Render the simplified bias gauge panel (no D1-D4 grid)."""
     score  = bias_result.get("score", 0.0)
@@ -3468,6 +3645,10 @@ def render_economic_charts(
             font=dict(family="monospace"),
         )
         st.plotly_chart(fig1, use_container_width=True, config={"displayModeBar": False})
+
+        # ── Upcoming Events Calendar (below 12M chart, left column) ──────
+        _upcoming = fetch_upcoming_events()
+        st.markdown(render_upcoming_calendar(_upcoming), unsafe_allow_html=True)
 
     # ── Chart 2: Indicator contribution bar chart ─────────────────────────────
     with col2:
