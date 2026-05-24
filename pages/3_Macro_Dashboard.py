@@ -505,6 +505,9 @@ HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
         "Consumer Confidence":[118.,115.,113.,112.,112.,111., 110.7,104.1,98.3,92.9,85.7,82.0],
         "Government Debt":   [120.,121.,121.,122.,122.,122.,  122.,122.,123.,123.,124.,124.],
         "PPI":               [0.2, 0.3, 0.4, 0.3, 0.2, 0.3,   0.3, 0.5, 0.0,-0.4,-0.5, 0.2],
+        "Budget Balance":    [-6.1,-6.0,-5.9,-5.9,-5.8,-5.8, -5.8,-5.9,-6.0,-5.9,-5.9,-5.8],
+        "Building Permits":  [1460,1455,1460,1462,1465,1462, 1465,1465,1465,1460,1465,1482],
+        "Business Confidence":[54.5,54.2,53.8,53.5,53.2,52.5, 52.3,51.5,51.0,51.5,51.0,52.3],
     },
     "EUR": {
         "CPI m/m":           [0.3, 0.3, 0.2, 0.2, 0.1, 0.2,   0.3, 0.2,-0.1, 0.0, 0.2, 0.2],
@@ -523,6 +526,10 @@ HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
         "Consumer Confidence":[-11.,-12.,-12.,-13.,-14.,-14., -14.2,-14.2,-13.3,-16.5,-16.7,-18.0],
         "Government Debt":   [88., 88., 89., 89., 89., 89.5,  89.5,89.5,90.0,90.0,90.8,91.0],
         "PPI":               [0.2, 0.1, 0.2, 0.1, 0.0, 0.1,   0.0, 0.2, 0.0, 0.1, 0.0, 0.1],
+        "Current Account":   [0.5, 0.5, 0.6, 0.6, 0.7, 0.7,  0.7, 0.7, 0.8, 0.8, 0.8, 0.8],
+        "Budget Balance":    [-3.5,-3.5,-3.4,-3.4,-3.3,-3.3, -3.3,-3.3,-3.2,-3.2,-3.2,-3.2],
+        "Building Permits":  [96.5,95.8,95.2,94.8,94.2,93.8, 93.5,95.1,94.8,94.2,93.5,92.3],
+        "Business Confidence":[103.,102.,101.5,101.,100.5,100., 99.5,99.2,99.2,99.5,99.2,98.5],
     },
     "GBP": {
         "CPI m/m":           [0.5, 0.4, 0.4, 0.3, 0.4, 0.3,   0.3, 0.3, 0.5, 0.2, 0.4, 0.3],
@@ -541,6 +548,10 @@ HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
         "Consumer Confidence":[-14.,-15.,-16.,-16.,-17.,-17., -17.,-22.,-20.,-18.,-23.,-20.],
         "Government Debt":   [97., 97.5,98.0,98.5,98.5,98.5,  98.5,99.0,99.5,100.,100.5,101.],
         "PPI":               [0.3, 0.2, 0.2, 0.2, 0.2, 0.2,   0.2, 0.1, 0.2,-0.1, 0.1, 0.2],
+        "Current Account":   [-3.2,-3.3,-3.4,-3.5,-3.5,-3.5, -3.5,-3.5,-3.5,-3.5,-3.6,-3.8],
+        "Budget Balance":    [-5.5,-5.3,-5.1,-4.9,-4.7,-4.6, -4.5,-4.7,-4.4,-4.3,-4.4,-4.3],
+        "Building Permits":  [192.,190.,188.,186.,185.,183.,  183.,185.,182.,180.,179.,178.],
+        "Business Confidence":[52.5,52.0,51.5,51.0,50.5,50.0, 49.5,49.3,49.2,48.8,48.5,48.2],
     },
     "JPY": {
         "CPI m/m":           [0.5, 0.4, 0.4, 0.4, 0.3, 0.4,   0.4, 0.4, 0.3, 0.2, 0.3, 0.3],
@@ -559,6 +570,10 @@ HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
         "Consumer Confidence":[36.5,36.8,37.0,36.5,36.0,35.5, 35.0,36.2,35.5,34.2,33.8,34.1],
         "Government Debt":   [252.,252.,253.,254.,254.,254.,   254.,254.,255.,255.,255.,255.],
         "PPI":               [0.3, 0.2, 0.2, 0.1, 0.3, 0.2,   0.1, 0.4, 0.3, 0.5, 0.4, 0.2],
+        "Current Account":   [1.8, 1.7, 1.6, 1.8, 1.7, 1.8,  1.8, 1.8, 1.5, 1.6, 1.7, 1.5],
+        "Budget Balance":    [-4.8,-5.0,-5.2,-5.4,-5.5,-5.5, -5.5,-5.6,-5.5,-5.5,-5.6,-5.5],
+        "Building Permits":  [75.5,75.2,74.8,74.5,74.2,74.0, 73.8,71.2,72.5,72.0,72.5,73.5],
+        "Business Confidence":[7.,  8.,  9., 10., 11., 11.,   11., 11., 12., 12., 12., 13.],
     },
     "AUD": {
         "CPI m/m":           [0.4, 0.3, 0.3, 0.3, 0.2, 0.3,   0.3, 0.3, 0.2, 0.1, 0.2, 0.3],
@@ -577,6 +592,10 @@ HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
         "Consumer Confidence":[96., 97., 97., 98., 98., 97.,   97., 99.,101.,100.5,99.,102.],
         "Government Debt":   [49., 49., 49.5,50.0,50.5,50.5,  50.5,50.5,51.0,51.5,51.5,52.0],
         "PPI":               [0.4, 0.3, 0.3, 0.3, 0.2, 0.3,   0.3, 0.2, 0.2, 0.3, 0.2, 0.3],
+        "Current Account":   [-2.1,-2.2,-2.3,-2.3,-2.4,-2.5, -2.5,-2.8,-2.6,-2.6,-2.5,-2.5],
+        "Budget Balance":    [-0.2,-0.3,-0.4,-0.5,-0.6,-0.8, -0.8,-1.2,-1.0,-0.9,-0.8,-0.8],
+        "Building Permits":  [16.5,16.2,16.0,15.8,15.5,15.3, 15.3,14.8,15.0,14.9,14.9,15.2],
+        "Business Confidence":[3.,  3.,  3.,  4.,  4.,  4.,   4.,  3.,  4.,  4.,  4.,  5.],
     },
     "CAD": {
         "CPI m/m":           [0.3, 0.4, 0.3, 0.3, 0.4, 0.3,   0.3, 0.4, 0.1, 0.1, 0.3, 0.2],
@@ -595,6 +614,10 @@ HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
         "Consumer Confidence":[52., 50., 48., 46., 44., 43.6,  43.6,43.7,52.0,48.8,50.9,47.0],
         "Government Debt":   [104.,105.,105.,105.5,106.,106.,  106.,106.5,106.5,107.,107.,107.],
         "PPI":               [0.2, 0.1, 0.1, 0.0,-0.1, 0.0,  -0.1, 0.1, 0.2, 0.1, 0.1, 0.0],
+        "Current Account":   [-1.8,-1.9,-2.0,-2.1,-2.2,-2.3, -2.3,-2.2,-2.3,-2.4,-2.5,-2.5],
+        "Budget Balance":    [-1.2,-1.3,-1.4,-1.5,-1.5,-1.5, -1.5,-1.8,-1.6,-1.5,-1.5,-1.5],
+        "Building Permits":  [265.,262.,258.,255.,252.,250.,  250.,253.,248.,245.,243.,238.],
+        "Business Confidence":[-5.,-6.,-8.,-10.,-12.,-13.,  -13.,-12.,-14.,-15.,-14.,-15.],
     },
     "CHF": {
         "CPI m/m":           [0.2, 0.1, 0.1, 0.1, 0.2, 0.1,   0.1, 0.2,-0.1, 0.0, 0.1, 0.1],
@@ -613,6 +636,10 @@ HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
         "Consumer Confidence":[-41.,-39.,-37.,-38.,-39.,-38.3, -38.3,-30.1,-24.1,-26.3,-24.8,-20.5],
         "Government Debt":   [37., 37., 37.5,37.5,37.5,37.5,  37.5,37.5,38.0,38.0,38.0,38.0],
         "PPI":               [0.0, 0.0,-0.1, 0.0, 0.0,-0.1,  -0.1, 0.0, 0.1, 0.0,-0.1, 0.0],
+        "Current Account":   [8.0, 8.1, 8.2, 8.2, 8.3, 8.3,  8.3, 8.2, 8.5, 8.5, 8.4, 8.5],
+        "Budget Balance":    [0.5, 0.4, 0.3, 0.2, 0.2, 0.2,  0.2, 0.2,-0.1, 0.0, 0.1, 0.3],
+        "Building Permits":  [3.1, 3.1, 3.0, 3.0, 3.0, 2.9,  2.9, 2.9, 2.8, 2.8, 2.9, 2.8],
+        "Business Confidence":[-2.5,-2.0,-1.5,-1.2,-1.0,-0.8,-0.8,-0.8,-0.5,-0.4,-0.3,-0.3],
     },
     "NZD": {
         "CPI m/m":           [0.4, 0.3, 0.3, 0.2, 0.3, 0.2,   0.2, 0.3, 0.1, 0.1, 0.2, 0.2],
@@ -631,6 +658,10 @@ HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
         "Consumer Confidence":[-70.,-68.,-66.,-66.,-53.,-65.7,-65.7,-50.4,-47.3,-47.7,-45.3,-43.5],
         "Government Debt":   [44., 44.5,45.0,45.5,46.5,46.5,  46.5,46.5,47.0,47.5,47.5,48.0],
         "PPI":               [0.3, 0.2, 0.2, 0.1, 0.2, 0.1,   0.1, 0.2, 0.1, 0.2, 0.1, 0.2],
+        "Current Account":   [-2.8,-2.9,-3.0,-3.1,-3.2,-3.2, -3.2,-3.2,-3.3,-3.4,-3.5,-3.5],
+        "Budget Balance":    [-2.2,-2.3,-2.5,-2.7,-2.8,-2.9, -2.9,-2.8,-3.0,-3.0,-3.1,-3.1],
+        "Building Permits":  [2.8, 2.7, 2.7, 2.6, 2.5, 2.5,  2.4, 2.3, 2.2, 2.2, 2.1, 2.1],
+        "Business Confidence":[25., 22., 20., 18., 16., 15.,  15., 18., 15., 14., 14., 14.5],
     },
 }
 
@@ -1225,59 +1256,67 @@ def fetch_currency_history(currency: str, fred_api_key: str) -> dict[str, list[f
 def _score_indicator_series(values: list[float], indicator: str) -> float:
     """
     Score a single indicator's 12-month history → [-1, +1].
-    60% trend (is it improving over time?) + 40% level (is current value good within own range?)
+
+    Two equal components:
+    ─ LEVEL  (50%): current value vs. 12-month mean (Z-score based).
+      The 12M mean is the midline/zero baseline.  Current above mean = positive,
+      below mean = negative.  Normalised so ±1.5 std-devs → ±1.0 score.
+    ─ TREND  (50%): first-half vs. second-half of the series.
+      Is the indicator improving or deteriorating over the period?
+
+    Both components are adjusted for direction (high/low/target).
     """
+    import math
+
     if len(values) < 3:
         return 0.0
 
     direction = _IND_DIRECTION.get(indicator, "high")
-    n = len(values)
+    n         = len(values)
+    current   = values[-1]
 
-    # Trend: compare first third vs last third
-    third = max(2, n // 3)
-    early_avg  = sum(values[:third]) / third
-    recent_avg = sum(values[-third:]) / third
+    # ── 12-month statistics ───────────────────────────────────────────────────
+    mean_12m  = sum(values) / n
+    variance  = sum((v - mean_12m) ** 2 for v in values) / n
+    std_12m   = math.sqrt(variance) if variance > 0 else 0.0
 
+    # ── LEVEL component: current vs 12M mean ─────────────────────────────────
     if direction == "target":
-        monthly_target = 2.0 / 12  # ≈ 0.167% monthly ≈ 2% annual
-        dist_early     = abs(early_avg  - monthly_target)
-        dist_recent    = abs(recent_avg - monthly_target)
-        norm_factor    = max(abs(monthly_target), 0.1)
-        trend_raw      = (dist_early - dist_recent) / norm_factor
-    elif direction == "high":
-        if abs(early_avg) > 1e-6:
-            trend_raw = (recent_avg - early_avg) / abs(early_avg)
-        else:
-            trend_raw = (recent_avg - early_avg)
-    else:  # "low"
-        if abs(early_avg) > 1e-6:
-            trend_raw = -(recent_avg - early_avg) / abs(early_avg)
-        else:
-            trend_raw = -(recent_avg - early_avg)
+        monthly_target = 2.0 / 12          # 0.167% ≈ 2% annual
+        dist_curr = abs(current   - monthly_target)
+        dist_mean = abs(mean_12m  - monthly_target)
+        # Positive if current is closer to target than the average was
+        level_raw = (dist_mean - dist_curr) / max(dist_mean, 0.05)
+    elif std_12m > 1e-6:
+        z         = (current - mean_12m) / std_12m   # Z-score vs own history
+        level_raw = z / 1.5                           # ±1.5 std → ±1.0
+        if direction == "low":
+            level_raw = -level_raw
+    else:
+        level_raw = 0.0
 
-    trend_score = max(-1.0, min(1.0, trend_raw * 5.0))
+    level_score = max(-1.0, min(1.0, level_raw))
 
-    # Level: where is current value in own 12M range?
-    v_min, v_max = min(values), max(values)
-    current = values[-1]
+    # ── TREND component: first half vs second half ────────────────────────────
+    mid        = max(1, n // 2)
+    early_avg  = sum(values[:mid]) / mid
+    recent_avg = sum(values[mid:]) / max(1, n - mid)
 
     if direction == "target":
         monthly_target = 2.0 / 12
-        dist_curr = abs(current - monthly_target)
-        max_dist  = max(abs(v - monthly_target) for v in values) if values else 1.0
-        if max_dist > 1e-6:
-            level_score = 1.0 - 2.0 * (dist_curr / max_dist)
-        else:
-            level_score = 1.0
-    elif v_max > v_min:
-        pct         = (current - v_min) / (v_max - v_min)  # 0=worst, 1=best
-        level_raw   = (pct - 0.5) * 2.0                    # [-1, +1]
-        level_score = level_raw if direction == "high" else -level_raw
+        dist_early  = abs(early_avg  - monthly_target)
+        dist_recent = abs(recent_avg - monthly_target)
+        trend_raw   = (dist_early - dist_recent) / max(dist_early, 0.05)
+    elif abs(early_avg) > 1e-6:
+        trend_raw = (recent_avg - early_avg) / abs(early_avg)
+        if direction == "low":
+            trend_raw = -trend_raw
     else:
-        level_score = 0.0
+        trend_raw = (recent_avg - early_avg) * (1.0 if direction == "high" else -1.0)
 
-    level_score = max(-1.0, min(1.0, level_score))
-    return round(0.6 * trend_score + 0.4 * level_score, 4)
+    trend_score = max(-1.0, min(1.0, trend_raw * 5.0))
+
+    return round(0.5 * level_score + 0.5 * trend_score, 4)
 
 
 def calc_currency_bias(currency: str, history: dict[str, list[float]]) -> dict:
