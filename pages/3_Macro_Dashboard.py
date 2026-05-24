@@ -145,7 +145,7 @@ INDICATOR_ORDER = [
     "Budget Balance", "Building Permits", "Business Confidence",
 ]
 
-# ── FRED API config ───────────────────────────────────────────────────────────
+# ── FRED API config ────────────────────────────────────────────────────────────
 FRED_BASE   = "https://api.stlouisfed.org/fred/series/observations"
 FRED_SERIES = {
     # Core macro — high priority
@@ -200,6 +200,90 @@ _TE_HEADERS = {
     "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Referer":         "https://www.google.com/",
 }
+
+# ── Trading Economics historical page map ─────────────────────────────────────
+# Maps currency → {indicator_name: (country_slug, indicator_slug)}
+# Used by fetch_te_history() to scrape 12-month historical data
+_TE_HISTORY_MAP: dict[str, dict[str, tuple[str, str]]] = {
+    "EUR": {
+        "Manufacturing PMI":     ("euro-area", "manufacturing-pmi"),
+        "Services PMI":          ("euro-area", "services-pmi"),
+        "Consumer Confidence":   ("euro-area", "consumer-confidence"),
+        "Business Confidence":   ("euro-area", "business-confidence"),
+        "GDP Growth":            ("euro-area", "gdp-growth-rate"),
+        "Retail Sales":          ("euro-area", "retail-sales-mom"),
+        "Industrial Production": ("euro-area", "industrial-production"),
+        "Core CPI":              ("euro-area", "core-inflation-rate"),
+        "PPI":                   ("euro-area", "producer-prices-change"),
+    },
+    "GBP": {
+        "Manufacturing PMI":     ("united-kingdom", "manufacturing-pmi"),
+        "Services PMI":          ("united-kingdom", "services-pmi"),
+        "Consumer Confidence":   ("united-kingdom", "consumer-confidence"),
+        "Business Confidence":   ("united-kingdom", "business-confidence"),
+        "GDP Growth":            ("united-kingdom", "gdp-growth-rate"),
+        "Retail Sales":          ("united-kingdom", "retail-sales-mom"),
+        "Industrial Production": ("united-kingdom", "industrial-production"),
+        "Core CPI":              ("united-kingdom", "core-inflation-rate"),
+        "PPI":                   ("united-kingdom", "producer-prices-change"),
+    },
+    "JPY": {
+        "Manufacturing PMI":     ("japan", "manufacturing-pmi"),
+        "Services PMI":          ("japan", "services-pmi"),
+        "Consumer Confidence":   ("japan", "consumer-confidence"),
+        "Business Confidence":   ("japan", "business-confidence"),
+        "GDP Growth":            ("japan", "gdp-growth-rate"),
+        "Retail Sales":          ("japan", "retail-sales-annual"),
+        "Industrial Production": ("japan", "industrial-production"),
+        "Core CPI":              ("japan", "core-inflation-rate"),
+        "PPI":                   ("japan", "producer-prices-change"),
+    },
+    "AUD": {
+        "Manufacturing PMI":     ("australia", "manufacturing-pmi"),
+        "Services PMI":          ("australia", "services-pmi"),
+        "Consumer Confidence":   ("australia", "consumer-confidence"),
+        "Business Confidence":   ("australia", "business-confidence"),
+        "GDP Growth":            ("australia", "gdp-growth-rate"),
+        "Retail Sales":          ("australia", "retail-sales-mom"),
+        "Industrial Production": ("australia", "industrial-production"),
+        "Core CPI":              ("australia", "core-inflation-rate"),
+        "PPI":                   ("australia", "producer-prices-change"),
+    },
+    "CAD": {
+        "Manufacturing PMI":     ("canada", "manufacturing-pmi"),
+        "Services PMI":          ("canada", "services-pmi"),
+        "Consumer Confidence":   ("canada", "consumer-confidence"),
+        "Business Confidence":   ("canada", "business-confidence"),
+        "GDP Growth":            ("canada", "gdp-growth-rate"),
+        "Retail Sales":          ("canada", "retail-sales-mom"),
+        "Industrial Production": ("canada", "industrial-production"),
+        "Core CPI":              ("canada", "core-inflation-rate"),
+        "PPI":                   ("canada", "producer-prices-change"),
+    },
+    "CHF": {
+        "Manufacturing PMI":     ("switzerland", "manufacturing-pmi"),
+        "Services PMI":          ("switzerland", "services-pmi"),
+        "Consumer Confidence":   ("switzerland", "consumer-confidence"),
+        "Business Confidence":   ("switzerland", "business-confidence"),
+        "GDP Growth":            ("switzerland", "gdp-growth-rate"),
+        "Retail Sales":          ("switzerland", "retail-sales-annual"),
+        "Industrial Production": ("switzerland", "industrial-production"),
+        "Core CPI":              ("switzerland", "core-inflation-rate"),
+        "PPI":                   ("switzerland", "producer-prices-change"),
+    },
+    "NZD": {
+        "Manufacturing PMI":     ("new-zealand", "manufacturing-pmi"),
+        "Services PMI":          ("new-zealand", "services-pmi"),
+        "Consumer Confidence":   ("new-zealand", "consumer-confidence"),
+        "Business Confidence":   ("new-zealand", "business-confidence"),
+        "GDP Growth":            ("new-zealand", "gdp-growth-rate"),
+        "Retail Sales":          ("new-zealand", "retail-sales-mom"),
+        "Industrial Production": ("new-zealand", "industrial-production"),
+        "Core CPI":              ("new-zealand", "core-inflation-rate"),
+        "PPI":                   ("new-zealand", "producer-prices-change"),
+    },
+}
+
 # TE row-name fragments → internal indicator key (case-insensitive substring match)
 _TE_ROW_MAP: list[tuple[str, str]] = [
     ("inflation rate",      "CPI m/m"),
@@ -1078,31 +1162,53 @@ def fetch_te_indicators(currency: str) -> dict:
 
 
 # ── FRED series map for international currencies ──────────────────────────────
-# FRED international series — only include series with data within ~4 months
-# Verified current as of May 2026. Stale OECD MEI series removed.
+# FRED international series — only include series with data within ~6 months
+# Verified current as of May 2026.
+# OECD CCI (Consumer Confidence) and BCI (Business Confidence) series included.
+# OECD Industrial Production series included where available.
 _FRED_INTL: dict[str, dict[str, tuple[str, str]]] = {
     "GBP": {
         # FRED OECD series stale ~2 months; ONS will override below (more current)
-        "Unemployment Rate":   ("LRHUTTTTGBM156S",    "pct"),   # data ~Dec 2025
+        "Unemployment Rate":    ("LRHUTTTTGBM156S",   "pct"),
+        "Consumer Confidence":  ("CSCICP03GBM665S",   "idx"),
+        "Business Confidence":  ("BSCICP03GBM665S",   "idx"),
+        "Industrial Production":("GBRIPMISMEI",        "idx"),
     },
     "JPY": {
-        "Unemployment Rate":   ("LRUN74TTJPM156S",    "pct"),   # current ~Mar 2026
-        # CPI: DBnomics (PCPI_PC_PP_PT) used in history fetch; FRED OECD series stale
+        "Unemployment Rate":    ("LRUN74TTJPM156S",   "pct"),
+        "Consumer Confidence":  ("CSCICP03JPM665S",   "idx"),
+        "Business Confidence":  ("BSCICP03JPM665S",   "idx"),
+        "Industrial Production":("JPNPROINDMISMEI",   "idx"),
     },
     "CAD": {
-        "Unemployment Rate":   ("LRUNTTTTCAM156S",    "pct"),   # current ~Apr 2026
-        # CPI: BOC Valet used in history fetch (more current than FRED OECD)
+        "Unemployment Rate":    ("LRUNTTTTCAM156S",   "pct"),
+        "Consumer Confidence":  ("CSCICP03CAM665S",   "idx"),
+        "Business Confidence":  ("BSCICP03CAM665S",   "idx"),
+        "Industrial Production":("CAIPMISMEI",         "idx"),
     },
     "AUD": {
-        "Unemployment Rate":   ("LRUNTTTTAUM156S",    "pct"),   # current ~Mar 2026
-        # Rate + CPI: RBA CSVs used in render code below
+        "Unemployment Rate":    ("LRUNTTTTAUM156S",   "pct"),
+        "Consumer Confidence":  ("CSCICP03AUM665S",   "idx"),
+        "Business Confidence":  ("BSCICP03AUM665S",   "idx"),
+        "Industrial Production":("AUSPROINDMISMEI",   "idx"),
     },
     "NZD": {
-        "Interest Rate":       ("IR3TIB01NZM156N",    "pct"),   # current ~Apr 2026
-        "Unemployment Rate":   ("LRUNTTTTNZQ156S",    "pct"),   # quarterly, ~Jan 2026
+        "Interest Rate":        ("IR3TIB01NZM156N",   "pct"),
+        "Unemployment Rate":    ("LRUNTTTTNZQ156S",   "pct"),   # quarterly, ~Jan 2026
+        "Consumer Confidence":  ("CSCICP03NZM665S",   "idx"),
+        "Business Confidence":  ("BSCICP03NZM665S",   "idx"),
+        "Industrial Production":("NZLPROINDMISMEI",   "idx"),
     },
-    # CHF: SNB provides rate + CPI YoY (render code below); no FRED series current
-    # EUR: ECB provides rate + CPI YoY; FRED EUR unemployment stale (2023)
+    "EUR": {
+        "Consumer Confidence":  ("CSCICP03EZM665S",   "idx"),
+        "Business Confidence":  ("BSCICP03EZM665S",   "idx"),
+        "Industrial Production":("ZGEAINDMISMEI",     "idx"),
+    },
+    "CHF": {
+        "Consumer Confidence":  ("CSCICP03CHM665S",   "idx"),
+        "Business Confidence":  ("BSCICP03CHM665S",   "idx"),
+        "Industrial Production":("CHEPROINDMISMEI",   "idx"),
+    },
 }
 
 # ONS (UK) series via www.ons.gov.uk web API
@@ -1903,6 +2009,71 @@ def fetch_oecd_history(country_code: str) -> dict[str, list[float]]:
     return result
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_te_history(country_slug: str, indicator_slug: str) -> list[float]:
+    """
+    Scrape Trading Economics historical indicator page for 12 monthly values.
+    Returns list of floats oldest→newest (up to 14 values), or [] on failure.
+    Uses _TE_HEADERS for a browser-like User-Agent.
+    """
+    if not _BS4:
+        return []
+    url = f"https://tradingeconomics.com/{country_slug}/{indicator_slug}/historical-data"
+    try:
+        time.sleep(0.1)  # polite delay
+        r = requests.get(url, headers=_TE_HEADERS, timeout=14)
+        if r.status_code != 200:
+            return []
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        # Try finding the main data table — TE uses various IDs/classes
+        table = (
+            soup.find("table", id="calendar")
+            or soup.find("table", id="historicalData")
+            or soup.find("table", {"class": lambda c: c and "table" in c.lower()})
+        )
+        if table is None:
+            # Fall back: any table with at least 5 rows of numeric data
+            for t in soup.find_all("table"):
+                rows = t.find_all("tr")
+                if len(rows) >= 5:
+                    table = t
+                    break
+
+        if table is None:
+            return []
+
+        vals: list[float] = []
+        for row in table.find_all("tr"):
+            cells = row.find_all(["td", "th"])
+            if len(cells) < 2:
+                continue
+            # Value is typically in 2nd cell (index 1) — try first few cells
+            for cell_idx in (1, 2):
+                if cell_idx >= len(cells):
+                    continue
+                txt = cells[cell_idx].get_text(strip=True)
+                txt = txt.replace(",", "").replace("%", "").replace(" ", "")
+                if not txt or txt in ("-", "N/A", "na", "NA"):
+                    continue
+                try:
+                    v = float(txt)
+                    vals.append(v)
+                    break
+                except (ValueError, TypeError):
+                    continue
+
+        if not vals:
+            return []
+
+        # TE historical pages show newest first — reverse to oldest-first
+        vals.reverse()
+        return vals[-14:]
+
+    except Exception:
+        return []
+
+
 def _fetch_fred_series_history(series_id: str, fred_api_key: str = "",
                                 max_stale_months: int = 5) -> list[float]:
     """
@@ -1986,6 +2157,25 @@ def fetch_currency_history(currency: str, fred_api_key: str) -> dict[str, list[f
         if _nzd_rate:  live["Interest Rate"]     = _nzd_rate
         if _nzd_unemp: live["Unemployment Rate"] = _nzd_unemp
 
+    # ── TE historical data (PMI, GDP, Retail, Confidence, Industrial Production, etc.) ──
+    # Only for non-USD currencies; CB API data takes priority (already in live)
+    if currency != "USD":
+        te_map = _TE_HISTORY_MAP.get(currency, {})
+        for ind_name, (country_slug, ind_slug) in te_map.items():
+            if ind_name not in live:
+                vals = fetch_te_history(country_slug, ind_slug)
+                if vals:
+                    live[ind_name] = vals
+
+    # ── FRED OECD series (Consumer/Business Confidence, Industrial Production) ──
+    # Only for non-USD currencies; only if not already fetched from TE or CB APIs
+    if currency != "USD":
+        for ind_name, (sid, _) in _FRED_INTL.get(currency, {}).items():
+            if ind_name not in live:
+                vals = _fetch_fred_series_history(sid, fred_api_key, max_stale_months=6)
+                if vals:
+                    live[ind_name] = vals
+
     fallback = HISTORY_FALLBACK.get(currency, {})
     result: dict[str, list[float]] = {}
     all_indicators = set(list(live.keys()) + list(fallback.keys()))
@@ -2001,72 +2191,91 @@ def fetch_currency_history(currency: str, fred_api_key: str) -> dict[str, list[f
 # ║  NEW 12-MONTH BIAS ENGINE
 # ╚══════════════════════════════════════════════════════════════════════════════
 
-def _score_indicator_series(values: list[float], indicator: str) -> float:
+def _score_indicator(name: str, vals: list[float]) -> float:
     """
-    Score a single indicator's 12-month history → [-1, +1].
-
-    Two equal components:
-    ─ LEVEL  (50%): current value vs. 12-month mean (Z-score based).
-      The 12M mean is the midline/zero baseline.  Current above mean = positive,
-      below mean = negative.  Normalised so ±1.5 std-devs → ±1.0 score.
-    ─ TREND  (50%): first-half vs. second-half of the series.
-      Is the indicator improving or deteriorating over the period?
-
-    Both components are adjusted for direction (high/low/target).
+    Context-aware scoring for a single indicator's 12-month history.
+    Returns score in [-1.0, +1.0].
+    Handles len(vals) < 3 gracefully (returns 0.0).
     """
-    import math
-
-    if len(values) < 3:
+    if len(vals) < 3:
         return 0.0
 
-    direction = _IND_DIRECTION.get(indicator, "high")
-    n         = len(values)
-    current   = values[-1]
+    recent  = vals[-3:]      # last 3 months
+    older   = vals[:3]       # first 3 months of window
+    current = vals[-1]
+    trend   = (sum(recent) / len(recent)) - (sum(older) / len(older))
 
-    # ── 12-month statistics ───────────────────────────────────────────────────
-    mean_12m  = sum(values) / n
-    variance  = sum((v - mean_12m) ** 2 for v in values) / n
-    std_12m   = math.sqrt(variance) if variance > 0 else 0.0
+    # --- PMI indicators (neutral = 50) ---
+    if name in ("Manufacturing PMI", "Services PMI", "Composite PMI"):
+        level_score = (current - 50) / 10      # +1 at 60, -1 at 40
+        trend_score = trend / 5                 # +1 if trend +5 pts over window
+        return max(-1.0, min(1.0, level_score * 0.6 + trend_score * 0.4))
 
-    # ── LEVEL component: current vs 12M mean ─────────────────────────────────
-    # Per-indicator CB target: CPI YoY → 2.0% annual; m/m variants → 2/12 monthly
-    _TARGET_VAL: dict[str, float] = {"CPI YoY": 2.0}
-    if direction == "target":
-        cb_target = _TARGET_VAL.get(indicator, 2.0 / 12)
-        dist_curr = abs(current   - cb_target)
-        dist_mean = abs(mean_12m  - cb_target)
-        # Positive if current is closer to target than the average was
-        level_raw = (dist_mean - dist_curr) / max(dist_mean, 0.05)
-    elif std_12m > 1e-6:
-        z         = (current - mean_12m) / std_12m   # Z-score vs own history
-        level_raw = z / 1.5                           # ±1.5 std → ±1.0
-        if direction == "low":
-            level_raw = -level_raw
-    else:
-        level_raw = 0.0
+    # --- Inflation: falling toward target = POSITIVE for FX ---
+    if name in ("CPI m/m", "CPI YoY", "Core CPI", "PPI"):
+        target = 2.0 / 12 if name in ("CPI m/m", "Core CPI") else 2.0
+        overshoot   = current - target
+        trend_punish = trend * 0.5
+        raw = -(overshoot / 3.0) - trend_punish
+        return max(-1.0, min(1.0, raw))
 
-    level_score = max(-1.0, min(1.0, level_raw))
+    # --- Unemployment (lower = better, falling = positive) ---
+    if name in ("Unemployment Rate",):
+        level_score = -(current - 5.0) / 5    # -1 at 10%, +1 at 0%
+        trend_score = -trend / 2               # falling = positive
+        return max(-1.0, min(1.0, level_score * 0.5 + trend_score * 0.5))
 
-    # ── TREND component: first half vs second half ────────────────────────────
-    mid        = max(1, n // 2)
-    early_avg  = sum(values[:mid]) / mid
-    recent_avg = sum(values[mid:]) / max(1, n - mid)
+    # --- GDP Growth (positive = good, rising = better) ---
+    if name in ("GDP Growth",):
+        level_score = current / 2.0            # +1 at +2%, -1 at -2%
+        trend_score = trend / 2.0
+        return max(-1.0, min(1.0, level_score * 0.6 + trend_score * 0.4))
 
-    if direction == "target":
-        cb_target   = _TARGET_VAL.get(indicator, 2.0 / 12)
-        dist_early  = abs(early_avg  - cb_target)
-        dist_recent = abs(recent_avg - cb_target)
-        trend_raw   = (dist_early - dist_recent) / max(dist_early, 0.05)
-    elif abs(early_avg) > 1e-6:
-        trend_raw = (recent_avg - early_avg) / abs(early_avg)
-        if direction == "low":
-            trend_raw = -trend_raw
-    else:
-        trend_raw = (recent_avg - early_avg) * (1.0 if direction == "high" else -1.0)
+    # --- Consumer / Business Confidence (OECD CCI index, neutral ~100) ---
+    if name in ("Consumer Confidence", "Business Confidence"):
+        # OECD CCI/BCI are indexed around 100; non-OECD surveys vary widely
+        # Use trend-based scoring that handles both scale types
+        mean_val = sum(vals) / len(vals)
+        level_score = (current - mean_val) / max(abs(mean_val) * 0.1 + 1.0, 1.0)
+        trend_score = trend / max(abs(mean_val) * 0.05 + 0.5, 0.5)
+        return max(-1.0, min(1.0, level_score * 0.5 + trend_score * 0.5))
 
-    trend_score = max(-1.0, min(1.0, trend_raw * 5.0))
+    # --- Interest Rate (higher = bullish for currency, rising trend = bullish) ---
+    if name in ("Interest Rate",):
+        trend_score = trend / 1.0              # rising rates = bullish
+        level_score = (current - 2.0) / 4.0   # above neutral = positive
+        return max(-1.0, min(1.0, level_score * 0.4 + trend_score * 0.6))
 
-    return round(0.5 * level_score + 0.5 * trend_score, 4)
+    # --- Retail Sales, Industrial Production (positive trend = good) ---
+    if name in ("Retail Sales", "Industrial Production", "Employment Change"):
+        norm_factor = max(abs(sum(vals) / len(vals)), 0.5) if vals else 1.0
+        level_score = current / (norm_factor * 3.0)
+        trend_score = trend / (norm_factor * 3.0)
+        return max(-1.0, min(1.0, level_score * 0.5 + trend_score * 0.5))
+
+    # --- Trade Balance, Current Account (improving = positive) ---
+    if name in ("Trade Balance", "Current Account"):
+        mean_val = sum(vals) / len(vals) if vals else 0.0
+        trend_score = trend / max(abs(mean_val) + 0.5, 1.0)
+        return max(-1.0, min(1.0, trend_score * 0.5))
+
+    # --- Wage Growth (moderate positive optimal, very high = inflationary) ---
+    if name in ("Wage Growth",):
+        optimal_dist = abs(current - 3.0)
+        level_score  = 1.0 - optimal_dist / 3.0
+        return max(-1.0, min(1.0, level_score))
+
+    # --- Default: positive trend = positive (normalised by mean) ---
+    norm = abs(sum(vals) / len(vals)) if vals else 1.0
+    return max(-1.0, min(1.0, trend / max(norm, 0.001)))
+
+
+def _score_indicator_series(values: list[float], indicator: str) -> float:
+    """
+    Wrapper that routes to _score_indicator() for the new context-aware scoring.
+    Kept for backwards compatibility with any direct callers.
+    """
+    return _score_indicator(indicator, values)
 
 
 def calc_currency_bias(currency: str, history: dict[str, list[float]]) -> dict:
@@ -2085,7 +2294,7 @@ def calc_currency_bias(currency: str, history: dict[str, list[float]]) -> dict:
     indicator_scores: dict[str, float] = {}
     for ind, values in history.items():
         if len(values) >= 3 and ind in _IND_DIRECTION:
-            indicator_scores[ind] = _score_indicator_series(values, ind)
+            indicator_scores[ind] = _score_indicator(ind, values)
 
     # Weighted average → scale to [-3, +3]
     total_w = sum(_IND_WEIGHTS.get(ind, 0.5) for ind in indicator_scores)
@@ -2104,7 +2313,7 @@ def calc_currency_bias(currency: str, history: dict[str, list[float]]) -> dict:
         for ind, values in history.items():
             sub = values[:m]
             if len(sub) >= 3 and ind in _IND_DIRECTION:
-                s  = _score_indicator_series(sub, ind)
+                s  = _score_indicator(ind, sub)
                 w  = _IND_WEIGHTS.get(ind, 0.5)
                 m_total += s * w
                 m_w     += w
@@ -3246,6 +3455,7 @@ def main():
         fetch_boc_history.clear()
         fetch_snb_history.clear()
         fetch_oecd_history.clear()
+        fetch_te_history.clear()
         st.session_state.last_refresh_ts = _now
         st.rerun()
 
@@ -3279,6 +3489,7 @@ def main():
             fetch_snb_history.clear()
             fetch_oecd_history.clear()
             fetch_te_indicators.clear()
+            fetch_te_history.clear()
             fetch_ff_macro_data.clear()
             fetch_international_indicators.clear()
             st.session_state.last_refresh_ts = time.time()
