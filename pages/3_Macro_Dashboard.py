@@ -3486,8 +3486,15 @@ def render_upcoming_calendar(events: list[dict]) -> str:
             )
             prev_date = ev["date_str"]
 
-        tier_color = cteal if ev["tier"] == "1" else cy
-        tier_label = "T1" if ev["tier"] == "1" else "T2"
+        if ev["tier"] == "1":
+            tier_color = "#ef4444"
+            tier_label = "HIGH"
+        elif ev["tier"] == "2":
+            tier_color = "#f97316"
+            tier_label = "MEDIUM"
+        else:
+            tier_color = "#eab308"
+            tier_label = "LOW"
         flag = CURRENCY_FLAG.get(ev["currency"], "")
         fc   = ev["forecast"]
         fc_html = (
@@ -3514,8 +3521,8 @@ def render_upcoming_calendar(events: list[dict]) -> str:
         f"<div style='font-size:8px;color:{cm};font-family:monospace;"
         f"margin-top:8px;border-top:1px solid {cb};padding-top:6px;'>"
         f"ForexFactory · auto-refresh 15 min · "
-        f"<span style='color:{cteal};'>T1</span> = CB-critical &nbsp;"
-        f"<span style='color:{cy};'>T2</span> = Activity &nbsp;· Only High-Impact events shown</div>"
+        f"<span style='color:#ef4444;'>HIGH</span> = CB-critical &nbsp;"
+        f"<span style='color:#f97316;'>MEDIUM</span> = Activity &nbsp;· Only High-Impact events shown</div>"
     )
 
     return (
