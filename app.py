@@ -49,11 +49,11 @@ MODULES = [
         "page":     "pages/4_Geopolitics.py",
     },
     {
-        "title":    "Volatility",
+        "title":    "Market Regime",
         "icon":     "⚡",
-        "desc":     "Historical vs. implied volatility, ATR regimes, and vol surface analysis.",
-        "active":   False,
-        "page":     None,
+        "desc":     "VIX-based market regime detection — current volatility percentile rank vs. 6-month history with trading implications.",
+        "active":   True,
+        "page":     "pages/5_Market_Regime.py",
     },
     {
         "title":    "Correlation",
