@@ -56,6 +56,14 @@ MODULES = [
         "page":     "pages/5_Market_Regime.py",
     },
     {
+        "title":    "???",
+        "icon":     "🔒",
+        "desc":     "Something is being built here. Details classified — check back soon.",
+        "active":   False,
+        "teaser":   True,
+        "page":     None,
+    },
+    {
         "title":    "Correlation",
         "icon":     "🔗",
         "desc":     "Cross-asset correlation matrix and rolling correlation heatmaps.",
@@ -125,10 +133,11 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # ── Module card grid (2 columns × 3 rows) ─────────────────────────────────
-    for row_start in range(0, len(MODULES), 2):
+    # ── Module card grid — active + teaser modules ───────────────────────────
+    visible_modules = [m for m in MODULES if m["active"] or m.get("teaser")]
+    for row_start in range(0, len(visible_modules), 2):
         col_l, col_r = st.columns(2, gap="medium")
-        for col, mod in zip([col_l, col_r], MODULES[row_start:row_start + 2]):
+        for col, mod in zip([col_l, col_r], visible_modules[row_start:row_start + 2]):
             _render_module_card(col, mod)
 
     # ── Footer ────────────────────────────────────────────────────────────────
@@ -144,33 +153,53 @@ def main():
 
 def _render_module_card(col, mod: dict):
     active = mod["active"]
-    border = C["teal"] if active else C["border"]
-    title_color = C["text"] if active else C["muted"]
-    desc_color  = C["muted"]
-    badge_bg    = C["teal"] if active else C["dim"]
-    badge_color = C["bg"] if active else C["muted"]
-    badge_text  = "Live" if active else "Coming Soon"
+    teaser = mod.get("teaser", False)
+
+    if teaser:
+        border      = "#1e2d4a"
+        title_color = "#2e4060"
+        desc_color  = "#243350"
+        badge_bg    = "#111827"
+        badge_color = "#2e4060"
+        badge_text  = "Coming Soon"
+        border_style = "dashed"
+    elif active:
+        border      = C["teal"]
+        title_color = C["text"]
+        desc_color  = C["muted"]
+        badge_bg    = C["teal"]
+        badge_color = C["bg"]
+        badge_text  = "Live"
+        border_style = "solid"
+    else:
+        border      = C["border"]
+        title_color = C["muted"]
+        desc_color  = C["muted"]
+        badge_bg    = C["dim"]
+        badge_color = C["muted"]
+        badge_text  = "Coming Soon"
+        border_style = "solid"
 
     with col:
         st.markdown(
             f"""
-            <div style="background:{C['card']};border:1px solid {border};
+            <div style="background:{C['card']};border:1px {border_style} {border};
                         border-radius:12px;padding:24px 24px 20px;margin-bottom:16px;
-                        min-height:140px;">
+                        min-height:140px;{'opacity:0.55;' if teaser else ''}">
               <div style="display:flex;align-items:flex-start;justify-content:space-between;
                           margin-bottom:10px;">
                 <div style="display:flex;align-items:center;gap:10px;">
-                  <span style="font-size:22px;">{mod['icon']}</span>
+                  <span style="font-size:22px;{'filter:grayscale(1);' if teaser else ''}">{mod['icon']}</span>
                   <span style="font-size:15px;font-weight:700;color:{title_color};
-                               font-family:monospace;">{mod['title']}</span>
+                               font-family:monospace;letter-spacing:2px;">{mod['title']}</span>
                 </div>
                 <span style="background:{badge_bg};color:{badge_color};
                              font-size:9px;font-family:monospace;font-weight:700;
                              letter-spacing:1px;padding:2px 8px;border-radius:4px;
-                             text-transform:uppercase;">{badge_text}</span>
+                             text-transform:uppercase;border:1px solid {border};">{badge_text}</span>
               </div>
               <div style="font-size:12px;color:{desc_color};line-height:1.6;
-                          font-family:sans-serif;">{mod['desc']}</div>
+                          font-family:sans-serif;{'font-style:italic;' if teaser else ''}">{mod['desc']}</div>
             </div>
             """,
             unsafe_allow_html=True,
