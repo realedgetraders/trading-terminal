@@ -165,32 +165,45 @@ def _gauge_chart(percentile: float, regime_color: str) -> go.Figure:
 
 
 def _line_chart(history: pd.Series) -> go.Figure:
-    """VIX line chart with regime threshold lines and current-value reference."""
-    current = float(history.iloc[-1])
-
-    # Compute actual VIX levels at each percentile boundary
-    thresholds = {
-        20:  float(np.percentile(history.values, 20)),
-        40:  float(np.percentile(history.values, 40)),
-        60:  float(np.percentile(history.values, 60)),
-        80:  float(np.percentile(history.values, 80)),
-    }
-    threshold_colors = {
-        20: C["green"],
-        40: C["yellow"],
-        60: C["orange"],
-        80: C["red"],
-    }
-    threshold_labels = {
-        20: "P20 — Low / Normal",
-        40: "P40 — Normal / Moderate",
-        60: "P60 — Moderate / Elevated",
-        80: "P80 — Elevated / Extreme",
-    }
+    """VIX line chart with colored background zones per regime (hrect)."""
+    # Percentile boundaries → actual VIX levels
+    p20 = float(np.percentile(history.values, 20))
+    p40 = float(np.percentile(history.values, 40))
+    p60 = float(np.percentile(history.values, 60))
+    p80 = float(np.percentile(history.values, 80))
+    y_max = float(history.max()) * 1.15   # upper bound for EXTREME zone
 
     fig = go.Figure()
 
-    # VIX line
+    # ── Background zones ──────────────────────────────────────────────────────
+    zones = [
+        (0,    p20,   "#00c896", "LOW VOL"),
+        (p20,  p40,   "#f0c040", "NORMAL"),
+        (p40,  p60,   "#f07840", "MODERATE"),
+        (p60,  p80,   "#e03030", "ELEVATED"),
+        (p80,  y_max, "#a000c8", "EXTREME"),
+    ]
+    for y0, y1, color, _ in zones:
+        fig.add_hrect(
+            y0=y0, y1=y1,
+            fillcolor=color,
+            opacity=0.07,
+            layer="below",
+            line_width=0,
+        )
+
+    # ── Zone labels — right of chart ──────────────────────────────────────────
+    for y0, y1, color, label in zones:
+        fig.add_annotation(
+            x=1.01, xref="paper",
+            y=(y0 + y1) / 2, yref="y",
+            text=label,
+            showarrow=False,
+            font=dict(color=color, size=9, family="monospace"),
+            xanchor="left",
+        )
+
+    # ── VIX line ──────────────────────────────────────────────────────────────
     fig.add_trace(go.Scatter(
         x=history.index,
         y=history.values,
@@ -200,29 +213,7 @@ def _line_chart(history: pd.Series) -> go.Figure:
         fill="tozeroy",
         fillcolor="rgba(69,196,176,0.08)",
         hovertemplate="%{x|%b %d, %Y}<br>VIX: %{y:.2f}<extra></extra>",
-    ))
-
-    # Regime threshold lines — no inline annotations, labels go to legend
-    for pct, level in thresholds.items():
-        fig.add_trace(go.Scatter(
-            x=[history.index[0], history.index[-1]],
-            y=[level, level],
-            mode="lines",
-            name=f"P{pct}  {level:.1f}",
-            line=dict(color=threshold_colors[pct], width=1, dash="dot"),
-            hoverinfo="skip",
-            showlegend=True,
-        ))
-
-    # Current value reference line — legend only, no inline annotation
-    fig.add_trace(go.Scatter(
-        x=[history.index[0], history.index[-1]],
-        y=[current, current],
-        mode="lines",
-        name=f"Current  {current:.2f}",
-        line=dict(color="rgba(255,255,255,0.7)", width=1.5, dash="dash"),
-        hoverinfo="skip",
-        showlegend=True,
+        showlegend=False,
     ))
 
     fig.update_layout(
@@ -230,18 +221,8 @@ def _line_chart(history: pd.Series) -> go.Figure:
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=60, r=40, t=50, b=50),
-        showlegend=True,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="left",
-            x=0,
-            font=dict(size=10, color=C["muted"], family="monospace"),
-            bgcolor="rgba(0,0,0,0)",
-            borderwidth=0,
-        ),
+        margin=dict(l=60, r=80, t=40, b=50),
+        showlegend=False,
         xaxis=dict(
             showgrid=False,
             zeroline=False,
@@ -249,7 +230,7 @@ def _line_chart(history: pd.Series) -> go.Figure:
             linecolor=C["border"],
         ),
         yaxis=dict(
-            range=[history.min() * 0.85, history.max() * 1.1],
+            range=[float(history.min()) * 0.85, y_max],
             title=dict(
                 text="VIX Level",
                 font=dict(size=11, color=C["muted"], family="monospace"),
