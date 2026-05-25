@@ -121,8 +121,9 @@ def _gauge_chart(percentile: float, regime_color: str) -> go.Figure:
         number  = {"suffix": "%", "font": {"size": 36, "color": C["text"], "family": "monospace"}},
         title   = {
             "text": "Current Percentile Rank",
-            "font": {"size": 13, "color": C["muted"], "family": "monospace"},
+            "font": {"size": 17, "color": C["text"], "family": "monospace"},
         },
+        domain  = {"x": [0.05, 0.95], "y": [0, 0.82]},
         gauge=dict(
             axis=dict(
                 range=[0, 100],
@@ -144,8 +145,8 @@ def _gauge_chart(percentile: float, regime_color: str) -> go.Figure:
     ))
 
     fig.update_layout(
-        height=320,
-        margin=dict(t=0, b=10, l=30, r=30),
+        height=280,
+        margin=dict(t=55, b=10, l=30, r=30),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family="monospace"),
@@ -436,11 +437,6 @@ def main():
     col_gauge, col_line = st.columns([1, 1.8], gap="large")
 
     with col_gauge:
-        st.markdown(
-            f"<div style='background:{C['card']};border:1px solid {C['border']};"
-            f"border-radius:12px;padding:4px 8px 0;'>",
-            unsafe_allow_html=True,
-        )
         st.plotly_chart(
             _gauge_chart(percentile, color),
             use_container_width=True,
@@ -457,12 +453,11 @@ def main():
         )
         st.markdown("""
 <div style='text-align:center; font-size:10px;
-color:#555; margin-top:4px; line-height:1.8;'>
+color:#555; margin-top:16px; line-height:1.8;'>
 Needle = VIX percentile vs. last 12 months &nbsp;·&nbsp;
 {percentile:.1f}% = higher than {percentile:.1f}% of all sessions
 </div>
 """.format(percentile=percentile), unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
 
     with col_line:
         st.plotly_chart(
