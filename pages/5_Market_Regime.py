@@ -269,12 +269,14 @@ def _line_chart(history: pd.Series) -> go.Figure:
             linecolor=C["border"],
         ),
         yaxis=dict(
-            title="VIX Level",
+            title=dict(
+                text="VIX Level",
+                font=dict(size=11, color=C["muted"], family="monospace"),
+            ),
             showgrid=True,
             gridcolor=C["border"],
             zeroline=False,
             tickfont=dict(size=10, color=C["muted"], family="monospace"),
-            titlefont=dict(size=11, color=C["muted"], family="monospace"),
             linecolor=C["border"],
         ),
         font=dict(family="monospace"),
