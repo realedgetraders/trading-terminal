@@ -29,9 +29,14 @@ except ImportError:
 # ╠══════════════════════════════════════════════════════════════════════════════
 # ║  FRED API KEY  (free — takes 30 seconds to create)
 # ║  → https://fred.stlouisfed.org/docs/api/api_key.html
-# ║  Paste your key below to enable live USD indicator data:
+# ║  Set via st.secrets (Streamlit Cloud) or FRED_API_KEY env var (local).
 # ╚══════════════════════════════════════════════════════════════════════════════
-FRED_API_KEY = "92dba3aead2eb80b8066515b6112958b"
+import os as _os
+FRED_API_KEY: str = (
+    st.secrets.get("FRED_API_KEY", "")
+    if hasattr(st, "secrets")
+    else _os.environ.get("FRED_API_KEY", "")
+)
 
 # ── Refresh intervals ─────────────────────────────────────────────────────────
 AUTO_RERUN_INTERVAL = 300   # 5 min — auto-rerun timer (seconds)

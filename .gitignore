@@ -1,4 +1,31 @@
+# Python
 __pycache__/
 *.pyc
-.claude/
 *.pyo
+*.pyd
+.Python
+
+# Secrets & environment
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Claude Code
+.claude/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs / temp
+*.log
+tmp/
+.cache/
