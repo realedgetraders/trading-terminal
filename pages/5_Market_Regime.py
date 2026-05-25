@@ -464,17 +464,10 @@ def main():
             unsafe_allow_html=True,
         )
         st.markdown("""
-<div style='display:flex; justify-content:center; gap:60px;
-margin-top:12px; font-size:11px; color:#666; line-height:1.8;'>
-  <div>
-    The needle shows where<br>the current VIX stands<br>
-    relative to the last 12 months.
-  </div>
-  <div style='text-align:right; color:#888;'>
-    {percentile:.1f}% = higher than<br>
-    {percentile:.1f}% of all sessions<br>
-    in the past year
-  </div>
+<div style='text-align:center; font-size:11px;
+color:#666; margin-top:8px; line-height:1.8;'>
+Needle = VIX percentile vs. last 12 months &nbsp;·&nbsp;
+{percentile:.1f}% = higher than {percentile:.1f}% of all sessions
 </div>
 """.format(percentile=percentile), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
