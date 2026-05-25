@@ -117,11 +117,17 @@ def main():
     # On the landing page (section=None) the CTA buttons get their own colours below.
     _section_btn_css = f"""
       button[kind="primary"], button[kind="secondary"] {{
-          background:{C['teal']} !important;
-          color:#0a0c10 !important;
-          border:none !important;
-          font-weight:700 !important;
-          font-family:monospace !important;
+          background: #161616 !important;
+          color: {C['text']} !important;
+          border: 1px solid #2e2e2e !important;
+          font-weight: 600 !important;
+          font-family: monospace !important;
+          transition: border-color 0.22s ease, color 0.22s ease, box-shadow 0.22s ease !important;
+      }}
+      button[kind="primary"]:hover, button[kind="secondary"]:hover {{
+          border-color: {C['teal']}70 !important;
+          color: {C['teal']} !important;
+          box-shadow: 0 0 12px rgba(230,57,70,0.14) !important;
       }}
 """ if section is not None else ""
 
@@ -404,11 +410,11 @@ def _render_module_card(col, mod: dict):
     pro    = mod.get("pro", False)
 
     if teaser:
-        border       = "#1e2d4a"
-        title_color  = "#2e4060"
-        desc_color   = "#243350"
-        badge_bg     = "#111827"
-        badge_color  = "#2e4060"
+        border       = "#252525"
+        title_color  = "#383838"
+        desc_color   = "#2e2e2e"
+        badge_bg     = "#1a1a1a"
+        badge_color  = "#3a3a3a"
         badge_text   = "Coming Soon"
         border_style = "dashed"
     elif active and pro:
@@ -420,11 +426,11 @@ def _render_module_card(col, mod: dict):
         badge_text   = "PRO"
         border_style = "solid"
     elif active:
-        border       = C["teal"]
+        border       = "#2a2a2a"
         title_color  = C["text"]
         desc_color   = C["muted"]
-        badge_bg     = C["teal"]
-        badge_color  = C["bg"]
+        badge_bg     = "rgba(230,57,70,0.12)"
+        badge_color  = C["teal"]
         badge_text   = "Live"
         border_style = "solid"
     else:
@@ -452,7 +458,7 @@ def _render_module_card(col, mod: dict):
                 <span style="background:{badge_bg};color:{badge_color};
                              font-size:9px;font-family:monospace;font-weight:700;
                              letter-spacing:1px;padding:2px 8px;border-radius:4px;
-                             text-transform:uppercase;border:1px solid {border};">{badge_text}</span>
+                             text-transform:uppercase;border:1px solid {badge_color}40;">{badge_text}</span>
               </div>
               <div style="font-size:12px;color:{desc_color};line-height:1.6;
                           font-family:sans-serif;{'font-style:italic;' if teaser else ''}">{mod['desc']}</div>
