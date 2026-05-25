@@ -119,7 +119,7 @@ def main():
       html, body, [data-testid="stAppViewContainer"],
       [data-testid="stHeader"], [data-testid="stToolbar"],
       [data-testid="stDecoration"] {{
-          background-color:{C['bg']} !important;
+          background-color:#0d0d0d !important;
       }}
       .stMainBlockContainer {{ padding-top:4rem !important; }}
       button[kind="primary"], button[kind="secondary"] {{
@@ -192,12 +192,13 @@ def main():
     else:
         subtitle = "Where traders build their edge"
 
-    divider_color = "#ef4444" if section is None else C["teal"]
+    divider_color      = "#e63946" if section is None else C["teal"]
+    subtitle_lbl_color = "#e63946" if section is None else C["teal"]
 
     st.markdown(
         f"""
         <div style="text-align:center;margin-bottom:{'32px' if section else '48px'};">
-          <div style="font-size:11px;color:{C['teal']};font-family:monospace;
+          <div style="font-size:11px;color:{subtitle_lbl_color};font-family:monospace;
                       letter-spacing:3px;text-transform:uppercase;margin-bottom:12px;">
             {subtitle}
           </div>
@@ -212,30 +213,22 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # Landing-specific: colour-matched buttons + hover glow
+    # Landing-specific: dark grey / red-border buttons, red fill on hover
     if section is None:
-        st.markdown(f"""
+        st.markdown("""
         <style>
-          /* Analysis button — deep blue */
-          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:first-child button {{
-              background: #2563eb !important;
+          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:first-child button,
+          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child button {
+              background: #1a1a1a !important;
               color: #ffffff !important;
-              transition: box-shadow 0.2s ease !important;
-          }}
-          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:first-child button:hover {{
-              background: #1d4ed8 !important;
-              box-shadow: 0 0 22px #2563eb55 !important;
-          }}
-          /* Journal button — amber */
-          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child button {{
-              background: #f0b429 !important;
-              color: #07080c !important;
-              transition: box-shadow 0.2s ease !important;
-          }}
-          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child button:hover {{
-              background: #d4950e !important;
-              box-shadow: 0 0 22px #f0b42955 !important;
-          }}
+              border: 1px solid #e63946 !important;
+              transition: background 0.2s ease, box-shadow 0.2s ease !important;
+          }
+          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:first-child button:hover,
+          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child button:hover {
+              background: #e63946 !important;
+              box-shadow: 0 0 22px #e6394655 !important;
+          }
         </style>
         """, unsafe_allow_html=True)
 
@@ -259,8 +252,8 @@ def main():
     # ── Footer ─────────────────────────────────────────────────────────────────
     st.markdown(
         f"<div style='margin-top:48px;padding-top:16px;"
-        f"border-top:1px solid {C['border']};text-align:center;"
-        f"font-size:11px;color:{C['muted']};font-family:monospace;'>"
+        f"border-top:1px solid #2a2a2a;text-align:center;"
+        f"font-size:11px;color:#555555;font-family:monospace;'>"
         f"Built by @realedgetraders"
         f"</div>",
         unsafe_allow_html=True,
@@ -271,9 +264,9 @@ def main():
 
 def _render_landing():
     """Landing hub — two premium section cards, centered, colour-differentiated."""
-    _BLUE  = "#2563eb"
-    _AMBER = "#f0b429"
-    _CARD  = "#0b0d15"   # near-black card
+    _RED   = "#e63946"   # crimson — Analysis accent
+    _AMBER = "#f0b429"   # gold    — Journal accent (exception)
+    _CARD  = "#1a1a1a"   # dark grey card
 
     # Thin padding columns for symmetric centering
     _, col_l, col_r, _ = st.columns([0.12, 1, 1, 0.12], gap="large")
@@ -285,25 +278,25 @@ def _render_landing():
     transition: box-shadow 0.25s ease, border-color 0.25s ease;
   }}
   #ret-analysis-card:hover {{
-    box-shadow: 0 0 48px {_BLUE}45;
-    border-color: {_BLUE} !important;
+    box-shadow: 0 0 48px {_RED}40;
+    border-color: {_RED} !important;
   }}
 </style>
 <div id="ret-analysis-card"
-     style="background:{_CARD};border:1px solid {_BLUE}70;border-radius:16px;
+     style="background:{_CARD};border:1px solid #2a2a2a;border-radius:16px;
             padding:52px 40px 36px;text-align:center;min-height:340px;
             display:flex;flex-direction:column;align-items:center;
             justify-content:center;margin-bottom:12px;">
   <div style="font-size:56px;margin-bottom:22px;line-height:1;">📊</div>
-  <div style="font-size:22px;font-weight:800;color:#dde4f0;
+  <div style="font-size:22px;font-weight:800;color:#ffffff;
               font-family:monospace;letter-spacing:-0.5px;margin-bottom:7px;">
     Analysis Suite
   </div>
-  <div style="font-size:9px;color:{_BLUE};font-family:monospace;
+  <div style="font-size:9px;color:{_RED};font-family:monospace;
               letter-spacing:3px;text-transform:uppercase;margin-bottom:22px;">
     5 Live Modules
   </div>
-  <div style="font-size:12px;color:#3d4f66;line-height:2.2;font-family:sans-serif;">
+  <div style="font-size:12px;color:#666666;line-height:2.2;font-family:sans-serif;">
     Seasonality &nbsp;·&nbsp; COT Analysis &nbsp;·&nbsp; Macro Bias
     <br>Geopolitics &nbsp;·&nbsp; Market Regime
   </div>
@@ -325,7 +318,7 @@ def _render_landing():
   }}
 </style>
 <div id="ret-journal-card"
-     style="background:{_CARD};border:1px solid {_AMBER}55;border-radius:16px;
+     style="background:{_CARD};border:1px solid #2a2a2a;border-radius:16px;
             padding:52px 40px 36px;text-align:center;min-height:340px;
             display:flex;flex-direction:column;align-items:center;
             justify-content:center;margin-bottom:12px;">
@@ -337,7 +330,7 @@ def _render_landing():
     </span>
   </div>
   <div style="font-size:56px;margin-bottom:22px;line-height:1;">📓</div>
-  <div style="font-size:22px;font-weight:800;color:#dde4f0;
+  <div style="font-size:22px;font-weight:800;color:#ffffff;
               font-family:monospace;letter-spacing:-0.5px;margin-bottom:7px;">
     Journal Your Edge
   </div>
@@ -345,7 +338,7 @@ def _render_landing():
               letter-spacing:3px;text-transform:uppercase;margin-bottom:22px;">
     Coming Soon
   </div>
-  <div style="font-size:12px;color:#3d4f66;line-height:2.2;font-family:sans-serif;">
+  <div style="font-size:12px;color:#666666;line-height:2.2;font-family:sans-serif;">
     Trade logging &nbsp;·&nbsp; Performance analytics
     <br>Edge tracking &nbsp;·&nbsp; Auth required
   </div>
