@@ -202,7 +202,7 @@ def main():
     elif section == "journal":
         subtitle = f"<span style='color:{C['yellow']}'>▸ Edge Journal</span>"
     else:
-        subtitle = "Where traders build their edge"
+        subtitle = "Welcome to EdgeLab"
 
     divider_color      = "#e63946" if section is None else C["teal"]
     subtitle_lbl_color = "#8b2530" if section is None else C["teal"]
@@ -217,11 +217,12 @@ def main():
           <div style="font-size:40px;font-weight:800;color:{C['text']};
                       font-family:monospace;letter-spacing:-1px;line-height:1.1;
                       text-shadow:0 0 60px rgba(230,57,70,0.2),0 0 120px rgba(230,57,70,0.1);">
-            Real Edge
+            EdgeLab
           </div>
           <div style="width:56px;height:3px;background:{divider_color};
                       margin:16px auto 0;border-radius:2px;
                       box-shadow:0 0 10px {divider_color},0 0 22px {divider_color}80;"></div>
+          {'<div style="font-size:9px;color:#8b2530;font-family:monospace;letter-spacing:3px;text-transform:uppercase;margin-top:14px;">A Place Where Traders Build Their Real Edge</div>' if section is None else ''}
         </div>
         """,
         unsafe_allow_html=True,
