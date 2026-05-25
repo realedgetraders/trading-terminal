@@ -459,8 +459,6 @@ Needle = VIX percentile vs. last 12 months &nbsp;·&nbsp;
             config={"displayModeBar": False},
         )
 
-    st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
-
     # ── Footer ─────────────────────────────────────────────────────────────────
     st.markdown(
         f"<div style='margin-top:40px;padding-top:16px;"
