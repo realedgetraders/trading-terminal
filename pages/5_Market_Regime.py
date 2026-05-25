@@ -202,38 +202,46 @@ def _line_chart(history: pd.Series) -> go.Figure:
         hovertemplate="%{x|%b %d, %Y}<br>VIX: %{y:.2f}<extra></extra>",
     ))
 
-    # Regime threshold lines
+    # Regime threshold lines — no inline annotations, labels go to legend
     for pct, level in thresholds.items():
-        fig.add_hline(
-            y=level,
+        fig.add_trace(go.Scatter(
+            x=[history.index[0], history.index[-1]],
+            y=[level, level],
+            mode="lines",
+            name=f"P{pct}  {level:.1f}",
             line=dict(color=threshold_colors[pct], width=1, dash="dot"),
-            annotation_text=f"P{pct} ({level:.1f})",
-            annotation_position="right",
-            annotation=dict(
-                font=dict(size=9, color=threshold_colors[pct], family="monospace"),
-                bgcolor="rgba(0,0,0,0)",
-            ),
-        )
+            hoverinfo="skip",
+            showlegend=True,
+        ))
 
-    # Current value reference line
-    fig.add_hline(
-        y=current,
-        line=dict(color="rgba(255,255,255,0.6)", width=1.5, dash="dash"),
-        annotation_text=f"  Current: {current:.2f}",
-        annotation_position="right",
-        annotation=dict(
-            font=dict(size=10, color=C["text"], family="monospace"),
-            bgcolor="rgba(0,0,0,0)",
-        ),
-    )
+    # Current value reference line — legend only, no inline annotation
+    fig.add_trace(go.Scatter(
+        x=[history.index[0], history.index[-1]],
+        y=[current, current],
+        mode="lines",
+        name=f"Current  {current:.2f}",
+        line=dict(color="rgba(255,255,255,0.7)", width=1.5, dash="dash"),
+        hoverinfo="skip",
+        showlegend=True,
+    ))
 
     fig.update_layout(
         height=450,
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=60, r=80, t=40, b=40),
-        showlegend=False,
+        margin=dict(l=60, r=40, t=50, b=50),
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0,
+            font=dict(size=10, color=C["muted"], family="monospace"),
+            bgcolor="rgba(0,0,0,0)",
+            borderwidth=0,
+        ),
         xaxis=dict(
             showgrid=False,
             zeroline=False,
