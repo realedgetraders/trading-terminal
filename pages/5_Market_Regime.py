@@ -464,7 +464,7 @@ def main():
             unsafe_allow_html=True,
         )
         st.markdown("""
-<div style='display:flex; justify-content:space-between;
+<div style='display:flex; justify-content:center; gap:60px;
 margin-top:12px; font-size:11px; color:#666; line-height:1.8;'>
   <div>
     The needle shows where<br>the current VIX stands<br>
