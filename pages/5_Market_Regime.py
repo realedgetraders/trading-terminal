@@ -197,10 +197,17 @@ def _line_chart(history: pd.Series) -> go.Figure:
 
     fig.update_layout(
         height=480,
+        title=dict(
+            text="VIX 12-Month History — Market Regime Context",
+            font=dict(size=11, color=C["muted"], family="monospace"),
+            x=0,
+            xanchor="left",
+            pad=dict(l=4),
+        ),
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=60, r=80, t=40, b=50),
+        margin=dict(l=60, r=80, t=50, b=50),
         showlegend=False,
         xaxis=dict(
             showgrid=False,
@@ -365,12 +372,6 @@ def main():
                 fetch_vix.clear()
                 st.rerun()
 
-    st.markdown(
-        f"<div style='margin-bottom:20px;padding-bottom:16px;"
-        f"border-bottom:1px solid {C['border']};'></div>",
-        unsafe_allow_html=True,
-    )
-
     # ── Data fetch ─────────────────────────────────────────────────────────────
     with st.spinner("Fetching VIX data..."):
         vix = fetch_vix()
@@ -400,7 +401,7 @@ def main():
     m1, m2, m3, m4 = st.columns(4)
     with m1:
         st.markdown(
-            _metric_card("Current VIX", f"{current_vix:.2f}", f"as of {last_date}"),
+            _metric_card("Current VIX", f"{current_vix:.2f}"),
             unsafe_allow_html=True,
         )
     with m2:
@@ -452,20 +453,11 @@ Needle = VIX percentile vs. last 12 months &nbsp;·&nbsp;
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col_line:
-        st.markdown(
-            f"<div style='background:{C['card']};border:1px solid {C['border']};"
-            f"border-radius:12px;padding:14px 16px 4px;'>"
-            f"<div style='font-size:10px;color:{C['muted']};font-family:monospace;"
-            f"letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px;'>"
-            f"VIX 12-Month History — Market Regime Context</div>",
-            unsafe_allow_html=True,
-        )
         st.plotly_chart(
             _line_chart(vix),
             use_container_width=True,
             config={"displayModeBar": False},
         )
-        st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
 
