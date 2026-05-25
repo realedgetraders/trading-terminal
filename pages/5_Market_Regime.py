@@ -143,27 +143,8 @@ def _gauge_chart(percentile: float, regime_color: str) -> go.Figure:
         ),
     ))
 
-    # Regime zone labels inside gauge
-    zone_labels = ["LOW\nVOL", "NORMAL", "MOD.", "ELEV.", "EXTREME"]
-    zone_midpoints = [10, 30, 50, 70, 90]
-    import math
-    for mid, label in zip(zone_midpoints, zone_labels):
-        # Convert percentile to angle (180° arc from left to right)
-        angle_deg = 180 - (mid / 100 * 180)
-        angle_rad = math.radians(angle_deg)
-        r = 0.72
-        x = 0.5 + r * 0.5 * math.cos(angle_rad)
-        y = 0.22 + r * 0.5 * math.sin(angle_rad)
-        fig.add_annotation(
-            x=x, y=y, text=label,
-            showarrow=False,
-            font={"size": 8, "color": C["muted"], "family": "monospace"},
-            xref="paper", yref="paper",
-            align="center",
-        )
-
     fig.update_layout(
-        height=300,
+        height=320,
         margin=dict(t=40, b=10, l=30, r=30),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
@@ -215,7 +196,7 @@ def _line_chart(history: pd.Series) -> go.Figure:
     ))
 
     fig.update_layout(
-        height=450,
+        height=480,
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
@@ -438,10 +419,8 @@ def main():
             unsafe_allow_html=True,
         )
 
-    st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
-
     # ── ROW 2 — Gauge + ROW 3 — Line chart (side by side) ─────────────────────
-    col_gauge, col_line = st.columns([1, 1.6], gap="large")
+    col_gauge, col_line = st.columns([1, 1.8], gap="large")
 
     with col_gauge:
         st.markdown(
@@ -464,8 +443,8 @@ def main():
             unsafe_allow_html=True,
         )
         st.markdown("""
-<div style='text-align:center; font-size:11px;
-color:#666; margin-top:8px; line-height:1.8;'>
+<div style='text-align:center; font-size:10px;
+color:#555; margin-top:4px; line-height:1.8;'>
 Needle = VIX percentile vs. last 12 months &nbsp;·&nbsp;
 {percentile:.1f}% = higher than {percentile:.1f}% of all sessions
 </div>
