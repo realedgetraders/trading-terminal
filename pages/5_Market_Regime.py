@@ -145,7 +145,7 @@ def _gauge_chart(percentile: float, regime_color: str) -> go.Figure:
 
     fig.update_layout(
         height=320,
-        margin=dict(t=40, b=10, l=30, r=30),
+        margin=dict(t=0, b=10, l=30, r=30),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family="monospace"),
@@ -345,6 +345,16 @@ def main():
           border-color:{C['teal']} !important; color:{C['teal']} !important;
       }}
       p, span, label {{ color:{C['text']}; }}
+      /* Remove auto-rendered hr separators between column blocks */
+      hr {{ display: none !important; }}
+      [data-testid="stHorizontalBlock"] {{
+          margin-bottom: 0 !important;
+          padding-bottom: 0 !important;
+      }}
+      [data-testid="stVerticalBlockBorderWrapper"] {{
+          padding-top: 0 !important;
+          padding-bottom: 0 !important;
+      }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -419,6 +429,8 @@ def main():
             _metric_card("Trend vs 5D MA", trend_label, "", trend_color),
             unsafe_allow_html=True,
         )
+    st.markdown("<div style='margin:0;padding:0;line-height:0;font-size:0;'></div>",
+                unsafe_allow_html=True)
 
     # ── ROW 2 — Gauge + ROW 3 — Line chart (side by side) ─────────────────────
     col_gauge, col_line = st.columns([1, 1.8], gap="large")
