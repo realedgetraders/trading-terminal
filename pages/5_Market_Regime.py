@@ -424,7 +424,7 @@ def main():
         )
     with m2:
         st.markdown(
-            _metric_card("12M Percentile", f"{percentile:.1f}%", f"n = {n_days} sessions"),
+            _metric_card("12M Percentile", f"{percentile:.1f}%"),
             unsafe_allow_html=True,
         )
     with m3:
