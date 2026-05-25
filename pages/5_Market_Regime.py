@@ -499,7 +499,7 @@ def main():
     st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
 
     # ── ROW 2 — Gauge + ROW 3 — Line chart (side by side) ─────────────────────
-    col_gauge, col_line = st.columns([2, 3], gap="large")
+    col_gauge, col_line = st.columns([1, 1.6], gap="large")
 
     with col_gauge:
         st.markdown(
