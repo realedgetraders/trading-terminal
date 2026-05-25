@@ -1,6 +1,6 @@
 """
 Trading Analytics Terminal — Module 5: Market Regime Volatility Index
-VIX percentile rank vs. 6-month history → regime classification + trading implications
+VIX percentile rank vs. 12-month history → regime classification + trading implications
 """
 
 import numpy as np
@@ -80,9 +80,9 @@ IMPLICATIONS: dict[str, list[str]] = {
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_vix() -> pd.Series | None:
-    """Fetch VIX Close prices for the last 6 months. Returns None on failure."""
+    """Fetch VIX Close prices for the last 12 months. Returns None on failure."""
     try:
-        df = yf.download("^VIX", period="6mo", interval="1d", progress=False, auto_adjust=True)
+        df = yf.download("^VIX", period="1y", interval="1d", progress=False, auto_adjust=True)
         if df.empty:
             return None
         close = df["Close"].dropna()
@@ -256,7 +256,7 @@ def _line_chart(history: pd.Series) -> go.Figure:
     )
 
     fig.update_layout(
-        height=320,
+        height=380,
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
@@ -269,6 +269,7 @@ def _line_chart(history: pd.Series) -> go.Figure:
             linecolor=C["border"],
         ),
         yaxis=dict(
+            range=[history.min() * 0.85, history.max() * 1.1],
             title=dict(
                 text="VIX Level",
                 font=dict(size=11, color=C["muted"], family="monospace"),
@@ -332,10 +333,10 @@ def _implications_card(regime: str, color: str, bg: str) -> str:
 
 def _stats_table(history: pd.Series, current: float, percentile: float) -> str:
     stats = {
-        "Min (6M)":    f"{history.min():.2f}",
-        "Max (6M)":    f"{history.max():.2f}",
-        "Mean (6M)":   f"{history.mean():.2f}",
-        "Median (6M)": f"{history.median():.2f}",
+        "Min (12M)":    f"{history.min():.2f}",
+        "Max (12M)":    f"{history.max():.2f}",
+        "Mean (12M)":   f"{history.mean():.2f}",
+        "Median (12M)": f"{history.median():.2f}",
         "Std Dev":     f"{history.std():.2f}",
         "Current VIX": f"{current:.2f}",
         "Percentile":  f"{percentile:.1f}%",
@@ -359,7 +360,7 @@ def _stats_table(history: pd.Series, current: float, percentile: float) -> str:
         f"border-radius:12px;overflow:hidden;'>"
         f"<div style='padding:12px 14px 8px;font-size:10px;color:{C['muted']};"
         f"font-family:monospace;letter-spacing:1.5px;text-transform:uppercase;"
-        f"border-bottom:1px solid {C['border']};'>6-Month Statistics</div>"
+        f"border-bottom:1px solid {C['border']};'>12-Month Statistics</div>"
         f"<table style='width:100%;border-collapse:collapse;'>"
         f"<tbody>{rows}</tbody></table></div>"
     )
@@ -431,7 +432,7 @@ def main():
             f"MARKET REGIME VOLATILITY INDEX</div>"
             f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
             f"letter-spacing:1px;margin-top:4px;'>"
-            f"VIX Percentile Rank vs. 6-Month History</div>"
+            f"VIX Percentile Rank vs. 12-Month History</div>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -482,7 +483,7 @@ def main():
         )
     with m2:
         st.markdown(
-            _metric_card("6M Percentile", f"{percentile:.1f}%", f"n = {n_days} sessions"),
+            _metric_card("12M Percentile", f"{percentile:.1f}%", f"n = {n_days} sessions"),
             unsafe_allow_html=True,
         )
     with m3:
@@ -529,7 +530,7 @@ def main():
             f"border-radius:12px;padding:14px 16px 4px;'>"
             f"<div style='font-size:10px;color:{C['muted']};font-family:monospace;"
             f"letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px;'>"
-            f"VIX — 6-Month History</div>",
+            f"VIX 12-Month History — Market Regime Context</div>",
             unsafe_allow_html=True,
         )
         st.plotly_chart(
@@ -591,7 +592,7 @@ def main():
         f"&nbsp;&nbsp;&middot;&nbsp;&nbsp;"
         f"Data: Yahoo Finance (^VIX) &nbsp;&middot;&nbsp; "
         f"Cached 1h &nbsp;&middot;&nbsp; "
-        f"Percentile rank vs. 6-month rolling window"
+        f"Percentile rank vs. 12-month rolling window"
         f"</div>",
         unsafe_allow_html=True,
     )
