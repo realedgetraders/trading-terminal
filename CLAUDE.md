@@ -29,27 +29,29 @@ streamlit run app.py
 
 ## Stack
 Python, Streamlit, yfinance, Plotly, Pandas, Requests
-Dark navy theme: background #0a0f1e, accent teal #00c49a
+Dark theme: background #0d0d0d, accent blue #4f8ef7 (UI), green #1a9b6a (signals), amber #f0b429 (journal)
 Branding footer: "Built by @realedgetraders" on every page
 
 ## File Structure
 trading-terminal/
-├── app.py                    → Hub/landing page with module cards
+├── app.py                    → Hub/landing page (EdgeLab branding)
 ├── pages/
 │   ├── 1_Seasonality.py     → MODULE 1: COMPLETE ✓
 │   ├── 2_COT_Analysis.py    → MODULE 2: COMPLETE ✓
 │   ├── 3_Macro_Dashboard.py → MODULE 3: COMPLETE ✓
 │   ├── 4_Geopolitics.py     → MODULE 4: COMPLETE ✓
-│   └── 5_News_Feed.py       → pending
+│   ├── 5_Market_Regime.py   → MODULE 5: COMPLETE ✓ (Market Phase Scanner)
+│   └── 6_Journal.py         → Coming Soon (Edge Journal, amber/gold accent)
 ├── requirements.txt
 └── CLAUDE.md
 
 ## Module Status
-- Module 1 (Seasonality Tracker): COMPLETE ✓ — DO NOT MODIFY
-- Module 2 (COT Analysis): COMPLETE ✓ — DO NOT MODIFY
+- Module 1 (Seasonality Tracker): COMPLETE ✓ — DO NOT MODIFY unless explicitly asked
+- Module 2 (COT Analysis): COMPLETE ✓ — DO NOT MODIFY unless explicitly asked
 - Module 3 (Economic Bias Engine): COMPLETE ✓ — DO NOT MODIFY unless explicitly asked
 - Module 4 (Geopolitics & News): COMPLETE ✓ — DO NOT MODIFY unless explicitly asked
-- Module 5 (News Feed): pending
+- Module 5 (Market Phase Scanner): COMPLETE ✓ — DO NOT MODIFY unless explicitly asked
+- Module 6 (Edge Journal): Coming Soon placeholder — amber/gold accent
 
 ---
 
@@ -153,49 +155,101 @@ Verified before/after scores (2026-05-24):
 - Auto-rerun every 300s (hits cache unless TTL expired)
 
 ## Last commits
+- fbc2ad7 Restyle: blue/yellow theme, EdgeLab branding, landing hub redesign
 - 911046d fix(geopolitics): improve economic calendar — relaxed filter, time column, noise KW list
 - 127c774 feat(news): sort feeds newest-first and add ↗ Read more links
 - ece9538 fix(ui): hide misaligned Streamlit radio indicator in currency pill selector
-- 9af8576 fix(calendar): replace T1/T2 badges with HIGH/MEDIUM/LOW impact labels
-- ed6397e fix(calendar): tighten upcoming events filter to High-impact bias-relevant events only
-- 8cdc8c2 feat(calendar): add upcoming economic events mini-calendar below 12M chart
-- 5063b2b feat(scoring): rebalance indicator weights to 3-tier swing-trading model
-- 4ee439b fix(ui): move disclaimer to full-width row below gauge bar
 
 ---
 
-## ⚠ Open Items (as of 2026-05-24)
+## ⚠ Open Items (as of 2026-05-25)
 
 1. **Economic Calendar (Module 4) — filter/coverage still not final**
    - Current state: High + Medium + Low impact, noise KW filter, time column added
-   - Problem: still fewer events visible than Investing.com shows — likely FF feed coverage
-     or Low-impact events being too sparse in the feed
-   - Next step: compare live FF feed content against Investing.com for a specific currency,
-     identify which event types are missing, adjust filter or add static fallback rows
+   - Problem: still fewer events visible than Investing.com — likely FF feed coverage gaps
+   - Next step: compare live FF feed against Investing.com for specific currency, adjust filter
 
 2. **Divergence Pair Table (Module 3) — not verified against new calc_all_biases**
-   - The pair divergence table (shows strongest bullish vs. bearish pairs) was built before
-     the z-score normalization refactor in calc_all_biases()
-   - Not confirmed whether it correctly reads from the new session state format
+   - Not confirmed whether it correctly reads from new session state format
      (macro_scores_{CCY} dict with keys: score, label, label_color, indicator_scores,
      monthly_scores, n_indicators)
-   - Next step: read the divergence table rendering code and verify it uses `score` key
-     from the new format, not any legacy key
+   - Next step: verify it uses `score` key from new format, not any legacy key
+
+---
+
+## Design System (as of 2026-05-25)
+
+### Color Palette (ALL files)
+```python
+C = {
+    "bg":       "#0d0d0d",
+    "card":     "#141414",
+    "border":   "#252525",
+    "panel":    "#111111",
+    "dim":      "#171717",
+    "text":     "#e8e8e8",
+    "muted":    "#909090",   # bumped from #666666 for readability
+    "teal":     "#4f8ef7",   # UI accent — blue (NOT green)
+    "teal_bg":  "rgba(79,142,247,0.14)",
+    "teal_dim": "rgba(79,142,247,0.06)",
+    "green":    "#1a9b6a",   # financial signals only (Long/Short, gains, win rate)
+    "green_bg": "rgba(26,155,106,0.09)",
+    "red":      "#f05262",
+    "red_bg":   "rgba(240,82,98,0.09)",
+    "yellow":   "#f0b429",   # amber (Watch signals, Journal accent)
+    "blue":     "#4f8ef7",
+}
+```
+Journal page (6_Journal.py) uses `"teal": "#f0b429"` (amber) — its Back button glows amber.
+
+### Color Semantic Rules
+- `C["teal"]` = `#4f8ef7` blue → ALL UI accents: buttons, radio pills, borders, chart lines
+- `C["green"]` = `#1a9b6a` → ONLY financial signal values: Long %, gains, win rate, positive returns
+- `C["yellow"]` = `#f0b429` → Watch signals, Journal section, amber accents
+- NEVER use green for UI chrome; NEVER use blue for directional trade signals
+
+### Button Hover Glow (all module pages)
+Every `button[kind="secondary"]` has:
+```css
+transition: border-color 0.22s ease, color 0.22s ease, box-shadow 0.22s ease;
+/* hover: */
+border-color: {C['teal']}70;
+color: {C['teal']};
+box-shadow: 0 0 12px rgba(79,142,247,0.14);
+```
+Journal uses amber equivalent: `rgba(240,180,41,0.14)`.
+
+### Clickable Card Overlay Technique (app.py)
+Used in both landing cards and module grid cards:
+- HTML card rendered as `st.markdown` with class `ret-module-active` / `ret-landing-analysis` / `ret-landing-journal`
+- Invisible `st.button(" ")` rendered immediately after with `use_container_width=True`
+- CSS pulls overlay up: `margin-top: -(card_height + ~16px)`; button `opacity:0; height: card_height`
+- Hover detected via CSS `:has(.card-class):has(+ div:hover)` — fires glow on card
+
+Module cards: card height 160px → `margin-top: -176px`
+Landing cards: card height 340px → `margin-top: -356px`
 
 ---
 
 ## Module 1 — Seasonality Tracker (COMPLETE)
-pages/1_Seasonality.py — DO NOT BREAK THIS FILE
+pages/1_Seasonality.py — DO NOT MODIFY unless explicitly asked
 
-Layout:
+### Theme
+- `C["teal"]` = `#4f8ef7` (blue UI accents: radio pills, chart line, borders)
+- `C["green"]` = `#1a9b6a` (signal colors: donut Long slice, win rate, gains, returns)
+- `C["muted"]` = `#909090` (all secondary text — bumped for readability)
+- All table header/cell font sizes: 11px (was 10px)
+- Stats card label: 10px, sub-line: 11px (was 9px/10px)
+
+### Layout
 - Title row: st.columns([2,5,2]) — "← Back to Hub" left | "Seasonality Tracker" centered | empty right
 - Controls row: ASSET dropdown | HISTORICAL DATA buttons (5y/10y/15y/20y/25y) | PATTERN WINDOW (START/END date pickers)
 - START date default: today | END date default: today + 1 month
 - Info line: "{asset} · {X}-Year Analysis · {n} Trading Days · {date range} · Data: Yahoo Finance"
-- Main chart: seasonal trend line, mean-normalized to 100, rolling(3) smooth
-- Slider below chart: date range selector synced with date pickers, colored green/gray
+- Main chart: seasonal trend line (blue), mean-normalized to 100, rolling(3) smooth
+- Slider below chart: date range selector synced with date pickers
 - Pattern Analysis section: donut chart (Long % green / Short % red), stats cards (Ann.Return, Win Rate, Avg Return, Median Return, Sharpe), additional stats (Gains, Losses, Best Trade, Worst Trade, Std Dev, Streak), year-by-year table
-- Seasonality Radar: best-pattern finder per asset, 10Y fixed history, Forex/Index split, Extreme/Watch/Bias signals, dynamic window scanner (start offsets -3..+7 days, lengths 14/21/30d), WINDOW + DAYS columns
+- Seasonality Radar: "Top 10 Seasonal Setups — Next 30 Days" — scans all 13 forex pairs, shows top 10 by _dist50 (distance from 50%)
 
 Assets: all major/minor Forex pairs + indices + commodities via yfinance
 History: 5y/10y/15y/20y/25y (Radar always uses 10Y)
@@ -238,10 +292,11 @@ Radar assets (RADAR_ASSETS dict):
 - Indices: S&P 500 (^GSPC), Nasdaq (^IXIC), Dow (^DJI)
 
 Radar signal logic:
-- Extreme (⚡): qualified window found (Long % ≥70 or ≤30, ≥7 occurrences) → teal/red row
-- Watch (⚠): no qualifying extreme window, shown up to fill 15 total → amber row
-- Bias (📊): Index/Commodity category — always structural long bias, separate sub-section
-- Forex Extreme + Watch shown in primary table; Index/Commodity in sub-section below
+- Extreme (⚡): qualified window found (Long % ≥70 or ≤30, ≥7 occurrences) → green/red row
+- Watch (⚠): no qualifying extreme window → amber row
+- All 13 forex pairs shown (sorted by _qualified desc, then _dist50 desc), top 10
+- Indices & Commodities: collapsed st.expander with amber disclaimer about trend bias
+- Description blurb below title explains signal definitions and recommends cross-check
 
 ### Key Constants
 - _REF_YEAR = 2023 (non-leap reference year for x-axis date mapping)
@@ -249,7 +304,10 @@ Radar signal logic:
 - _USD_YF: maps leg keys to yfinance tickers
 
 ## Module 2 — COT Analysis (COMPLETE)
-pages/2_COT_Analysis.py — DO NOT BREAK THIS FILE
+pages/2_COT_Analysis.py — DO NOT MODIFY unless explicitly asked
+
+### Theme
+- `C["teal"]` = `#4f8ef7`, `teal_bg` = `rgba(79,142,247,0.14)`, `teal_dim` = `rgba(79,142,247,0.06)`
 
 Data source: CFTC Legacy COT — https://www.cftc.gov/files/dea/history/deacot{YEAR}.zip
 Years loaded: 2001 to current year (annual ZIPs, cached with @st.cache_data)
@@ -257,7 +315,7 @@ Column format: Legacy COT CSV inside annual.txt (129 columns, space-separated na
 
 Groups & Colors:
 - Commercials:     blue  #3B82F6
-- Non-Commercials: gray  #6B7280
+- Non-Commercials: gray  #6B7280  ← OFF by default (multiselect default = [Commercials, Non-Reportable])
 - Non-Reportable:  yellow #EAB308
 
 Markets:
@@ -268,9 +326,21 @@ Markets:
 
 Charts (in order):
 1. COT Index — 26-week min-max normalization per group, range [-2, 105]
-2. Long vs Short Donuts — 3 side-by-side donuts (make_subplots), latest report week
+2. Long vs Short Donuts — plain go.Figure() (NO make_subplots), explicit domain per trace
+   - x_domains: n=1: [(0.20,0.80)], n=2: [(0.02,0.46),(0.54,0.98)], n=3: [(0.01,0.31),(0.35,0.65),(0.69,0.99)]
+   - Y_DOM = (0.18, 0.88) — donut floats centered, not glued to top/bottom
+   - ANN_Y = 0.10 — "Long: X · Short: X" annotation directly below donut bottom
+   - Title annotations at y=0.92 (just above donut top)
+   - margin t=30, b=50, height=310
 3. Net Positioning — dual Y-axis (Non-Reportable on right), 3-year default window
-4. COT Divergence Screener — table of all markets sorted by Comm vs NRept divergence (covers all categories including Commodities)
+4. COT Divergence Screener — filtered table, max 10 rows
+
+### COT Divergence Screener (updated 2026-05-25)
+- Filter: show row if divergence > 70 OR Comm ≥75/≤25 OR NRept ≥75/≤25
+- Max 10 rows, sorted by divergence descending
+- val_color thresholds: green ≥75, red ≤25 (aligned to filter)
+- Signal column removed — 5 columns: Market / Cat / Commercials COT / Non-Reportable COT / Divergence
+- Row tint: green rgba(26,155,106,0.05) if either group ≥75; red rgba(240,82,98,0.05) if either ≤25
 
 Signal cards: below controls, show COT Index value + Bullish/Bearish/Neutral label per group
 No inversion logic — raw CFTC numbers only for all markets
@@ -419,17 +489,55 @@ div[data-testid="stRadio"] label > div:has(p) > p {
 }
 ```
 
+## Module 5 — Market Phase Scanner (COMPLETE)
+pages/5_Market_Regime.py — DO NOT MODIFY unless explicitly asked
+
+- Renamed from "Market Regime" → "Market Phase Scanner" everywhere (page title, header, chart, metric card)
+- VIX line color: `#a8b0bc` (neutral silver-grey), fill `rgba(168,176,188,0.06)`
+- Metric card label: "Phase" (was "Regime")
+- `C["teal"]` = `#4f8ef7`
+
+## Module 6 — Edge Journal (Coming Soon placeholder)
+pages/6_Journal.py
+
+- Amber/gold accent: `C["teal"]` = `#f0b429`, `C["amber"]` = `#f0b429`
+- Back button hover glows amber: `rgba(240,180,41,0.14)`
+- PRO badge, 📓 icon, "Coming Soon" status
+
+---
+
 ## Hub (app.py)
-- Dark navy landing page
-- Module cards grid — Seasonality + COT Analysis + Macro Dashboard + Geopolitics are LIVE/active
-- Module 5 (News Feed): Coming Soon
-- Navigation via st.switch_page()
-- Footer: "Built by @realedgetraders"
+
+### Branding
+- App name: **EdgeLab**
+- Landing title: "Welcome to EdgeLab" (34px, monospace, single line)
+- Divider: `#c8c8c8` with white glow `box-shadow: 0 0 8px rgba(255,255,255,0.55), 0 0 18px rgba(255,255,255,0.25)`
+- Tagline: "A Place Where Traders Build Their Real Edge" — color `#888888`
+- Footer: `margin-top: 52px` — centered between cards and viewport bottom
+
+### Landing Page (section = None)
+Two large clickable cards side by side, NO separate Open buttons:
+- **Real Edge Terminal** (left) — blue border/glow, class `ret-landing-analysis`
+- **Edge Journal** (right) — amber border/glow, class `ret-landing-journal`
+- Cards: `height:340px`, overlay button `margin-top:-356px`, `opacity:0`
+- Hover glow via CSS `:has(.ret-landing-analysis):has(+ div:hover)`
+
+### Module Grid (section = "analysis")
+- `st.columns(2, gap="large")`
+- Active module cards: `height:160px;overflow:hidden`, class `ret-module-active`
+- Invisible overlay button: `margin-top:-176px`, `margin-bottom:20px`, `height:160px`, `opacity:0`
+- Hover glow: blue `rgba(79,142,247,0.18/0.07)`
+
+### Navigation
+- `st.session_state.section`: `None` (landing) / `"analysis"` (module grid) / `"journal"` (journal)
+- `st.switch_page("pages/X_Name.py")` to navigate into modules
+- Sidebar switch button: toggles between analysis ↔ journal sections
 
 ## Design Rules
 - Never change completed modules unless explicitly asked
-- Keep dark navy theme (#0a0f1e) consistent across all pages
-- All new modules follow same layout pattern as existing modules
-- "← Back to Hub" button on every module page, top left, same row as title
+- Keep dark theme (#0d0d0d bg, #4f8ef7 accent) consistent across all pages
+- All module pages: "← Back to Hub" button top left, same row as title
+- "← Back to Hub" hover: blue glow `box-shadow: 0 0 12px rgba(79,142,247,0.14)` with 0.22s transition
 - Max 3 fix attempts per problem, then report and wait
 - No package installs without explicit permission
+- C["teal"] = blue UI, C["green"] = signal only — never swap these semantics
