@@ -149,7 +149,7 @@ def _gauge_chart(percentile: float, regime_color: str) -> go.Figure:
                 "tickvals":  [0, 20, 40, 60, 80, 100],
                 "ticktext":  ["0", "20%", "40%", "60%", "80%", "100%"],
                 "tickfont":  {"size": 11, "color": C["muted"], "family": "monospace"},
-                "linecolor": C["border"],
+                "tickcolor": C["border"],
                 "linewidth": 1,
             },
             "bar": {
