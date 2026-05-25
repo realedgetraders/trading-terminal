@@ -86,15 +86,34 @@ MODULES = [
     },
 ]
 
+# Journal module entry — used in the Journal section view
+JOURNAL_MODULE = {
+    "title":  "Edge Journal",
+    "icon":   "📓",
+    "desc":   "Log every trade, track your edge over time, and let the data show where you actually make money. Authentication required.",
+    "active": True,
+    "pro":    True,
+    "page":   "pages/6_Journal.py",
+}
+
 
 def main():
     st.set_page_config(
-        page_title="Trading Analytics Terminal",
+        page_title="Real Edge Terminal",
         page_icon="📊",
         layout="wide",
         initial_sidebar_state="collapsed",
     )
 
+    # ── Session state ──────────────────────────────────────────────────────────
+    if "section" not in st.session_state:
+        st.session_state.section = None
+    section = st.session_state.section
+
+    # Sidebar switch button colour: amber when in analysis, teal when in journal
+    sb_color = C["yellow"] if section == "analysis" else C["teal"]
+
+    # ── Global styles ──────────────────────────────────────────────────────────
     st.markdown(f"""
     <style>
       html, body, [data-testid="stAppViewContainer"],
@@ -111,6 +130,22 @@ def main():
           font-family:monospace !important;
       }}
       p, span, label {{ color:{C['text']}; }}
+      /* ── Sidebar switch button ─────────────────────────────────────── */
+      section[data-testid="stSidebar"] button {{
+          background: transparent !important;
+          color: {sb_color} !important;
+          border: 1px solid {sb_color}55 !important;
+          font-family: monospace !important;
+          font-weight: 700 !important;
+          font-size: 12px !important;
+          border-radius: 8px !important;
+          margin-bottom: 4px !important;
+      }}
+      section[data-testid="stSidebar"] button:hover {{
+          background: {sb_color}18 !important;
+          border-color: {sb_color} !important;
+          color: {sb_color} !important;
+      }}
       /* ── Sidebar section labels ────────────────────────────────────── */
       [data-testid="stSidebarNavItems"] li:nth-child(2)::before {{
           content: "ANALYSIS";
@@ -137,17 +172,36 @@ def main():
     </style>
     """, unsafe_allow_html=True)
 
-    # ── Header ────────────────────────────────────────────────────────────────
+    # ── Sidebar switch button ──────────────────────────────────────────────────
+    with st.sidebar:
+        if section == "analysis":
+            if st.button("→ Switch to Journal", key="sw_journal"):
+                st.session_state.section = "journal"
+                st.rerun()
+        elif section == "journal":
+            if st.button("→ Switch to Terminal", key="sw_terminal"):
+                st.session_state.section = "analysis"
+                st.rerun()
+        # On landing (section=None): no switch button shown
+
+    # ── Header ─────────────────────────────────────────────────────────────────
+    if section == "analysis":
+        subtitle = f"<span style='color:{C['teal']}'>▸ Analysis Suite</span>"
+    elif section == "journal":
+        subtitle = f"<span style='color:{C['yellow']}'>▸ Edge Journal</span>"
+    else:
+        subtitle = "Analysis Suite &nbsp;·&nbsp; Edge Journal"
+
     st.markdown(
         f"""
-        <div style="text-align:center;margin-bottom:48px;">
+        <div style="text-align:center;margin-bottom:{'32px' if section else '48px'};">
           <div style="font-size:11px;color:{C['teal']};font-family:monospace;
                       letter-spacing:3px;text-transform:uppercase;margin-bottom:12px;">
-            Analysis Suite · Edge Journal
+            {subtitle}
           </div>
           <div style="font-size:36px;font-weight:800;color:{C['text']};
                       font-family:monospace;letter-spacing:-1px;line-height:1.1;">
-            Trading Analytics Terminal
+            Real Edge Terminal
           </div>
           <div style="width:48px;height:2px;background:{C['teal']};
                       margin:16px auto 0;border-radius:1px;"></div>
@@ -156,14 +210,24 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # ── Module card grid — active + teaser modules ───────────────────────────
-    visible_modules = [m for m in MODULES if m["active"] or m.get("teaser")]
-    for row_start in range(0, len(visible_modules), 2):
-        col_l, col_r = st.columns(2, gap="medium")
-        for col, mod in zip([col_l, col_r], visible_modules[row_start:row_start + 2]):
-            _render_module_card(col, mod)
+    # Back to Hub button — shown when inside a section
+    if section is not None:
+        _, back_col, _ = st.columns([3, 1, 3])
+        with back_col:
+            if st.button("← Back to Hub", key="back_hub", use_container_width=True):
+                st.session_state.section = None
+                st.rerun()
+        st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
 
-    # ── Footer ────────────────────────────────────────────────────────────────
+    # ── Content routing ────────────────────────────────────────────────────────
+    if section is None:
+        _render_landing()
+    elif section == "analysis":
+        _render_analysis()
+    else:
+        _render_journal_section()
+
+    # ── Footer ─────────────────────────────────────────────────────────────────
     st.markdown(
         f"<div style='margin-top:48px;padding-top:16px;"
         f"border-top:1px solid {C['border']};text-align:center;"
@@ -174,33 +238,129 @@ def main():
     )
 
 
+# ── Section views ──────────────────────────────────────────────────────────────
+
+def _render_landing():
+    """Two large section cards — Analysis Suite (teal) and Edge Journal (amber)."""
+    col_l, col_r = st.columns(2, gap="large")
+
+    with col_l:
+        st.markdown(
+            f"""
+            <div style="background:{C['card']};border:1px solid {C['teal']};
+                        border-radius:16px;padding:44px 36px;text-align:center;
+                        min-height:300px;margin-bottom:12px;">
+              <div style="font-size:52px;margin-bottom:20px;">📊</div>
+              <div style="font-size:22px;font-weight:800;color:{C['text']};
+                          font-family:monospace;letter-spacing:-0.5px;margin-bottom:8px;">
+                Analysis Suite
+              </div>
+              <div style="font-size:10px;color:{C['teal']};font-family:monospace;
+                          letter-spacing:2px;text-transform:uppercase;margin-bottom:20px;">
+                5 Live Modules
+              </div>
+              <div style="font-size:12px;color:{C['muted']};line-height:2;
+                          font-family:sans-serif;">
+                Seasonality &nbsp;·&nbsp; COT Analysis &nbsp;·&nbsp; Macro Bias
+                <br>Geopolitics &nbsp;·&nbsp; Market Regime
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if st.button("Open Terminal  →", key="land_analysis", use_container_width=True):
+            st.session_state.section = "analysis"
+            st.rerun()
+
+    with col_r:
+        st.markdown(
+            f"""
+            <div style="background:{C['card']};border:1px solid {C['yellow']}50;
+                        border-radius:16px;padding:44px 36px;text-align:center;
+                        min-height:300px;margin-bottom:12px;">
+              <div style="margin-bottom:16px;">
+                <span style="background:{C['yellow']};color:#0a0c10;font-size:10px;
+                             font-family:monospace;font-weight:800;letter-spacing:2px;
+                             padding:4px 14px;border-radius:20px;text-transform:uppercase;">
+                  PRO
+                </span>
+              </div>
+              <div style="font-size:52px;margin-bottom:20px;">📓</div>
+              <div style="font-size:22px;font-weight:800;color:{C['text']};
+                          font-family:monospace;letter-spacing:-0.5px;margin-bottom:8px;">
+                Edge Journal
+              </div>
+              <div style="font-size:10px;color:{C['yellow']};font-family:monospace;
+                          letter-spacing:2px;text-transform:uppercase;margin-bottom:20px;">
+                In Development
+              </div>
+              <div style="font-size:12px;color:{C['muted']};line-height:2;
+                          font-family:sans-serif;">
+                Trade logging &nbsp;·&nbsp; Performance analytics
+                <br>Edge tracking &nbsp;·&nbsp; Auth required
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if st.button("Open Journal  →", key="land_journal", use_container_width=True):
+            st.session_state.section = "journal"
+            st.rerun()
+
+
+def _render_analysis():
+    """Analysis module card grid — active + teaser modules."""
+    visible = [m for m in MODULES if m["active"] or m.get("teaser")]
+    for row_start in range(0, len(visible), 2):
+        col_l, col_r = st.columns(2, gap="medium")
+        for col, mod in zip([col_l, col_r], visible[row_start:row_start + 2]):
+            _render_module_card(col, mod)
+
+
+def _render_journal_section():
+    """Journal section — single centred module card linking to 6_Journal.py."""
+    _, col_c, _ = st.columns([1, 2, 1])
+    _render_module_card(col_c, JOURNAL_MODULE)
+
+
+# ── Module card renderer ───────────────────────────────────────────────────────
+
 def _render_module_card(col, mod: dict):
     active = mod["active"]
     teaser = mod.get("teaser", False)
+    pro    = mod.get("pro", False)
 
     if teaser:
-        border      = "#1e2d4a"
-        title_color = "#2e4060"
-        desc_color  = "#243350"
-        badge_bg    = "#111827"
-        badge_color = "#2e4060"
-        badge_text  = "Coming Soon"
+        border       = "#1e2d4a"
+        title_color  = "#2e4060"
+        desc_color   = "#243350"
+        badge_bg     = "#111827"
+        badge_color  = "#2e4060"
+        badge_text   = "Coming Soon"
         border_style = "dashed"
+    elif active and pro:
+        border       = C["yellow"]
+        title_color  = C["text"]
+        desc_color   = C["muted"]
+        badge_bg     = C["yellow"]
+        badge_color  = C["bg"]
+        badge_text   = "PRO"
+        border_style = "solid"
     elif active:
-        border      = C["teal"]
-        title_color = C["text"]
-        desc_color  = C["muted"]
-        badge_bg    = C["teal"]
-        badge_color = C["bg"]
-        badge_text  = "Live"
+        border       = C["teal"]
+        title_color  = C["text"]
+        desc_color   = C["muted"]
+        badge_bg     = C["teal"]
+        badge_color  = C["bg"]
+        badge_text   = "Live"
         border_style = "solid"
     else:
-        border      = C["border"]
-        title_color = C["muted"]
-        desc_color  = C["muted"]
-        badge_bg    = C["dim"]
-        badge_color = C["muted"]
-        badge_text  = "Coming Soon"
+        border       = C["border"]
+        title_color  = C["muted"]
+        desc_color   = C["muted"]
+        badge_bg     = C["dim"]
+        badge_color  = C["muted"]
+        badge_text   = "Coming Soon"
         border_style = "solid"
 
     with col:
@@ -227,7 +387,7 @@ def _render_module_card(col, mod: dict):
             """,
             unsafe_allow_html=True,
         )
-        if active and mod["page"]:
+        if active and mod.get("page"):
             if st.button(f"Open {mod['title']}", key=f"open_{mod['title']}"):
                 st.switch_page(mod["page"])
 
