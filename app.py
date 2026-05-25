@@ -111,6 +111,29 @@ def main():
           font-family:monospace !important;
       }}
       p, span, label {{ color:{C['text']}; }}
+      /* ── Sidebar section labels ────────────────────────────────────── */
+      [data-testid="stSidebarNavItems"] li:nth-child(2)::before {{
+          content: "ANALYSIS";
+          display: block;
+          font-family: monospace;
+          font-size: 9px;
+          letter-spacing: 2px;
+          color: {C['teal']};
+          padding: 10px 0 4px;
+          border-top: 1px solid {C['border']};
+          margin-top: 4px;
+      }}
+      [data-testid="stSidebarNavItems"] li:last-child::before {{
+          content: "JOURNAL";
+          display: block;
+          font-family: monospace;
+          font-size: 9px;
+          letter-spacing: 2px;
+          color: #f0b429;
+          padding: 10px 0 4px;
+          border-top: 1px solid {C['border']};
+          margin-top: 4px;
+      }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -120,7 +143,7 @@ def main():
         <div style="text-align:center;margin-bottom:48px;">
           <div style="font-size:11px;color:{C['teal']};font-family:monospace;
                       letter-spacing:3px;text-transform:uppercase;margin-bottom:12px;">
-            Professional Multi-Module Analysis Suite
+            Analysis Suite · Edge Journal
           </div>
           <div style="font-size:36px;font-weight:800;color:{C['text']};
                       font-family:monospace;letter-spacing:-1px;line-height:1.1;">
