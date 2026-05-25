@@ -389,6 +389,17 @@ def _render_landing():
 
 def _render_analysis():
     """Analysis module card grid — active + teaser modules."""
+    st.markdown("""
+    <style>
+      .ret-module-active {
+          transition: box-shadow 0.25s ease, border-color 0.25s ease;
+      }
+      .ret-module-active:hover {
+          box-shadow: 0 0 22px rgba(230,57,70,0.22), 0 0 48px rgba(230,57,70,0.09);
+          border-color: rgba(230,57,70,0.45) !important;
+      }
+    </style>
+    """, unsafe_allow_html=True)
     visible = [m for m in MODULES if m["active"] or m.get("teaser")]
     for row_start in range(0, len(visible), 2):
         col_l, col_r = st.columns(2, gap="medium")
@@ -442,10 +453,12 @@ def _render_module_card(col, mod: dict):
         badge_text   = "Coming Soon"
         border_style = "solid"
 
+    card_class = "ret-module-active" if (active and not teaser) else ""
     with col:
         st.markdown(
             f"""
-            <div style="background:{C['card']};border:1px {border_style} {border};
+            <div class="{card_class}"
+                 style="background:{C['card']};border:1px {border_style} {border};
                         border-radius:12px;padding:24px 24px 20px;margin-bottom:16px;
                         min-height:140px;{'opacity:0.55;' if teaser else ''}">
               <div style="display:flex;align-items:flex-start;justify-content:space-between;
