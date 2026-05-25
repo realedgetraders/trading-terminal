@@ -229,28 +229,29 @@ def main():
              (col 1 and 4 are empty 0.12 padding columns) */
           [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:nth-child(2) button {
               background: transparent !important;
-              color: #ffffff !important;
-              border: 1.5px solid #e63946 !important;
+              color: #666666 !important;
+              border: 1.5px solid #e6394640 !important;
               font-weight: 700 !important;
               font-family: monospace !important;
-              transition: background 0.2s ease, box-shadow 0.2s ease !important;
+              transition: color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease !important;
           }
           [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:nth-child(2) button:hover {
-              background: #e63946 !important;
-              box-shadow: 0 0 22px rgba(230,57,70,0.6) !important;
+              color: #ffffff !important;
+              border-color: #e63946 !important;
+              box-shadow: 0 0 18px rgba(230,57,70,0.55), 0 0 36px rgba(230,57,70,0.2) !important;
           }
           [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:nth-child(3) button {
               background: transparent !important;
-              color: #f0b429 !important;
-              border: 1.5px solid #f0b429 !important;
+              color: #666666 !important;
+              border: 1.5px solid #f0b42940 !important;
               font-weight: 700 !important;
               font-family: monospace !important;
-              transition: background 0.2s ease, box-shadow 0.2s ease !important;
+              transition: color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease !important;
           }
           [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:nth-child(3) button:hover {
-              background: #f0a500 !important;
-              color: #000000 !important;
-              box-shadow: 0 0 22px rgba(240,165,0,0.6) !important;
+              color: #f0b429 !important;
+              border-color: #f0b429 !important;
+              box-shadow: 0 0 18px rgba(240,180,41,0.55), 0 0 36px rgba(240,180,41,0.2) !important;
           }
         </style>
         """, unsafe_allow_html=True)
