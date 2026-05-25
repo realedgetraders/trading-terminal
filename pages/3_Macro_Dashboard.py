@@ -3659,7 +3659,7 @@ def render_economic_charts(
         fig1.add_trace(go.Scatter(
             x=month_labels, y=monthly_scores,
             mode="lines+markers",
-            line=dict(color=C["teal"], width=2.5),
+            line=dict(color="#a8b0bc", width=2.5),
             marker=dict(size=7, color=point_colors,
                         line=dict(width=1.5, color=C["bg"])),
             showlegend=False,
