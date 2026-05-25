@@ -190,7 +190,9 @@ def main():
     elif section == "journal":
         subtitle = f"<span style='color:{C['yellow']}'>▸ Edge Journal</span>"
     else:
-        subtitle = "Analysis Suite &nbsp;·&nbsp; Edge Journal"
+        subtitle = "Where traders build their edge"
+
+    divider_color = "#ef4444" if section is None else C["teal"]
 
     st.markdown(
         f"""
@@ -203,12 +205,39 @@ def main():
                       font-family:monospace;letter-spacing:-1px;line-height:1.1;">
             Real Edge Terminal
           </div>
-          <div style="width:48px;height:2px;background:{C['teal']};
+          <div style="width:48px;height:2px;background:{divider_color};
                       margin:16px auto 0;border-radius:1px;"></div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+    # Landing-specific: colour-matched buttons + hover glow
+    if section is None:
+        st.markdown(f"""
+        <style>
+          /* Analysis button — deep blue */
+          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:first-child button {{
+              background: #2563eb !important;
+              color: #ffffff !important;
+              transition: box-shadow 0.2s ease !important;
+          }}
+          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:first-child button:hover {{
+              background: #1d4ed8 !important;
+              box-shadow: 0 0 22px #2563eb55 !important;
+          }}
+          /* Journal button — amber */
+          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child button {{
+              background: #f0b429 !important;
+              color: #07080c !important;
+              transition: box-shadow 0.2s ease !important;
+          }}
+          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child button:hover {{
+              background: #d4950e !important;
+              box-shadow: 0 0 22px #f0b42955 !important;
+          }}
+        </style>
+        """, unsafe_allow_html=True)
 
     # Back to Hub button — shown when inside a section
     if section is not None:
@@ -241,68 +270,87 @@ def main():
 # ── Section views ──────────────────────────────────────────────────────────────
 
 def _render_landing():
-    """Two large section cards — Analysis Suite (teal) and Edge Journal (amber)."""
-    col_l, col_r = st.columns(2, gap="large")
+    """Landing hub — two premium section cards, centered, colour-differentiated."""
+    _BLUE  = "#2563eb"
+    _AMBER = "#f0b429"
+    _CARD  = "#0b0d15"   # near-black card
+
+    # Thin padding columns for symmetric centering
+    _, col_l, col_r, _ = st.columns([0.12, 1, 1, 0.12], gap="large")
 
     with col_l:
-        st.markdown(
-            f"""
-            <div style="background:{C['card']};border:1px solid {C['teal']};
-                        border-radius:16px;padding:44px 36px;text-align:center;
-                        min-height:300px;margin-bottom:12px;">
-              <div style="font-size:52px;margin-bottom:20px;">📊</div>
-              <div style="font-size:22px;font-weight:800;color:{C['text']};
-                          font-family:monospace;letter-spacing:-0.5px;margin-bottom:8px;">
-                Analysis Suite
-              </div>
-              <div style="font-size:10px;color:{C['teal']};font-family:monospace;
-                          letter-spacing:2px;text-transform:uppercase;margin-bottom:20px;">
-                5 Live Modules
-              </div>
-              <div style="font-size:12px;color:{C['muted']};line-height:2;
-                          font-family:sans-serif;">
-                Seasonality &nbsp;·&nbsp; COT Analysis &nbsp;·&nbsp; Macro Bias
-                <br>Geopolitics &nbsp;·&nbsp; Market Regime
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"""
+<style>
+  #ret-analysis-card {{
+    transition: box-shadow 0.25s ease, border-color 0.25s ease;
+  }}
+  #ret-analysis-card:hover {{
+    box-shadow: 0 0 48px {_BLUE}45;
+    border-color: {_BLUE} !important;
+  }}
+</style>
+<div id="ret-analysis-card"
+     style="background:{_CARD};border:1px solid {_BLUE}70;border-radius:16px;
+            padding:52px 40px 36px;text-align:center;min-height:340px;
+            display:flex;flex-direction:column;align-items:center;
+            justify-content:center;margin-bottom:12px;">
+  <div style="font-size:56px;margin-bottom:22px;line-height:1;">📊</div>
+  <div style="font-size:22px;font-weight:800;color:#dde4f0;
+              font-family:monospace;letter-spacing:-0.5px;margin-bottom:7px;">
+    Analysis Suite
+  </div>
+  <div style="font-size:9px;color:{_BLUE};font-family:monospace;
+              letter-spacing:3px;text-transform:uppercase;margin-bottom:22px;">
+    5 Live Modules
+  </div>
+  <div style="font-size:12px;color:#3d4f66;line-height:2.2;font-family:sans-serif;">
+    Seasonality &nbsp;·&nbsp; COT Analysis &nbsp;·&nbsp; Macro Bias
+    <br>Geopolitics &nbsp;·&nbsp; Market Regime
+  </div>
+</div>
+        """, unsafe_allow_html=True)
         if st.button("Open Terminal  →", key="land_analysis", use_container_width=True):
             st.session_state.section = "analysis"
             st.rerun()
 
     with col_r:
-        st.markdown(
-            f"""
-            <div style="background:{C['card']};border:1px solid {C['yellow']}50;
-                        border-radius:16px;padding:44px 36px;text-align:center;
-                        min-height:300px;margin-bottom:12px;">
-              <div style="margin-bottom:16px;">
-                <span style="background:{C['yellow']};color:#0a0c10;font-size:10px;
-                             font-family:monospace;font-weight:800;letter-spacing:2px;
-                             padding:4px 14px;border-radius:20px;text-transform:uppercase;">
-                  PRO
-                </span>
-              </div>
-              <div style="font-size:52px;margin-bottom:20px;">📓</div>
-              <div style="font-size:22px;font-weight:800;color:{C['text']};
-                          font-family:monospace;letter-spacing:-0.5px;margin-bottom:8px;">
-                Edge Journal
-              </div>
-              <div style="font-size:10px;color:{C['yellow']};font-family:monospace;
-                          letter-spacing:2px;text-transform:uppercase;margin-bottom:20px;">
-                In Development
-              </div>
-              <div style="font-size:12px;color:{C['muted']};line-height:2;
-                          font-family:sans-serif;">
-                Trade logging &nbsp;·&nbsp; Performance analytics
-                <br>Edge tracking &nbsp;·&nbsp; Auth required
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"""
+<style>
+  #ret-journal-card {{
+    transition: box-shadow 0.25s ease, border-color 0.25s ease;
+  }}
+  #ret-journal-card:hover {{
+    box-shadow: 0 0 48px {_AMBER}38;
+    border-color: {_AMBER} !important;
+  }}
+</style>
+<div id="ret-journal-card"
+     style="background:{_CARD};border:1px solid {_AMBER}55;border-radius:16px;
+            padding:52px 40px 36px;text-align:center;min-height:340px;
+            display:flex;flex-direction:column;align-items:center;
+            justify-content:center;margin-bottom:12px;">
+  <div style="margin-bottom:18px;">
+    <span style="background:{_AMBER};color:#07080c;font-size:9px;
+                 font-family:monospace;font-weight:800;letter-spacing:2.5px;
+                 padding:4px 16px;border-radius:20px;text-transform:uppercase;">
+      PRO
+    </span>
+  </div>
+  <div style="font-size:56px;margin-bottom:22px;line-height:1;">📓</div>
+  <div style="font-size:22px;font-weight:800;color:#dde4f0;
+              font-family:monospace;letter-spacing:-0.5px;margin-bottom:7px;">
+    Journal Your Edge
+  </div>
+  <div style="font-size:9px;color:{_AMBER};font-family:monospace;
+              letter-spacing:3px;text-transform:uppercase;margin-bottom:22px;">
+    Coming Soon
+  </div>
+  <div style="font-size:12px;color:#3d4f66;line-height:2.2;font-family:sans-serif;">
+    Trade logging &nbsp;·&nbsp; Performance analytics
+    <br>Edge tracking &nbsp;·&nbsp; Auth required
+  </div>
+</div>
+        """, unsafe_allow_html=True)
         if st.button("Open Journal  →", key="land_journal", use_container_width=True):
             st.session_state.section = "journal"
             st.rerun()
