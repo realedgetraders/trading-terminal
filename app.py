@@ -5,14 +5,14 @@ Trading Analytics Terminal — Home
 import streamlit as st
 
 C = {
-    "bg":     "#0a0f1e",
-    "card":   "#0d1526",
-    "border": "#1a2540",
-    "panel":  "#0f1a2e",
-    "dim":    "#192038",
-    "text":   "#dde4f0",
-    "muted":  "#445066",
-    "teal":   "#45c4b0",
+    "bg":     "#0d0d0d",
+    "card":   "#141414",
+    "border": "#252525",
+    "panel":  "#111111",
+    "dim":    "#171717",
+    "text":   "#e8e8e8",
+    "muted":  "#666666",
+    "teal":   "#e63946",
     "blue":   "#4f8ef7",
     "green":  "#00c48c",
     "red":    "#f05262",

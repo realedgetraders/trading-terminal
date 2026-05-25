@@ -7,15 +7,15 @@ import streamlit as st
 
 # ── Colour palette — amber/gold accent instead of teal ───────────────────────
 C = {
-    "bg":     "#0a0f1e",
-    "card":   "#0d1526",
-    "border": "#1a2540",
-    "dim":    "#192038",
-    "text":   "#dde4f0",
-    "muted":  "#445066",
+    "bg":     "#0d0d0d",
+    "card":   "#141414",
+    "border": "#252525",
+    "dim":    "#171717",
+    "text":   "#e8e8e8",
+    "muted":  "#666666",
     "amber":  "#f0b429",   # primary accent
     "gold":   "#ffd166",   # highlight
-    "teal":   "#45c4b0",   # kept only for Back button
+    "teal":   "#e63946",   # kept only for Back button
 }
 
 _FEATURES = [
