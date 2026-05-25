@@ -56,7 +56,7 @@ C = {
     "teal":     "#e63946",
     "teal_bg":  "rgba(230,57,70,0.12)",
     "teal_dim": "rgba(230,57,70,0.06)",
-    "green":    "#00c48c",
+    "green":    "#1a9b6a",
     "red":      "#f05262",
     "yellow":   "#f0b429",
     "blue":     "#4f8ef7",
@@ -902,7 +902,7 @@ def _impact_pill(impact: str) -> str:
 
 
 def _source_badge(label: str, is_live: bool) -> str:
-    color, bg = (C["green"], "rgba(0,196,140,0.10)") if is_live else (C["yellow"], "rgba(240,180,41,0.10)")
+    color, bg = (C["green"], "rgba(26,155,106,0.10)") if is_live else (C["yellow"], "rgba(240,180,41,0.10)")
     dot = "●" if is_live else "◎"
     return (
         f"<span style='background:{bg};color:{color};font-size:9px;"
@@ -3231,10 +3231,10 @@ def _calc_bias_score_legacy(indicators_df: pd.DataFrame, currency: str) -> dict:
     final = round(max(-1.0, min(1.0, _raw * 1.4)), 3)
 
     # ── Classification ────────────────────────────────────────────────────────
-    if   final >  0.60: level, lc = "STRONG BULLISH", "#00a36c"
+    if   final >  0.60: level, lc = "STRONG BULLISH", "#1a9b6a"
     elif final >  0.30: level, lc = "SLIGHT BULLISH", C["green"]
-    elif final >  0.10: level, lc = "MILD BULLISH",   "#4ecb9e"
-    elif final >= 0.0:  level, lc = "MILD BULLISH",   "#4ecb9e"
+    elif final >  0.10: level, lc = "MILD BULLISH",   "#2ab87a"
+    elif final >= 0.0:  level, lc = "MILD BULLISH",   "#2ab87a"
     elif final > -0.30: level, lc = "MILD BEARISH",   C["yellow"]
     elif final >= -0.60: level, lc = "SLIGHT BEARISH", "#f08080"
     else:                level, lc = "STRONG BEARISH", C["red"]
@@ -3259,7 +3259,7 @@ def _calc_bias_score_legacy(indicators_df: pd.DataFrame, currency: str) -> dict:
         tw    = sum(w for _, w in parts)
         raw   = sum(s * w for s, w in parts) / tw if tw else 0.0
         color = C["green"] if raw > 0.05 else C["red"] if raw < -0.05 else C["muted"]
-        bg    = ("rgba(0,196,140,0.10)" if raw > 0.05
+        bg    = ("rgba(26,155,106,0.10)" if raw > 0.05
                  else "rgba(240,82,98,0.10)" if raw < -0.05
                  else C["dim"])
         d_parts = [f"D1:{det['d1']:+.1f}"]
@@ -3419,7 +3419,7 @@ def _d3_intensity(ind: str, actual, reference, invert: bool = False) -> tuple[st
         diff = -diff
     slight, strong = _D_THRESHOLDS.get(ind, (0.30, 0.60))
     if diff >  strong: return "STRONG BEAT",  C["green"]
-    if diff >  slight: return "SLIGHT BEAT",  "#4ecb9e"
+    if diff >  slight: return "SLIGHT BEAT",  "#2ab87a"
     if diff > -slight: return "IN LINE",       C["muted"]
     if diff > -strong: return "SLIGHT MISS",  C["yellow"]
     return                    "STRONG MISS",  C["red"]
@@ -3445,7 +3445,7 @@ def _d4_trend(ind: str, actual, previous) -> tuple[str, str]:
         raw_lbl, _ = _d3_intensity(ind, actual, previous, invert=invert)
     _map = {
         "STRONG BEAT": ("↑↑ STRONG IMPR",  C["green"]),
-        "SLIGHT BEAT": ("↑ IMPROVING",      "#4ecb9e"),
+        "SLIGHT BEAT": ("↑ IMPROVING",      "#2ab87a"),
         "IN LINE":     ("→ STABLE",         C["muted"]),
         "SLIGHT MISS": ("↓ DETERIORATING",  C["yellow"]),
         "STRONG MISS": ("↓↓ STRONG DETER", C["red"]),
@@ -3581,7 +3581,7 @@ def render_bias_panel(currency: str, bias_result: dict) -> str:
                   transparent  calc({pct:.1f}% + 1.5px)),
                 linear-gradient(to right,
                   #cc1a2a 0%, {_cr} 20%, {_cy} 50%,
-                  {_cg} 80%, #00a36c 100%);'></div>
+                  {_cg} 80%, #138050 100%);'></div>
   <div style='display:flex;justify-content:space-between;font-size:9px;
               font-family:monospace;color:{_cm};margin-bottom:10px;'>
     <span>BEARISH</span><span>NEUTRAL</span><span>BULLISH</span>
@@ -3648,7 +3648,7 @@ def render_economic_charts(
         fig1 = go.Figure()
         fig1.add_trace(go.Scatter(
             x=month_labels, y=scores_pos,
-            fill="tozeroy", fillcolor="rgba(0,196,140,0.10)",
+            fill="tozeroy", fillcolor="rgba(26,155,106,0.10)",
             line=dict(width=0), showlegend=False, mode="none",
         ))
         fig1.add_trace(go.Scatter(
@@ -3665,7 +3665,7 @@ def render_economic_charts(
             showlegend=False,
         ))
         fig1.add_hline(y=0, line_dash="dot", line_color=C["muted"], line_width=1)
-        fig1.add_hrect(y0=1.5, y1=3.2, fillcolor="rgba(0,196,140,0.04)", line_width=0)
+        fig1.add_hrect(y0=1.5, y1=3.2, fillcolor="rgba(26,155,106,0.04)", line_width=0)
         fig1.add_hrect(y0=-3.2, y1=-1.5, fillcolor="rgba(240,82,98,0.04)", line_width=0)
 
         fig1.update_layout(
