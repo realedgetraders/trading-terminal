@@ -15,7 +15,7 @@ C = {
     "muted":  "#666666",
     "amber":  "#f0b429",   # primary accent
     "gold":   "#ffd166",   # highlight
-    "teal":   "#e63946",   # kept only for Back button
+    "teal":   "#f0b429",   # amber — Back button (journal accent)
 }
 
 _FEATURES = [
@@ -51,9 +51,11 @@ def main():
           border:1px solid {C['border']} !important;
           font-family:monospace !important; font-weight:600 !important;
           border-radius:8px !important;
+          transition:border-color 0.22s ease,color 0.22s ease,box-shadow 0.22s ease !important;
       }}
       button[kind="secondary"]:hover {{
-          border-color:{C['amber']} !important; color:{C['amber']} !important;
+          border-color:{C['amber']}70 !important; color:{C['amber']} !important;
+          box-shadow:0 0 12px rgba(240,180,41,0.14) !important;
       }}
       p, span, label {{ color:{C['text']}; }}
     </style>

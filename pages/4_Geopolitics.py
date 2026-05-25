@@ -33,8 +33,8 @@ C = {
     "dim":      "#171717",
     "text":     "#e8e8e8",
     "muted":    "#666666",
-    "teal":     "#e63946",
-    "green":    "#00c48c",
+    "teal":     "#4f8ef7",
+    "green":    "#1a9b6a",
     "red":      "#f05262",
     "yellow":   "#f0b429",
     "orange":   "#f08c29",
@@ -59,7 +59,7 @@ _CCY_PROFILE: dict[str, dict] = {
     "USD": {
         "role":       "World Reserve Currency",
         "sensitivity":"SAFE HAVEN",
-        "sens_col":   "#e63946",
+        "sens_col":   "#4f8ef7",
         "context": [
             "Global crises universally drive safe-haven demand for USD.",
             "US-imposed trade tariffs and sanctions reshape cross-border dollar flows.",
@@ -93,7 +93,7 @@ _CCY_PROFILE: dict[str, dict] = {
     "JPY": {
         "role":       "Japanese Yen",
         "sensitivity":"SAFE HAVEN + CARRY",
-        "sens_col":   "#e63946",
+        "sens_col":   "#4f8ef7",
         "context": [
             "North Korean missile tests and China-Taiwan tensions unwind JPY carry trades.",
             "Japan's US security dependency creates asymmetric geopolitical risk.",
@@ -126,7 +126,7 @@ _CCY_PROFILE: dict[str, dict] = {
     "CHF": {
         "role":       "Swiss Franc",
         "sensitivity":"STRONGEST SAFE HAVEN",
-        "sens_col":   "#00c48c",
+        "sens_col":   "#1a9b6a",
         "context": [
             "Swiss neutrality makes CHF the premier safe-haven — any crisis drives inflows.",
             "European wars and global financial crises generate the sharpest CHF bids.",
@@ -207,7 +207,7 @@ _CATEGORIES: dict[str, dict] = {
         "instability", "opposition", "parliament dissolved", "crisis",
         "overthrow", "dictator", "authoritarian", "civil unrest", "martial law",
     ]},
-    "Diplomatic":{"color": "#00c48c", "kw": [
+    "Diplomatic":{"color": "#1a9b6a", "kw": [
         "ceasefire", "peace deal", "summit", "treaty", "agreement",
         "negotiations", "envoy", "ambassador", "diplomatic talks", "accord",
     ]},
@@ -645,7 +645,7 @@ def build_calendar_view_m4(ff_df: pd.DataFrame, currency: str) -> pd.DataFrame:
         return pd.DataFrame()
 
     sub["date"]        = pd.to_datetime(sub["date"])
-    sub                = sub.sort_values("date", ascending=False)
+    sub                = sub.sort_values("date", ascending=True)
     sub["days_until"]  = (sub["date"] - now).dt.days
     sub["is_upcoming"] = sub["date"] > now
     return sub[[
@@ -655,7 +655,7 @@ def build_calendar_view_m4(ff_df: pd.DataFrame, currency: str) -> pd.DataFrame:
 
 
 def render_calendar_table_m4(calendar_df: pd.DataFrame) -> str:
-    """Render the economic calendar as an HTML table."""
+    """Render the economic calendar grouped by day with clear day separators."""
     if calendar_df.empty:
         return (
             f"<div style='padding:24px;text-align:center;color:{C['muted']};"
@@ -690,57 +690,103 @@ def render_calendar_table_m4(calendar_df: pd.DataFrame) -> str:
             f"padding:2px 7px;border-radius:4px;text-transform:uppercase;'>{impact}</span>"
         )
 
-    cols = ["Time", "Date", "Event", "Actual", "Forecast", "Previous", "Impact"]
+    # Sort chronologically — today first, future below
+    df = calendar_df.copy()
+    df["_day"] = pd.to_datetime(df["date"]).dt.normalize()
+    df = df.sort_values("date", ascending=True).reset_index(drop=True)
+
+    now_day = pd.Timestamp.today().normalize()
+
+    cols = ["Time", "Event", "Actual", "Forecast", "Previous", "Impact"]
     hdr  = (
-        f"<tr style='border-bottom:1px solid {C['border']};'>"
+        f"<tr style='border-bottom:2px solid {C['border']};'>"
         + "".join(
-            f"<th style='padding:7px 10px;font-size:10px;color:{C['muted']};"
-            f"font-family:monospace;text-transform:uppercase;letter-spacing:1px;"
+            f"<th style='padding:8px 12px;font-size:10px;color:{C['muted']};"
+            f"font-family:monospace;text-transform:uppercase;letter-spacing:1.5px;"
             f"font-weight:600;text-align:left;'>{h}</th>" for h in cols
         ) + "</tr>"
     )
 
     body = ""
-    for _, row in calendar_df.iterrows():
-        days        = int(row.get("days_until", 99))
-        is_upcoming = bool(row.get("is_upcoming", True))
-        soon        = 0 < days <= 7
-        row_bg      = "rgba(69,196,176,0.06)" if soon else "transparent"
-        date_color  = C["teal"] if soon else (C["muted"] if is_upcoming else C["text"])
-
+    seen_days: set = set()
+    for _, row in df.iterrows():
         try:
             ts       = pd.Timestamp(row["date"])
-            date_str = ts.strftime("%a %d %b")
+            day_key  = ts.normalize()
             time_str = ts.strftime("%H:%M") if (ts.hour, ts.minute) != (0, 0) else "—"
         except Exception:
-            date_str = "—"
+            day_key  = now_day
             time_str = "—"
-        ind_name = str(row.get("title") or row.get("indicator") or "—")
+
+        is_past = day_key < now_day
+        is_today = day_key == now_day
+
+        # ── Day separator row (rendered once per day) ───────────────────────
+        if day_key not in seen_days:
+            seen_days.add(day_key)
+            if is_today:
+                day_label  = f"TODAY  ·  {day_key.strftime('%A, %d %B %Y').upper()}"
+                label_col  = C["text"]
+                sep_bg     = "#1a1a1a"
+                sep_border = "#333333"
+                dot        = (f"<span style='display:inline-block;width:6px;height:6px;"
+                              f"border-radius:50%;background:{C['teal']};margin-right:10px;"
+                              f"vertical-align:middle;'></span>")
+            elif is_past:
+                day_label  = day_key.strftime("%A, %d %B %Y").upper()
+                label_col  = "#3a3a3a"
+                sep_bg     = C["dim"]
+                sep_border = C["border"]
+                dot        = ""
+            else:
+                day_label  = day_key.strftime("%A, %d %B %Y").upper()
+                label_col  = "#8a94a0"
+                sep_bg     = "#161616"
+                sep_border = "#2a2a2a"
+                dot        = ""
+
+            body += (
+                f"<tr style='background:{sep_bg};border-top:1px solid {sep_border};"
+                f"border-bottom:1px solid {sep_border};'>"
+                f"<td colspan='6' style='padding:9px 14px;font-size:10px;color:{label_col};"
+                f"font-family:monospace;font-weight:700;letter-spacing:2.5px;'>"
+                f"{dot}{day_label}</td></tr>"
+            )
+
+        # ── Event row ───────────────────────────────────────────────────────
+        ind_name   = str(row.get("title") or row.get("indicator") or "—")
+        text_color = "#3a3a3a" if is_past else C["text"]
+        time_color = "#2e2e2e" if is_past else C["muted"]
 
         body += (
-            f"<tr style='border-bottom:1px solid {C['border']};background:{row_bg};'>"
-            f"<td style='padding:7px 10px;font-size:11px;color:{C['muted']};"
-            f"font-family:monospace;white-space:nowrap;'>{time_str}</td>"
-            f"<td style='padding:7px 10px;font-size:11px;color:{date_color};"
-            f"font-family:monospace;white-space:nowrap;'>{date_str}</td>"
-            f"<td style='padding:7px 10px;font-size:11px;color:{C['text']};"
+            f"<tr style='border-bottom:1px solid {C['border']};'>"
+            f"<td style='padding:7px 12px;font-size:11px;color:{time_color};"
+            f"font-family:monospace;white-space:nowrap;width:60px;'>{time_str}</td>"
+            f"<td style='padding:7px 12px;font-size:11px;color:{text_color};"
             f"font-family:monospace;'>{ind_name}</td>"
-            f"<td style='padding:7px 10px;font-size:11px;color:{C['text']};"
+            f"<td style='padding:7px 12px;font-size:11px;color:{text_color};"
             f"font-family:monospace;'>{_fmt(row.get('actual'))}</td>"
-            f"<td style='padding:7px 10px;font-size:11px;color:{C['muted']};"
+            f"<td style='padding:7px 12px;font-size:11px;color:{C['muted'] if not is_past else '#2e2e2e'};"
             f"font-family:monospace;'>{_fmt(row.get('forecast'))}</td>"
-            f"<td style='padding:7px 10px;font-size:11px;color:{C['muted']};"
+            f"<td style='padding:7px 12px;font-size:11px;color:{C['muted'] if not is_past else '#2e2e2e'};"
             f"font-family:monospace;'>{_fmt(row.get('previous'))}</td>"
-            f"<td style='padding:7px 10px;'>{_impact_pill(row['impact'])}</td>"
+            f"<td style='padding:7px 12px;'>{'&nbsp;' if is_past else _impact_pill(row['impact'])}</td>"
             f"</tr>"
         )
 
     return (
         f"<div style='background:{C['card']};border:1px solid {C['border']};"
-        f"border-radius:10px;max-height:520px;overflow-y:auto;'>"
+        f"border-radius:10px;overflow:hidden;'>"
+        f"<div style='padding:11px 16px;border-bottom:1px solid {C['border']};"
+        f"display:flex;align-items:center;gap:10px;'>"
+        f"<span style='font-size:10px;color:{C['muted']};font-family:monospace;"
+        f"letter-spacing:2.5px;text-transform:uppercase;font-weight:700;'>📅&nbsp; Weekly Calendar</span>"
+        f"</div>"
+        f"<div style='max-height:560px;overflow-y:auto;'>"
         f"<table style='width:100%;border-collapse:collapse;'>"
-        f"<thead>{hdr}</thead><tbody>{body}</tbody>"
-        f"</table></div>"
+        f"<thead style='position:sticky;top:0;background:{C['card']};z-index:1;'>"
+        f"{hdr}</thead><tbody>{body}</tbody>"
+        f"</table></div></div>"
     )
 
 
@@ -1295,9 +1341,11 @@ def main():
           border:1px solid {C['border']} !important;
           font-family:monospace !important; font-weight:600 !important;
           border-radius:8px !important;
+          transition:border-color 0.22s ease,color 0.22s ease,box-shadow 0.22s ease !important;
       }}
       button[kind="secondary"]:hover {{
-          border-color:{C['teal']} !important; color:{C['teal']} !important;
+          border-color:{C['teal']}70 !important; color:{C['teal']} !important;
+          box-shadow:0 0 12px rgba(79,142,247,0.14) !important;
       }}
       button[kind="primary"] {{
           background:{C['teal']} !important; color:#0a0c10 !important;

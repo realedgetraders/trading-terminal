@@ -53,9 +53,9 @@ C = {
     "dim":      "#171717",
     "text":     "#e8e8e8",
     "muted":    "#666666",
-    "teal":     "#e63946",
-    "teal_bg":  "rgba(230,57,70,0.12)",
-    "teal_dim": "rgba(230,57,70,0.06)",
+    "teal":     "#4f8ef7",
+    "teal_bg":  "rgba(79,142,247,0.12)",
+    "teal_dim": "rgba(79,142,247,0.06)",
     "green":    "#1a9b6a",
     "red":      "#f05262",
     "yellow":   "#f0b429",
@@ -2779,7 +2779,7 @@ def _calc_raw_score(
 
 def _label_from_score(score: float) -> tuple[str, str]:
     """Map a normalized [-3, +3] score to label + color."""
-    if   score >  0.4: return "BULLISH", C["teal"]
+    if   score >  0.4: return "BULLISH", C["green"]
     elif score < -0.4: return "BEARISH", C["red"]
     else:              return "NEUTRAL", C["muted"]
 
@@ -2905,7 +2905,7 @@ def calc_currency_bias(currency: str, history: dict[str, list[float]]) -> dict:
 
     # Label
     if   final >= 1.5:  label, lc = "STRONG BULLISH", C["green"]
-    elif final >= 0.3:  label, lc = "SLIGHT BULLISH", C["teal"]
+    elif final >= 0.3:  label, lc = "SLIGHT BULLISH", C["green"]
     elif final >= -0.3: label, lc = "NEUTRAL",         C["muted"]
     elif final >= -1.5: label, lc = "SLIGHT BEARISH",  C["yellow"]
     else:               label, lc = "STRONG BEARISH",  C["red"]
@@ -3231,10 +3231,10 @@ def _calc_bias_score_legacy(indicators_df: pd.DataFrame, currency: str) -> dict:
     final = round(max(-1.0, min(1.0, _raw * 1.4)), 3)
 
     # ── Classification ────────────────────────────────────────────────────────
-    if   final >  0.60: level, lc = "STRONG BULLISH", "#1a9b6a"
+    if   final >  0.60: level, lc = "STRONG BULLISH", C["green"]
     elif final >  0.30: level, lc = "SLIGHT BULLISH", C["green"]
-    elif final >  0.10: level, lc = "MILD BULLISH",   "#2ab87a"
-    elif final >= 0.0:  level, lc = "MILD BULLISH",   "#2ab87a"
+    elif final >  0.10: level, lc = "MILD BULLISH",   C["green"]
+    elif final >= 0.0:  level, lc = "MILD BULLISH",   C["green"]
     elif final > -0.30: level, lc = "MILD BEARISH",   C["yellow"]
     elif final >= -0.60: level, lc = "SLIGHT BEARISH", "#f08080"
     else:                level, lc = "STRONG BEARISH", C["red"]
@@ -3419,7 +3419,7 @@ def _d3_intensity(ind: str, actual, reference, invert: bool = False) -> tuple[st
         diff = -diff
     slight, strong = _D_THRESHOLDS.get(ind, (0.30, 0.60))
     if diff >  strong: return "STRONG BEAT",  C["green"]
-    if diff >  slight: return "SLIGHT BEAT",  "#2ab87a"
+    if diff >  slight: return "SLIGHT BEAT",  C["green"]
     if diff > -slight: return "IN LINE",       C["muted"]
     if diff > -strong: return "SLIGHT MISS",  C["yellow"]
     return                    "STRONG MISS",  C["red"]
@@ -3445,7 +3445,7 @@ def _d4_trend(ind: str, actual, previous) -> tuple[str, str]:
         raw_lbl, _ = _d3_intensity(ind, actual, previous, invert=invert)
     _map = {
         "STRONG BEAT": ("↑↑ STRONG IMPR",  C["green"]),
-        "SLIGHT BEAT": ("↑ IMPROVING",      "#2ab87a"),
+        "SLIGHT BEAT": ("↑ IMPROVING",      C["green"]),
         "IN LINE":     ("→ STABLE",         C["muted"]),
         "SLIGHT MISS": ("↓ DETERIORATING",  C["yellow"]),
         "STRONG MISS": ("↓↓ STRONG DETER", C["red"]),
@@ -3917,7 +3917,7 @@ def render_indicators_table(
         _rtw  = sum(w for _, w in _rparts)
         _rc   = sum(s * w for s, w in _rparts) / _rtw if _rtw else 0.0
         dot_color = (C["green"]  if _rc >  0.5 else
-                     C["teal"]   if _rc >  0.2 else
+                     C["green"]  if _rc >  0.2 else
                      C["yellow"] if _rc > -0.2 else
                      "#f07820"   if _rc > -0.5 else
                      C["red"])
@@ -4016,7 +4016,7 @@ def render_all_currencies_overview(selected_ccy: str) -> str:
     rows_data.sort(key=lambda x: x["total"], reverse=True)
 
     _LEVEL_COLOR = {
-        "BULLISH": C["teal"],
+        "BULLISH": C["green"],
         "NEUTRAL": C["muted"],
         "BEARISH": C["red"],
     }
@@ -4122,9 +4122,11 @@ def main():
           border:1px solid {C['border']} !important;
           font-family:monospace !important; font-weight:600 !important;
           border-radius:20px !important;
+          transition:border-color 0.22s ease,color 0.22s ease,box-shadow 0.22s ease !important;
       }}
       button[kind="secondary"]:hover {{
-          border-color:{C['teal']} !important; color:{C['teal']} !important;
+          border-color:{C['teal']}70 !important; color:{C['teal']} !important;
+          box-shadow:0 0 12px rgba(79,142,247,0.14) !important;
       }}
       button[kind="primary"] {{
           background:{C['teal']} !important; color:#0a0c10 !important;

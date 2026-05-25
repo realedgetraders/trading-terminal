@@ -1,6 +1,6 @@
 """
-Trading Analytics Terminal — Module 5: Market Regime Volatility Index
-VIX percentile rank vs. 12-month history → regime classification + trading implications
+Trading Analytics Terminal — Module 5: Market Phase Scanner
+VIX percentile rank vs. 12-month history → phase classification + trading implications
 """
 
 import numpy as np
@@ -28,7 +28,7 @@ C = {
     "dim":    "#171717",
     "text":   "#e8e8e8",
     "muted":  "#666666",
-    "teal":   "#e63946",
+    "teal":   "#4f8ef7",
     "green":  "#00c896",
     "yellow": "#f0c040",
     "orange": "#f07840",
@@ -189,9 +189,9 @@ def _line_chart(history: pd.Series) -> go.Figure:
         y=history.values,
         mode="lines",
         name="VIX",
-        line=dict(color=C["teal"], width=2),
+        line=dict(color="#a8b0bc", width=2),
         fill="tozeroy",
-        fillcolor="rgba(69,196,176,0.08)",
+        fillcolor="rgba(168,176,188,0.06)",
         hovertemplate="%{x|%b %d, %Y}<br>VIX: %{y:.2f}<extra></extra>",
         showlegend=False,
     ))
@@ -199,7 +199,7 @@ def _line_chart(history: pd.Series) -> go.Figure:
     fig.update_layout(
         height=480,
         title=dict(
-            text="VIX 12-Month History — Market Regime Context",
+            text="VIX 12-Month History — Market Phase Context",
             font=dict(size=11, color=C["muted"], family="monospace"),
             x=0,
             xanchor="left",
@@ -302,7 +302,7 @@ def _stats_table(history: pd.Series, current: float, percentile: float) -> str:
 
 def main():
     st.set_page_config(
-        page_title="Market Regime · Trading Terminal",
+        page_title="Market Phase Scanner · Trading Terminal",
         page_icon="⚡",
         layout="wide",
         initial_sidebar_state="collapsed",
@@ -341,9 +341,11 @@ def main():
           border:1px solid {C['border']} !important;
           font-family:monospace !important; font-weight:600 !important;
           border-radius:8px !important;
+          transition:border-color 0.22s ease,color 0.22s ease,box-shadow 0.22s ease !important;
       }}
       button[kind="secondary"]:hover {{
-          border-color:{C['teal']} !important; color:{C['teal']} !important;
+          border-color:{C['teal']}70 !important; color:{C['teal']} !important;
+          box-shadow:0 0 12px rgba(79,142,247,0.14) !important;
       }}
       p, span, label {{ color:{C['text']}; }}
       /* Remove auto-rendered hr separators between column blocks */
@@ -369,10 +371,10 @@ def main():
             f"<div style='text-align:center;'>"
             f"<div style='font-size:20px;font-weight:800;color:{C['text']};"
             f"font-family:monospace;letter-spacing:-0.5px;'>"
-            f"MARKET REGIME VOLATILITY INDEX</div>"
+            f"MARKET PHASE SCANNER</div>"
             f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
             f"letter-spacing:1px;margin-top:4px;'>"
-            f"Real-time volatility regime detection · VIX percentile rank vs. 12-month rolling window</div>"
+            f"Real-time volatility phase detection · VIX percentile rank vs. 12-month rolling window</div>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -422,7 +424,7 @@ def main():
         )
     with m3:
         st.markdown(
-            _metric_card("Regime", f"{emoji} {label}", "", color),
+            _metric_card("Phase", f"{emoji} {label}", "", color),
             unsafe_allow_html=True,
         )
     with m4:

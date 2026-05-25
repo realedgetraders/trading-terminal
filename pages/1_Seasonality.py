@@ -96,11 +96,11 @@ C = {
     "border":   "#252525",
     "panel":    "#111111",
     "text":     "#e8e8e8",
-    "muted":    "#666666",
+    "muted":    "#909090",
     "dim":      "#171717",
-    "teal":     "#1a9b6a",
-    "teal_bg":  "rgba(26, 155, 106, 0.14)",
-    "teal_dim": "rgba(26, 155, 106, 0.06)",
+    "teal":     "#4f8ef7",
+    "teal_bg":  "rgba(79, 142, 247, 0.14)",
+    "teal_dim": "rgba(79, 142, 247, 0.06)",
     "green":    "#1a9b6a",
     "green_bg": "rgba(26, 155, 106, 0.09)",
     "red":      "#f05262",
@@ -669,7 +669,7 @@ def plot_donut(win_rate: float) -> go.Figure:
         values        = [win_rate, loss_rate],
         labels        = ["Long", "Short"],
         marker        = dict(
-            colors    = [C["teal"], C["red"]],
+            colors    = [C["green"], C["red"]],
             line      = dict(color=C["card"], width=2),
         ),
         hole          = 0.64,
@@ -683,7 +683,7 @@ def plot_donut(win_rate: float) -> go.Figure:
     fig.add_annotation(
         text      = f"<b>{win_rate:.1f}%</b><br><span style='font-size:9px'>Long</span>",
         x=0.5, y=0.5, showarrow=False,
-        font      = dict(color=C["teal"], size=14, family="monospace"),
+        font      = dict(color=C["green"], size=14, family="monospace"),
         align     = "center",
     )
 
@@ -710,11 +710,11 @@ def stat_card(col, label: str, value: str, sub: str = "", color: str = C["text"]
     col.markdown(
         f"""<div style="background:{C['panel']};border:1px solid {C['border']};
             border-radius:8px;padding:13px 16px;min-height:76px;">
-          <div style="font-size:9px;color:{C['muted']};text-transform:uppercase;
+          <div style="font-size:10px;color:{C['muted']};text-transform:uppercase;
                       letter-spacing:1.4px;font-family:monospace;">{label}</div>
           <div style="font-size:19px;font-weight:700;color:{color};
                       margin:4px 0 1px;font-family:monospace;">{value}</div>
-          <div style="font-size:10px;color:{C['muted']};font-family:monospace;">{sub}</div>
+          <div style="font-size:11px;color:{C['muted']};font-family:monospace;">{sub}</div>
         </div>""",
         unsafe_allow_html=True,
     )
@@ -761,31 +761,31 @@ def render_year_table(table: pd.DataFrame):
       <thead>
         <tr style="border-bottom:1px solid {C['dim']};">
           <th style="text-align:left;padding:7px 10px;color:{C['muted']};
-                     font-weight:600;text-transform:uppercase;font-size:10px;
+                     font-weight:600;text-transform:uppercase;font-size:11px;
                      letter-spacing:1px;">Year</th>
           <th style="text-align:left;padding:7px 10px;color:{C['muted']};
-                     font-weight:600;text-transform:uppercase;font-size:10px;
+                     font-weight:600;text-transform:uppercase;font-size:11px;
                      letter-spacing:1px;">Start Date</th>
           <th style="text-align:left;padding:7px 10px;color:{C['muted']};
-                     font-weight:600;text-transform:uppercase;font-size:10px;
+                     font-weight:600;text-transform:uppercase;font-size:11px;
                      letter-spacing:1px;">Start Price</th>
           <th style="text-align:left;padding:7px 10px;color:{C['muted']};
-                     font-weight:600;text-transform:uppercase;font-size:10px;
+                     font-weight:600;text-transform:uppercase;font-size:11px;
                      letter-spacing:1px;">End Date</th>
           <th style="text-align:left;padding:7px 10px;color:{C['muted']};
-                     font-weight:600;text-transform:uppercase;font-size:10px;
+                     font-weight:600;text-transform:uppercase;font-size:11px;
                      letter-spacing:1px;">End Price</th>
           <th style="text-align:left;padding:7px 10px;color:{C['muted']};
-                     font-weight:600;text-transform:uppercase;font-size:10px;
+                     font-weight:600;text-transform:uppercase;font-size:11px;
                      letter-spacing:1px;">Profit</th>
           <th style="text-align:center;padding:7px 10px;color:{C['muted']};
-                     font-weight:600;text-transform:uppercase;font-size:10px;
+                     font-weight:600;text-transform:uppercase;font-size:11px;
                      letter-spacing:1px;">Profit %</th>
           <th style="text-align:left;padding:7px 10px;color:{C['muted']};
-                     font-weight:600;text-transform:uppercase;font-size:10px;
+                     font-weight:600;text-transform:uppercase;font-size:11px;
                      letter-spacing:1px;">Max Rise</th>
           <th style="text-align:left;padding:7px 10px;color:{C['muted']};
-                     font-weight:600;text-transform:uppercase;font-size:10px;
+                     font-weight:600;text-transform:uppercase;font-size:11px;
                      letter-spacing:1px;">Max Drop</th>
         </tr>
       </thead>
@@ -799,7 +799,7 @@ def _radar_html(df: pd.DataFrame) -> str:
         return C["green"] if v >= 70 else (C["red"] if v <= 30 else C["text"])
 
     header = "".join(
-        f"<th style='text-align:{align};color:{C['muted']};font-size:10px;"
+        f"<th style='text-align:{align};color:{C['muted']};font-size:11px;"
         f"text-transform:uppercase;letter-spacing:1px;padding:8px 14px;"
         f"border-bottom:1px solid {C['border']};white-space:nowrap;'>{lbl}</th>"
         for lbl, align in [
@@ -835,17 +835,17 @@ def _radar_html(df: pd.DataFrame) -> str:
         else:
             row_bg, sig, sig_col = "transparent", "Neutral", C["muted"]
 
-        avg_col    = C["teal"] if row["Avg Return"] >= 0 else C["red"]
-        sharpe_col = C["teal"] if row["Sharpe"] >= 0 else C["red"]
+        avg_col    = C["green"] if row["Avg Return"] >= 0 else C["red"]
+        sharpe_col = C["green"] if row["Sharpe"] >= 0 else C["red"]
 
         win_str  = row.get("Window", "—")
         days_str = row.get("Days",   "—")
         body += (
             f"<tr style='background:{row_bg};border-bottom:1px solid {C['border']};'>"
             f"<td style='padding:7px 14px;color:{C['text']};font-weight:600;'>{row['Asset']}</td>"
-            f"<td style='padding:7px 14px;color:{C['muted']};font-size:10px;'>{row['Category']}</td>"
-            f"<td style='padding:7px 14px;color:{C['muted']};font-size:10px;white-space:nowrap;'>{win_str}</td>"
-            f"<td style='padding:7px 14px;color:{C['muted']};font-size:10px;text-align:center;'>{days_str}</td>"
+            f"<td style='padding:7px 14px;color:{C['muted']};font-size:11px;'>{row['Category']}</td>"
+            f"<td style='padding:7px 14px;color:{C['muted']};font-size:11px;white-space:nowrap;'>{win_str}</td>"
+            f"<td style='padding:7px 14px;color:{C['muted']};font-size:11px;text-align:center;'>{days_str}</td>"
             f"<td style='padding:7px 14px;color:{long_color(lp)};font-weight:700;text-align:right;'>{lp:.1f}%</td>"
             f"<td style='padding:7px 14px;color:{avg_col};font-weight:700;text-align:right;'>{row['Avg Return']:+.2f}%</td>"
             f"<td style='padding:7px 14px;color:{long_color(lp)};font-weight:700;text-align:right;'>{row['Win Rate']:.1f}%</td>"
@@ -997,6 +997,17 @@ def main():
 
       p, span, label {{ color:{C['text']}; }}
       hr {{ border-color:{C['border']}; }}
+      button[kind="secondary"] {{
+          background:{C['dim']} !important; color:{C['muted']} !important;
+          border:1px solid {C['border']} !important;
+          font-family:monospace !important; font-weight:600 !important;
+          border-radius:8px !important;
+          transition:border-color 0.22s ease,color 0.22s ease,box-shadow 0.22s ease !important;
+      }}
+      button[kind="secondary"]:hover {{
+          border-color:{C['teal']}70 !important; color:{C['teal']} !important;
+          box-shadow:0 0 12px rgba(79,142,247,0.14) !important;
+      }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -1093,7 +1104,7 @@ def main():
 
     with col_asset:
         st.markdown(
-            f"<div style='font-size:10px;color:{C['muted']};text-transform:uppercase;"
+            f"<div style='font-size:11px;color:{C['muted']};text-transform:uppercase;"
             f"letter-spacing:1px;font-family:monospace;margin-bottom:4px;'>Asset</div>",
             unsafe_allow_html=True,
         )
@@ -1106,7 +1117,7 @@ def main():
 
     with col_hist:
         st.markdown(
-            f"<div style='font-size:10px;color:{C['muted']};text-transform:uppercase;"
+            f"<div style='font-size:11px;color:{C['muted']};text-transform:uppercase;"
             f"letter-spacing:1px;font-family:monospace;margin-bottom:4px;'>Historical Data</div>",
             unsafe_allow_html=True,
         )
@@ -1122,7 +1133,7 @@ def main():
 
     with col_pat:
         st.markdown(
-            f"<div style='font-size:10px;color:{C['muted']};text-transform:uppercase;"
+            f"<div style='font-size:11px;color:{C['muted']};text-transform:uppercase;"
             f"letter-spacing:1px;font-family:monospace;margin-bottom:4px;'>Pattern Window</div>",
             unsafe_allow_html=True,
         )
@@ -1213,7 +1224,7 @@ def main():
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown(
-        f"<div style='font-size:10px;color:{C['muted']};font-family:monospace;"
+        f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
         f"margin:-8px 0 2px;text-align:right;'>"
         f"Normalized price paths averaged per DOY (Seasonax method) &nbsp;·&nbsp; {years}y lookback"
         f"</div>",
@@ -1280,35 +1291,35 @@ def main():
         c1, c2, c3, c4, c5 = st.columns(5)
         pattern_stat(c1, pat_stats["ann_label"],
                      f"{pat_stats['ann_ret']:+.1f}%",
-                     C["teal"] if pat_stats["ann_ret"] >= 0 else C["red"])
+                     C["green"] if pat_stats["ann_ret"] >= 0 else C["red"])
         pattern_stat(c2, "Win Rate",
                      f"{pat_stats['win_rate']:.1f}%",
-                     C["teal"] if pat_stats["win_rate"] >= 50 else C["red"])
+                     C["green"] if pat_stats["win_rate"] >= 50 else C["red"])
         pattern_stat(c3, "Avg Return",
                      f"{pat_stats['avg_ret']:+.2f}%",
-                     C["teal"] if pat_stats["avg_ret"] >= 0 else C["red"])
+                     C["green"] if pat_stats["avg_ret"] >= 0 else C["red"])
         pattern_stat(c4, "Median Return",
                      f"{pat_stats['med_ret']:+.2f}%",
-                     C["teal"] if pat_stats["med_ret"] >= 0 else C["red"])
+                     C["green"] if pat_stats["med_ret"] >= 0 else C["red"])
         pattern_stat(c5, "Sharpe",
                      f"{pat_stats['sharpe']:.2f}",
-                     C["teal"] if pat_stats["sharpe"] >= 0 else C["red"])
+                     C["green"] if pat_stats["sharpe"] >= 0 else C["red"])
 
     # ── Row 2: Extra stats grid ───────────────────────────────────────────────
-    streak_color = C["teal"] if pat_stats["streak_dir"] == "W" else C["red"]
+    streak_color = C["green"] if pat_stats["streak_dir"] == "W" else C["red"]
     streak_label = f"{pat_stats['streak']}× {'Win' if pat_stats['streak_dir'] == 'W' else 'Loss'}"
 
     g1, g2, g3, g4, g5, g6 = st.columns(6)
-    pattern_stat(g1, "Gains",      f"{pat_stats['gains']}",            C["teal"])
+    pattern_stat(g1, "Gains",      f"{pat_stats['gains']}",            C["green"])
     pattern_stat(g2, "Losses",     f"{pat_stats['losses']}",           C["red"])
-    pattern_stat(g3, "Best Trade", f"{pat_stats['best']:+.2f}%",       C["teal"])
+    pattern_stat(g3, "Best Trade", f"{pat_stats['best']:+.2f}%",       C["green"])
     pattern_stat(g4, "Worst Trade",f"{pat_stats['worst']:+.2f}%",      C["red"])
     pattern_stat(g5, "Std Dev",    f"{pat_stats['std_ret']:.2f}%",     C["muted"])
     pattern_stat(g6, "Streak",     streak_label,                        streak_color)
 
     # ── Year-by-Year Table ────────────────────────────────────────────────────
     st.markdown(
-        f"<div style='font-size:10px;color:{C['muted']};text-transform:uppercase;"
+        f"<div style='font-size:11px;color:{C['muted']};text-transform:uppercase;"
         f"letter-spacing:1px;font-family:monospace;margin:20px 0 4px;'>"
         f"Year-by-Year Breakdown</div>",
         unsafe_allow_html=True,
@@ -1327,14 +1338,28 @@ def main():
         f"<div>"
         f"<div style='font-size:13px;font-weight:700;color:{C['text']};"
         f"font-family:monospace;text-transform:uppercase;letter-spacing:1.5px;'>"
-        f"Seasonality Radar — Next 30 Days</div>"
-        f"<div style='font-size:10px;color:{C['muted']};font-family:monospace;margin-top:2px;'>"
-        f"Next 30 Days from {_today_fmt} · 10Y History · Sorted by Strength</div>"
+        f"Top 10 Seasonal Setups — Next 30 Days</div>"
+        f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;margin-top:2px;'>"
+        f"Scanned from {_today_fmt} · 10Y History · Ranked by signal strength</div>"
         f"</div></div>",
         unsafe_allow_html=True,
     )
 
-    with st.spinner("Scanning seasonality across all assets..."):
+    # ── Description blurb ─────────────────────────────────────────────────────
+    st.markdown(
+        f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
+        f"line-height:1.7;margin:8px 0 14px;max-width:860px;'>"
+        f"The 10 forex pairs with the strongest historical seasonal pattern over the next 30 days, "
+        f"ranked by how far their Long&nbsp;% deviates from 50&nbsp;%. "
+        f"⚡&nbsp;<span style='color:{C['text']};'>Extreme</span> = qualified signal (≥70&nbsp;% or ≤30&nbsp;% Long, "
+        f"7+ years of data). "
+        f"⚠&nbsp;<span style='color:{C['text']};'>Watch</span> = directional bias, below threshold. "
+        f"Always cross-check with fundamentals and current market structure before acting."
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    with st.spinner("Scanning seasonality across all pairs..."):
         radar_df = calc_radar(_today_str)
 
     if not radar_df.empty:
@@ -1344,64 +1369,57 @@ def main():
         bias_df    = radar_df[~forex_mask].sort_values("Sharpe", ascending=False).reset_index(drop=True)
         bias_df["_signal"] = "Bias"
 
-        # ── Forex: window > 14d · Sharpe ≥ 1.5 · top 5 ─────────────────────────
-        extreme_mask = forex_df["_qualified"].fillna(False)
-        extreme_df   = forex_df[extreme_mask].copy()
-        extreme_df["_signal"] = "Extreme"
-        extreme_df["_days_int"] = (
-            extreme_df["Days"].str.replace("d", "", regex=False).astype(int)
+        # ── Assign signal labels ───────────────────────────────────────────────
+        forex_df["_signal"] = forex_df["_qualified"].map(
+            lambda q: "Extreme" if q else "Watch"
         )
 
-        # Primary: window > 14d AND Sharpe ≥ 1.5 → top 5
-        strict_df = (
-            extreme_df[(extreme_df["_days_int"] > 14) & (extreme_df["Sharpe"] >= 1.5)]
-            .sort_values("Sharpe", ascending=False)
-            .head(5)
-        )
-        # Fallback: window > 14d → top 5 by Sharpe
-        fallback_df = (
-            extreme_df[extreme_df["_days_int"] > 14]
-            .sort_values("Sharpe", ascending=False)
-            .head(5)
-        )
-        # Last resort: all extreme → top 5 by Sharpe
+        # ── Top 10 by signal strength (distance from 50%) ─────────────────────
         display_df = (
-            strict_df if not strict_df.empty
-            else fallback_df if not fallback_df.empty
-            else extreme_df.sort_values("Sharpe", ascending=False).head(5)
+            forex_df
+            .sort_values(["_qualified", "_dist50"], ascending=[False, False])
+            .head(10)
+            .reset_index(drop=True)
         )
-        display_df = display_df.drop(columns=["_days_int"], errors="ignore").reset_index(drop=True)
 
-        n_long   = int((display_df["Long %"] >= 70).sum())
-        n_short  = int((display_df["Long %"] <= 30).sum())
-        n_hidden = max(0, len(extreme_df) - len(display_df))
-        n_watch  = 0
-        n_bias   = len(bias_df)
+        n_long  = int((display_df["Long %"] >= 70).sum())
+        n_short = int((display_df["Long %"] <= 30).sum())
+        n_watch = int((~display_df["_qualified"].fillna(False)).sum())
+        n_bias  = len(bias_df)
 
         st.markdown(
-            f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;margin:6px 0 10px;'>"
-            f"<span style='color:{C['green']};font-weight:700;'>{n_long} Forex Long</span>"
+            f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;margin:0 0 10px;'>"
+            f"<span style='color:{C['green']};font-weight:700;'>{n_long} Long</span>"
             f" &nbsp;·&nbsp; "
-            f"<span style='color:{C['red']};font-weight:700;'>{n_short} Forex Short</span>"
-            f" &nbsp;·&nbsp; {n_hidden} filtered out"
-            f" &nbsp;·&nbsp; <span style='color:{C['muted']};'>{n_bias} Index/Commodity</span></div>",
+            f"<span style='color:{C['red']};font-weight:700;'>{n_short} Short</span>"
+            f" &nbsp;·&nbsp; "
+            f"<span style='color:{C['yellow']};font-weight:700;'>{n_watch} Watch</span>"
+            f" &nbsp;·&nbsp; showing top 10 of {len(forex_df)} pairs scanned</div>",
             unsafe_allow_html=True,
         )
         st.markdown(_radar_html(display_df), unsafe_allow_html=True)
 
         # ── Indices & Commodities sub-section ─────────────────────────────────
         if not bias_df.empty:
-            st.markdown(
-                f"<div style='margin-top:18px;margin-bottom:4px;'>"
-                f"<span style='font-size:10px;color:{C['muted']};font-family:monospace;"
-                f"text-transform:uppercase;letter-spacing:1px;font-weight:700;'>"
-                f"Indices &amp; Commodities</span>"
-                f"<span style='font-size:10px;color:{C['muted']};font-family:monospace;"
-                f"opacity:0.6;'> — structural long bias · interpret with caution</span>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-            st.markdown(_radar_html(bias_df), unsafe_allow_html=True)
+            st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+            with st.expander("📊 Indices & Commodities — structural long bias", expanded=False):
+                st.markdown(
+                    f"""
+                    <div style="background:rgba(240,180,41,0.06);border:1px solid rgba(240,180,41,0.22);
+                                border-radius:8px;padding:11px 16px;margin-bottom:14px;
+                                font-family:monospace;font-size:11px;line-height:1.7;color:{C['muted']};">
+                      <span style="color:{C['yellow']};font-weight:700;">⚠ Interpret with caution</span>
+                      &nbsp;·&nbsp;
+                      Seasonal patterns on indices and commodities carry far less edge than on forex pairs.
+                      These markets are inherently trend-driven — multi-year bull or bear phases dominate
+                      the return distribution and inflate historical Long % figures structurally.
+                      A 90 % Long reading in equities often reflects a decade-long bull market, not a
+                      repeatable seasonal edge. Use these windows as context, not as standalone signals.
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                st.markdown(_radar_html(bias_df), unsafe_allow_html=True)
     else:
         st.info("No radar data available for the selected history length.")
 

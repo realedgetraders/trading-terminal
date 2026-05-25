@@ -12,9 +12,9 @@ C = {
     "dim":    "#171717",
     "text":   "#e8e8e8",
     "muted":  "#666666",
-    "teal":   "#e63946",
+    "teal":   "#4f8ef7",
     "blue":   "#4f8ef7",
-    "green":  "#00c48c",
+    "green":  "#1a9b6a",
     "red":    "#f05262",
     "yellow": "#f0b429",
 }
@@ -49,9 +49,9 @@ MODULES = [
         "page":     "pages/4_Geopolitics.py",
     },
     {
-        "title":    "Market Regime",
+        "title":    "Market Phase Scanner",
         "icon":     "⚡",
-        "desc":     "VIX-based market regime detection — current volatility percentile rank vs. 6-month history with trading implications.",
+        "desc":     "VIX-based market phase detection — current volatility percentile rank vs. 6-month history with trading implications.",
         "active":   True,
         "page":     "pages/5_Market_Regime.py",
     },
@@ -127,7 +127,7 @@ def main():
       button[kind="primary"]:hover, button[kind="secondary"]:hover {{
           border-color: {C['teal']}70 !important;
           color: {C['teal']} !important;
-          box-shadow: 0 0 12px rgba(230,57,70,0.14) !important;
+          box-shadow: 0 0 12px rgba(79,142,247,0.14) !important;
       }}
 """ if section is not None else ""
 
@@ -137,11 +137,84 @@ def main():
       html, body, [data-testid="stAppViewContainer"],
       [data-testid="stHeader"], [data-testid="stToolbar"],
       [data-testid="stDecoration"] {{
-          background: radial-gradient(ellipse at 50% 50%, #0d0d0d 40%, #160407 100%) !important;
+          background: radial-gradient(ellipse at 50% 50%, #0d0d0d 60%, #08090f 100%) !important;
       }}
       .stMainBlockContainer {{ padding-top:4rem !important; }}
       {_section_btn_css}
       p, span, label {{ color:{C['text']}; }}
+      /* ── Clickable card overlay ───────────────────────────────────── */
+      .ret-module-active {{
+          cursor: pointer;
+          transition: box-shadow 0.25s ease, border-color 0.25s ease;
+      }}
+      /* Overlay button is on top (z-index 10) so .ret-module-active never gets :hover.
+         Detect hover on the overlay container instead and reach back to the card. */
+      div[data-testid="stElementContainer"]:has(.ret-module-active):has(+ div[data-testid="stElementContainer"]:hover) .ret-module-active {{
+          box-shadow:
+              0 0 0 1px rgba(79,142,247,0.4),
+              0 0 16px rgba(79,142,247,0.18),
+              0 0 36px rgba(79,142,247,0.07) !important;
+          border-color: rgba(79,142,247,0.6) !important;
+      }}
+      /* Pull the invisible nav-button container up over the card */
+      div[data-testid="stElementContainer"]:has(.ret-module-active) {{
+          position: relative;
+          z-index: 1;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-module-active)
+        + div[data-testid="stElementContainer"] {{
+          margin-top: -176px;
+          margin-bottom: 20px;
+          height: 160px;
+          position: relative;
+          z-index: 10;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-module-active)
+        + div[data-testid="stElementContainer"] button {{
+          width: 100% !important;
+          height: 160px !important;
+          min-height: 0 !important;
+          opacity: 0 !important;
+          cursor: pointer !important;
+          border-radius: 12px !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          display: block !important;
+      }}
+      /* ── Landing card clickable overlay ─────────────────────────────── */
+      .ret-landing-analysis, .ret-landing-journal {{
+          cursor: pointer;
+          transition: box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-landing-analysis):has(+ div[data-testid="stElementContainer"]:hover) .ret-landing-analysis {{
+          box-shadow: inset 0 0 60px rgba(0,0,0,0.3), 0 0 24px rgba(79,142,247,0.45), 0 0 48px rgba(79,142,247,0.2) !important;
+          border-color: #4f8ef7 !important;
+          background: linear-gradient(170deg, #1a2030 0%, #151c28 60%, #121520 100%) !important;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-landing-journal):has(+ div[data-testid="stElementContainer"]:hover) .ret-landing-journal {{
+          box-shadow: inset 0 0 60px rgba(0,0,0,0.3), 0 0 24px rgba(240,165,0,0.55), 0 0 48px rgba(240,165,0,0.25) !important;
+          border-color: #f0b429 !important;
+          background: linear-gradient(170deg, #252520 0%, #1e1e1a 60%, #1b1b17 100%) !important;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-landing-analysis),
+      div[data-testid="stElementContainer"]:has(.ret-landing-journal) {{
+          position: relative; z-index: 1;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-landing-analysis) + div[data-testid="stElementContainer"],
+      div[data-testid="stElementContainer"]:has(.ret-landing-journal)  + div[data-testid="stElementContainer"] {{
+          margin-top: -356px;
+          margin-bottom: 0;
+          height: 340px;
+          position: relative;
+          z-index: 10;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-landing-analysis) + div[data-testid="stElementContainer"] button,
+      div[data-testid="stElementContainer"]:has(.ret-landing-journal)  + div[data-testid="stElementContainer"] button {{
+          width: 100% !important; height: 340px !important;
+          min-height: 0 !important; opacity: 0 !important;
+          cursor: pointer !important; border-radius: 16px !important;
+          padding: 0 !important; margin: 0 !important; display: block !important;
+      }}
       /* ── Sidebar switch button ─────────────────────────────────────── */
       section[data-testid="stSidebar"] button {{
           background: transparent !important;
@@ -197,36 +270,52 @@ def main():
         # On landing (section=None): no switch button shown
 
     # ── Header ─────────────────────────────────────────────────────────────────
-    if section == "analysis":
-        subtitle = f"<span style='color:{C['teal']}'>▸ Analysis Suite</span>"
-    elif section == "journal":
-        subtitle = f"<span style='color:{C['yellow']}'>▸ Edge Journal</span>"
+    if section is None:
+        # Landing: single clean headline — EdgeLab appears exactly once
+        st.markdown(
+            f"""
+            <div style="text-align:center;margin-bottom:44px;">
+              <div style="font-size:34px;font-weight:800;color:{C['text']};
+                          font-family:monospace;letter-spacing:-0.5px;line-height:1.1;
+                          margin-bottom:16px;">
+                Welcome to EdgeLab
+              </div>
+              <div style="width:56px;height:2px;background:#c8c8c8;
+                          margin:0 auto;border-radius:1px;
+                          box-shadow:0 0 8px rgba(255,255,255,0.55),0 0 18px rgba(255,255,255,0.25);"></div>
+              <div style="font-size:11px;color:#888888;font-family:monospace;
+                          letter-spacing:2px;text-transform:uppercase;margin-top:16px;">
+                A Place Where Traders Build Their Real Edge
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     else:
-        subtitle = "Welcome to EdgeLab"
-
-    divider_color      = "#e63946" if section is None else C["teal"]
-    subtitle_lbl_color = "#8b2530" if section is None else C["teal"]
-
-    st.markdown(
-        f"""
-        <div style="text-align:center;margin-bottom:{'32px' if section else '48px'};">
-          <div style="font-size:11px;color:{subtitle_lbl_color};font-family:monospace;
-                      letter-spacing:3px;text-transform:uppercase;margin-bottom:12px;">
-            {subtitle}
-          </div>
-          <div style="font-size:40px;font-weight:800;color:{C['text']};
-                      font-family:monospace;letter-spacing:-1px;line-height:1.1;
-                      text-shadow:0 0 60px rgba(230,57,70,0.2),0 0 120px rgba(230,57,70,0.1);">
-            EdgeLab
-          </div>
-          <div style="width:56px;height:3px;background:{divider_color};
-                      margin:16px auto 0;border-radius:2px;
-                      box-shadow:0 0 10px {divider_color},0 0 22px {divider_color}80;"></div>
-          {'<div style="font-size:9px;color:#8b2530;font-family:monospace;letter-spacing:3px;text-transform:uppercase;margin-top:14px;">A Place Where Traders Build Their Real Edge</div>' if section is None else ''}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        # Analysis / Journal sub-sections: keep branded EdgeLab title
+        subtitle      = (f"<span style='color:{C['teal']}'>▸ Analysis Suite</span>"
+                         if section == "analysis"
+                         else f"<span style='color:{C['yellow']}'>▸ Edge Journal</span>")
+        divider_color = C["teal"] if section == "analysis" else C["yellow"]
+        st.markdown(
+            f"""
+            <div style="text-align:center;margin-bottom:32px;">
+              <div style="font-size:11px;color:{divider_color};font-family:monospace;
+                          letter-spacing:2px;text-transform:uppercase;margin-bottom:14px;">
+                {subtitle}
+              </div>
+              <div style="font-size:40px;font-weight:800;color:{C['text']};
+                          font-family:monospace;letter-spacing:-1px;line-height:1.1;
+                          text-shadow:0 0 60px rgba(79,142,247,0.12),0 0 120px rgba(79,142,247,0.06);">
+                EdgeLab
+              </div>
+              <div style="width:56px;height:3px;background:{divider_color};
+                          margin:16px auto 0;border-radius:2px;
+                          box-shadow:0 0 10px {divider_color},0 0 22px {divider_color}80;"></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     # Landing-specific: dark grey / red-border buttons, red fill on hover
     if section is None:
@@ -237,15 +326,15 @@ def main():
           [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:nth-child(2) button {
               background: transparent !important;
               color: #666666 !important;
-              border: 1.5px solid #e6394640 !important;
+              border: 1.5px solid #4f8ef740 !important;
               font-weight: 700 !important;
               font-family: monospace !important;
               transition: color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease !important;
           }
           [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:nth-child(2) button:hover {
               color: #ffffff !important;
-              border-color: #e63946 !important;
-              box-shadow: 0 0 18px rgba(230,57,70,0.55), 0 0 36px rgba(230,57,70,0.2) !important;
+              border-color: #4f8ef7 !important;
+              box-shadow: 0 0 18px rgba(79,142,247,0.45), 0 0 36px rgba(79,142,247,0.18) !important;
           }
           [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:nth-child(3) button {
               background: transparent !important;
@@ -282,7 +371,7 @@ def main():
 
     # ── Footer ─────────────────────────────────────────────────────────────────
     st.markdown(
-        f"<div style='margin-top:48px;padding-top:16px;"
+        f"<div style='margin-top:52px;padding-top:14px;"
         f"border-top:1px solid #2a2a2a;text-align:center;"
         f"font-size:11px;color:#555555;font-family:monospace;'>"
         f"Built by @realedgetraders"
@@ -294,79 +383,55 @@ def main():
 # ── Section views ──────────────────────────────────────────────────────────────
 
 def _render_landing():
-    """Landing hub — two premium section cards, centered, colour-differentiated."""
-    _RED   = "#e63946"   # crimson — Analysis accent
-    _AMBER = "#f0b429"   # gold    — Journal accent (exception)
-    _CARD  = "#1a1a1a"   # dark grey card
+    """Landing hub — two premium section cards, centered, colour-differentiated.
+    Cards are directly clickable via invisible overlay buttons (same technique as module grid).
+    """
+    _BLUE  = "#4f8ef7"
+    _AMBER = "#f0b429"
 
-    # Thin padding columns for symmetric centering
     _, col_l, col_r, _ = st.columns([0.12, 1, 1, 0.12], gap="large")
 
     with col_l:
         st.markdown(f"""
-<style>
-  #ret-analysis-card {{
-    transition: box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease;
-  }}
-  #ret-analysis-card:hover {{
-    box-shadow: inset 0 0 60px rgba(0,0,0,0.3), 0 0 24px rgba(230,57,70,0.55), 0 0 48px rgba(230,57,70,0.25) !important;
-    border-color: {_RED} !important;
-    background: linear-gradient(170deg, #252525 0%, #1e1e1e 60%, #1b1b1b 100%) !important;
-  }}
-</style>
-<div id="ret-analysis-card"
-     style="background:linear-gradient(170deg, #212121 0%, #1a1a1a 60%, #171717 100%);
-            border:1.5px solid {_RED};
-            box-shadow:inset 0 0 80px rgba(0,0,0,0.45),0 0 16px rgba(230,57,70,0.15);
-            border-radius:16px;
-            padding:52px 40px 36px;text-align:center;min-height:340px;
-            display:flex;flex-direction:column;align-items:center;
-            justify-content:center;margin-bottom:12px;">
+<div class="ret-landing-analysis"
+     style="background:linear-gradient(170deg, #181e2a 0%, #141820 60%, #111318 100%);
+            border:1.5px solid rgba(79,142,247,0.35);
+            box-shadow:inset 0 0 80px rgba(0,0,0,0.45),0 0 16px rgba(79,142,247,0.08);
+            border-radius:16px;padding:52px 40px 36px;text-align:center;
+            height:340px;overflow:hidden;
+            display:flex;flex-direction:column;align-items:center;justify-content:center;">
   <div style="font-size:56px;margin-bottom:22px;line-height:1;">📊</div>
   <div style="font-size:22px;font-weight:800;color:#ffffff;
               font-family:monospace;letter-spacing:-0.5px;margin-bottom:7px;">
     Real Edge Terminal
   </div>
-  <div style="font-size:9px;color:{_RED};font-family:monospace;
+  <div style="font-size:9px;color:{_BLUE};font-family:monospace;
               letter-spacing:3px;text-transform:uppercase;margin-bottom:22px;">
     5 Live Modules
   </div>
   <div style="font-size:12px;color:#888888;line-height:2.2;font-family:sans-serif;">
     Seasonality &nbsp;·&nbsp; COT Analysis &nbsp;·&nbsp; Macro Bias
-    <br>Geopolitics &nbsp;·&nbsp; Market Regime
+    <br>Geopolitics &nbsp;·&nbsp; Market Phase Scanner
   </div>
 </div>
         """, unsafe_allow_html=True)
-        if st.button("Open Terminal  →", key="land_analysis", use_container_width=True):
+        if st.button(" ", key="land_analysis", use_container_width=True):
             st.session_state.section = "analysis"
             st.rerun()
 
     with col_r:
         st.markdown(f"""
-<style>
-  #ret-journal-card {{
-    transition: box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease;
-  }}
-  #ret-journal-card:hover {{
-    box-shadow: inset 0 0 60px rgba(0,0,0,0.3), 0 0 24px rgba(240,165,0,0.55), 0 0 48px rgba(240,165,0,0.25) !important;
-    border-color: {_AMBER} !important;
-    background: linear-gradient(170deg, #252520 0%, #1e1e1a 60%, #1b1b17 100%) !important;
-  }}
-</style>
-<div id="ret-journal-card"
+<div class="ret-landing-journal"
      style="background:linear-gradient(170deg, #212120 0%, #1a1a18 60%, #171715 100%);
             border:1.5px solid {_AMBER};
             box-shadow:inset 0 0 80px rgba(0,0,0,0.45),0 0 16px rgba(240,165,0,0.12);
-            border-radius:16px;
-            padding:52px 40px 36px;text-align:center;min-height:340px;
-            display:flex;flex-direction:column;align-items:center;
-            justify-content:center;margin-bottom:12px;">
+            border-radius:16px;padding:52px 40px 36px;text-align:center;
+            height:340px;overflow:hidden;
+            display:flex;flex-direction:column;align-items:center;justify-content:center;">
   <div style="margin-bottom:18px;">
     <span style="background:{_AMBER};color:#07080c;font-size:9px;
                  font-family:monospace;font-weight:800;letter-spacing:2.5px;
-                 padding:4px 16px;border-radius:20px;text-transform:uppercase;">
-      PRO
-    </span>
+                 padding:4px 16px;border-radius:20px;text-transform:uppercase;">PRO</span>
   </div>
   <div style="font-size:56px;margin-bottom:22px;line-height:1;">📓</div>
   <div style="font-size:22px;font-weight:800;color:#ffffff;
@@ -383,27 +448,16 @@ def _render_landing():
   </div>
 </div>
         """, unsafe_allow_html=True)
-        if st.button("Open Journal  →", key="land_journal", use_container_width=True):
+        if st.button(" ", key="land_journal", use_container_width=True):
             st.session_state.section = "journal"
             st.rerun()
 
 
 def _render_analysis():
     """Analysis module card grid — active + teaser modules."""
-    st.markdown("""
-    <style>
-      .ret-module-active {
-          transition: box-shadow 0.25s ease, border-color 0.25s ease;
-      }
-      .ret-module-active:hover {
-          box-shadow: 0 0 22px rgba(230,57,70,0.22), 0 0 48px rgba(230,57,70,0.09);
-          border-color: rgba(230,57,70,0.45) !important;
-      }
-    </style>
-    """, unsafe_allow_html=True)
     visible = [m for m in MODULES if m["active"] or m.get("teaser")]
     for row_start in range(0, len(visible), 2):
-        col_l, col_r = st.columns(2, gap="medium")
+        col_l, col_r = st.columns(2, gap="large")
         for col, mod in zip([col_l, col_r], visible[row_start:row_start + 2]):
             _render_module_card(col, mod)
 
@@ -438,10 +492,10 @@ def _render_module_card(col, mod: dict):
         badge_text   = "PRO"
         border_style = "solid"
     elif active:
-        border       = "#2a2a2a"
+        border       = "rgba(79,142,247,0.3)"
         title_color  = C["text"]
         desc_color   = C["muted"]
-        badge_bg     = "rgba(230,57,70,0.12)"
+        badge_bg     = "rgba(79,142,247,0.12)"
         badge_color  = C["teal"]
         badge_text   = "Live"
         border_style = "solid"
@@ -454,14 +508,17 @@ def _render_module_card(col, mod: dict):
         badge_text   = "Coming Soon"
         border_style = "solid"
 
-    card_class = "ret-module-active" if (active and not teaser) else ""
+    is_clickable  = active and not teaser
+    card_class    = "ret-module-active" if is_clickable else ""
+    card_sizing   = "height:160px;overflow:hidden;" if is_clickable else "min-height:140px;margin-bottom:16px;"
+
     with col:
         st.markdown(
             f"""
             <div class="{card_class}"
                  style="background:{C['card']};border:1px {border_style} {border};
-                        border-radius:12px;padding:24px 24px 20px;margin-bottom:16px;
-                        min-height:140px;{'opacity:0.55;' if teaser else ''}">
+                        border-radius:12px;padding:24px 24px 20px;
+                        {card_sizing}{'opacity:0.55;' if teaser else ''}">
               <div style="display:flex;align-items:flex-start;justify-content:space-between;
                           margin-bottom:10px;">
                 <div style="display:flex;align-items:center;gap:10px;">
@@ -480,8 +537,9 @@ def _render_module_card(col, mod: dict):
             """,
             unsafe_allow_html=True,
         )
-        if active and mod.get("page"):
-            if st.button(f"Open {mod['title']}", key=f"open_{mod['title']}"):
+        # Invisible full-card nav button — overlaid via CSS, no visible button below card
+        if is_clickable and mod.get("page"):
+            if st.button(" ", key=f"open_{mod['title']}", use_container_width=True):
                 st.switch_page(mod["page"])
 
 

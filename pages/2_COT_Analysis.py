@@ -22,9 +22,9 @@ C = {
     "text":     "#e8e8e8",
     "muted":    "#666666",
     "dim":      "#171717",
-    "teal":     "#e63946",
-    "teal_bg":  "rgba(230, 57, 70, 0.14)",
-    "teal_dim": "rgba(230, 57, 70, 0.06)",
+    "teal":     "#4f8ef7",
+    "teal_bg":  "rgba(79, 142, 247, 0.14)",
+    "teal_dim": "rgba(79, 142, 247, 0.06)",
     "green":    "#1a9b6a",
     "green_bg": "rgba(26, 155, 106, 0.09)",
     "red":      "#f05262",
@@ -265,24 +265,31 @@ def plot_net_positioning(df: pd.DataFrame, groups: list[str], x_range=None) -> g
 
 
 def plot_long_short_donuts(df: pd.DataFrame, groups: list[str]) -> go.Figure:
-    """3 side-by-side donuts (one per group): green=Long %, red=Short %.
-    Latest available data point only.
-    Raw contract totals are added as annotations below each donut.
+    """Side-by-side donuts (one per group): green=Long %, red=Short %.
+    Plain figure — no make_subplots — so domain is fully explicit and consistent.
     """
     n = len(groups)
     if n == 0:
         return go.Figure()
 
-    # x-centres for 1, 2, or 3 donuts
-    centres = {1: [0.5], 2: [0.25, 0.75], 3: [0.165, 0.5, 0.835]}
-    xs = centres.get(n, [i / n + 0.5 / n for i in range(n)])
+    # Explicit x-domains per column count so donuts never shift
+    x_domains = {
+        1: [(0.20, 0.80)],
+        2: [(0.02, 0.46), (0.54, 0.98)],
+        3: [(0.01, 0.31), (0.35, 0.65), (0.69, 0.99)],
+    }
+    x_doms = x_domains.get(n, [(i/n + 0.01, (i+1)/n - 0.01) for i in range(n)])
+    # x-centres for annotations
+    xs = [(lo + hi) / 2 for lo, hi in x_doms]
 
-    specs  = [[{"type": "domain"}] * n]
-    titles = [grp for grp in groups]
-    fig    = make_subplots(rows=1, cols=n, specs=specs, subplot_titles=titles)
+    # y-domain — donut floats in the middle: space above AND below before next section
+    Y_DOM = (0.18, 0.88)
+    ANN_Y = 0.10   # annotation top sits just below donut bottom
 
-    raw_annotations = []
-    for i, grp in enumerate(groups, start=1):
+    fig = go.Figure()
+
+    annotations = []
+    for i, grp in enumerate(groups):
         cfg   = GROUP_CFG[grp]
         l_col = cfg["long"]
         s_col = cfg["short"]
@@ -300,16 +307,26 @@ def plot_long_short_donuts(df: pd.DataFrame, groups: list[str]) -> go.Figure:
             insidetextfont=dict(family="monospace", size=14, color="#FFFFFF"),
             outsidetextfont=dict(family="monospace", size=14, color="#FFFFFF"),
             hovertemplate="<b>%{label}</b>: %{value:,.0f} (%{percent})<extra></extra>",
-            showlegend=(i == 1),
+            showlegend=(i == 0),
             name=grp,
-        ), row=1, col=i)
+            domain=dict(x=list(x_doms[i]), y=list(Y_DOM)),
+        ))
 
-        # Raw numbers annotation centred below each donut
-        raw_annotations.append(dict(
-            x=xs[i - 1], y=-0.06,
+        # Title above donut
+        annotations.append(dict(
+            x=xs[i], y=0.92,
             xref="paper", yref="paper",
-            xanchor="center",
-            yanchor="top",
+            xanchor="center", yanchor="bottom",
+            text=f"<b>{grp}</b>",
+            showarrow=False,
+            font=dict(family="monospace", size=12, color=GROUP_CFG[grp]["color"]),
+        ))
+
+        # Long / Short raw numbers directly below donut
+        annotations.append(dict(
+            x=xs[i], y=ANN_Y,
+            xref="paper", yref="paper",
+            xanchor="center", yanchor="top",
             text=(
                 f"<span style='color:{C['green']}'>Long: {_fmt_contracts(l_val)}</span>"
                 f" &nbsp;·&nbsp; "
@@ -320,32 +337,20 @@ def plot_long_short_donuts(df: pd.DataFrame, groups: list[str]) -> go.Figure:
             align="center",
         ))
 
-    # Override subplot title colours to match group colours
-    title_annotations = []
-    for i, grp in enumerate(groups):
-        title_annotations.append(dict(
-            x=xs[i], y=1.08,
-            xref="paper", yref="paper",
-            text=f"<b style='color:{GROUP_CFG[grp]['color']}'>{grp}</b>",
-            showarrow=False,
-            font=dict(family="monospace", size=12, color=GROUP_CFG[grp]["color"]),
-            align="center",
-        ))
-
     fig.update_layout(
         plot_bgcolor=C["bg"],
         paper_bgcolor=C["bg"],
-        margin=dict(l=20, r=20, t=50, b=60),
+        margin=dict(l=20, r=20, t=30, b=50),
         height=310,
         showlegend=True,
         legend=dict(
             orientation="h",
-            yanchor="top", y=-0.18,
+            yanchor="top", y=-0.04,
             xanchor="center", x=0.5,
             font=dict(family="monospace", size=11, color=C["muted"]),
             bgcolor="rgba(0,0,0,0)",
         ),
-        annotations=title_annotations + raw_annotations,
+        annotations=annotations,
     )
     return fig
 
@@ -408,10 +413,10 @@ def plot_cot_index(df: pd.DataFrame, groups: list[str], x_range=None) -> go.Figu
 @st.cache_data(ttl=3600, show_spinner=False)
 def build_divergence_table(_raw: pd.DataFrame) -> pd.DataFrame:
     """Compute Commercials vs Non-Reportable COT Index divergence for every market.
-    _raw uses underscore prefix so Streamlit skips hashing the DataFrame;
-    the ttl ensures freshness every hour.
+    Filters to notable rows only: divergence > 70 OR either group in extreme territory
+    (Comm or NRept >= 75 or <= 25). Returns top 10 by divergence.
     """
-    _cache_version = 2  # bump when MARKET_GROUPS changes to invalidate stale cache
+    _cache_version = 3
     rows = []
     for cat, markets in MARKET_GROUPS.items():
         for display, cftc_name in markets.items():
@@ -428,30 +433,42 @@ def build_divergence_table(_raw: pd.DataFrame) -> pd.DataFrame:
             nrept_val = float(nrept_idx.iloc[-1]) if not nrept_idx.dropna().empty else float("nan")
             if pd.isna(comm_val) or pd.isna(nrept_val):
                 continue
+            div = abs(comm_val - nrept_val)
+            notable = (
+                div > 70
+                or comm_val  >= 75 or comm_val  <= 25
+                or nrept_val >= 75 or nrept_val <= 25
+            )
+            if not notable:
+                continue
             rows.append({
-                "Market":    display,
-                "Category":  cat,
-                "Comm_COT":  comm_val,
-                "NRept_COT": nrept_val,
-                "Divergence": abs(comm_val - nrept_val),
-                "Extreme":   (comm_val >= 80 and nrept_val <= 20) or
-                             (comm_val <= 20 and nrept_val >= 80),
+                "Market":     display,
+                "Category":   cat,
+                "Comm_COT":   comm_val,
+                "NRept_COT":  nrept_val,
+                "Divergence": div,
             })
-    return pd.DataFrame(rows).sort_values("Divergence", ascending=False).reset_index(drop=True)
+    df_out = (
+        pd.DataFrame(rows)
+        .sort_values("Divergence", ascending=False)
+        .head(10)
+        .reset_index(drop=True)
+    )
+    return df_out
 
 
 def _screener_html(table: pd.DataFrame) -> str:
     def val_color(v):
-        return C["green"] if v >= 80 else (C["red"] if v <= 20 else C["text"])
+        return C["green"] if v >= 75 else (C["red"] if v <= 25 else C["text"])
 
     header = "".join(
-        f"<th style='text-align:{align};color:{C['muted']};font-size:10px;"
+        f"<th style='text-align:{align};color:{C['muted']};font-size:11px;"
         f"text-transform:uppercase;letter-spacing:1px;padding:8px 14px;"
         f"border-bottom:1px solid {C['border']};white-space:nowrap;'>{lbl}</th>"
         for lbl, align in [
             ("Market", "left"), ("Cat", "left"),
             ("Commercials COT", "right"), ("Non-Reportable COT", "right"),
-            ("Divergence", "right"), ("Signal", "left"),
+            ("Divergence", "right"),
         ]
     )
 
@@ -459,21 +476,21 @@ def _screener_html(table: pd.DataFrame) -> str:
     for _, row in table.iterrows():
         cv, nv = row["Comm_COT"], row["NRept_COT"]
         div    = row["Divergence"]
-        if row["Extreme"]:
-            row_bg  = "rgba(0,196,140,0.05)" if cv >= 80 else "rgba(240,82,98,0.05)"
-            sig     = "⚡ Extreme"
-            sig_col = C["green"] if cv >= 80 else C["red"]
+        # Subtle row tint when either group is in extreme territory
+        if cv >= 75 or nv >= 75:
+            row_bg = "rgba(26,155,106,0.05)"
+        elif cv <= 25 or nv <= 25:
+            row_bg = "rgba(240,82,98,0.05)"
         else:
-            row_bg, sig, sig_col = "transparent", "Neutral", C["muted"]
+            row_bg = "transparent"
 
         body += (
             f"<tr style='background:{row_bg};border-bottom:1px solid {C['border']};'>"
             f"<td style='padding:7px 14px;color:{C['text']};font-weight:600;'>{row['Market']}</td>"
-            f"<td style='padding:7px 14px;color:{C['muted']};font-size:10px;'>{row['Category']}</td>"
+            f"<td style='padding:7px 14px;color:{C['muted']};font-size:11px;'>{row['Category']}</td>"
             f"<td style='padding:7px 14px;color:{val_color(cv)};font-weight:700;text-align:right;'>{cv:.1f}</td>"
             f"<td style='padding:7px 14px;color:{val_color(nv)};font-weight:700;text-align:right;'>{nv:.1f}</td>"
             f"<td style='padding:7px 14px;color:{C['teal']};font-weight:700;text-align:right;'>{div:.1f}</td>"
-            f"<td style='padding:7px 14px;color:{sig_col};font-weight:700;'>{sig}</td>"
             f"</tr>"
         )
 
@@ -561,6 +578,17 @@ def main():
       }}
       p, span, label {{ color:{C['text']}; }}
       hr {{ border-color:{C['border']}; }}
+      button[kind="secondary"] {{
+          background:{C['dim']} !important; color:{C['muted']} !important;
+          border:1px solid {C['border']} !important;
+          font-family:monospace !important; font-weight:600 !important;
+          border-radius:8px !important;
+          transition:border-color 0.22s ease,color 0.22s ease,box-shadow 0.22s ease !important;
+      }}
+      button[kind="secondary"]:hover {{
+          border-color:{C['teal']}70 !important; color:{C['teal']} !important;
+          box-shadow:0 0 12px rgba(79,142,247,0.14) !important;
+      }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -599,7 +627,7 @@ def main():
         groups = st.multiselect(
             "Groups",
             list(GROUP_CFG.keys()),
-            default=["Commercials", "Non-Commercials", "Non-Reportable"],
+            default=["Commercials", "Non-Reportable"],
             label_visibility="collapsed",
             key="cot_grp",
         )
@@ -707,7 +735,7 @@ def main():
         f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
         f"text-transform:uppercase;letter-spacing:1px;margin-top:32px;margin-bottom:4px;'>"
         f"COT Divergence Screener "
-        f"<span style='font-size:9px;'>(all markets · Commercials vs Non-Reportable · sorted by divergence)</span></div>",
+        f"<span style='font-size:9px;'>(top 10 · divergence &gt;70 or extreme reading ≥75/≤25 · sorted by divergence)</span></div>",
         unsafe_allow_html=True,
     )
     with st.spinner("Computing screener…"):
