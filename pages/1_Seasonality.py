@@ -817,19 +817,19 @@ def _radar_html(df: pd.DataFrame) -> str:
         is_long  = lp >= 70
         is_short = lp <= 30
         if signal == "Extreme" and is_long:
-            row_bg  = "rgba(0,196,140,0.05)"
+            row_bg  = "rgba(26,155,106,0.07)"
             sig     = "⚡ Extreme"
             sig_col = C["green"]
         elif signal == "Extreme" and is_short:
-            row_bg  = "rgba(240,82,98,0.05)"
+            row_bg  = "rgba(240,82,98,0.07)"
             sig     = "⚡ Extreme"
             sig_col = C["red"]
         elif signal == "Watch":
-            row_bg  = "rgba(240,180,40,0.04)"
+            row_bg  = "rgba(240,180,40,0.05)"
             sig     = "⚠ Watch"
             sig_col = C["yellow"]
         elif signal == "Bias":
-            row_bg  = "rgba(68,80,102,0.06)"
+            row_bg  = "rgba(102,102,102,0.06)"
             sig     = "📊 Bias"
             sig_col = C["muted"]
         else:
@@ -1344,33 +1344,46 @@ def main():
         bias_df    = radar_df[~forex_mask].sort_values("Sharpe", ascending=False).reset_index(drop=True)
         bias_df["_signal"] = "Bias"
 
-        # ── Forex: qualified windows → Extreme, rest → Watch/hidden ─────────────
+        # ── Forex: window > 14d · Sharpe ≥ 1.5 · top 5 ─────────────────────────
         extreme_mask = forex_df["_qualified"].fillna(False)
         extreme_df   = forex_df[extreme_mask].copy()
-        neutral_df   = forex_df[~extreme_mask].copy()
-
         extreme_df["_signal"] = "Extreme"
-        watch_slots  = max(0, 15 - len(extreme_df))
-        watch_df     = neutral_df.head(watch_slots).copy()
-        watch_df["_signal"] = "Watch"
-        remaining_df = neutral_df.iloc[watch_slots:]
+        extreme_df["_days_int"] = (
+            extreme_df["Days"].str.replace("d", "", regex=False).astype(int)
+        )
 
-        display_df = pd.concat([extreme_df, watch_df], ignore_index=True)
+        # Primary: window > 14d AND Sharpe ≥ 1.5 → top 5
+        strict_df = (
+            extreme_df[(extreme_df["_days_int"] > 14) & (extreme_df["Sharpe"] >= 1.5)]
+            .sort_values("Sharpe", ascending=False)
+            .head(5)
+        )
+        # Fallback: window > 14d → top 5 by Sharpe
+        fallback_df = (
+            extreme_df[extreme_df["_days_int"] > 14]
+            .sort_values("Sharpe", ascending=False)
+            .head(5)
+        )
+        # Last resort: all extreme → top 5 by Sharpe
+        display_df = (
+            strict_df if not strict_df.empty
+            else fallback_df if not fallback_df.empty
+            else extreme_df.sort_values("Sharpe", ascending=False).head(5)
+        )
+        display_df = display_df.drop(columns=["_days_int"], errors="ignore").reset_index(drop=True)
 
-        n_long    = int((extreme_df["Long %"] >= 70).sum())
-        n_short   = int((extreme_df["Long %"] <= 30).sum())
-        n_watch   = len(watch_df)
-        n_hidden  = len(remaining_df)
-        n_bias    = len(bias_df)
+        n_long   = int((display_df["Long %"] >= 70).sum())
+        n_short  = int((display_df["Long %"] <= 30).sum())
+        n_hidden = max(0, len(extreme_df) - len(display_df))
+        n_watch  = 0
+        n_bias   = len(bias_df)
 
         st.markdown(
             f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;margin:6px 0 10px;'>"
             f"<span style='color:{C['green']};font-weight:700;'>{n_long} Forex Long</span>"
             f" &nbsp;·&nbsp; "
             f"<span style='color:{C['red']};font-weight:700;'>{n_short} Forex Short</span>"
-            f" &nbsp;·&nbsp; "
-            f"<span style='color:{C['yellow']};font-weight:700;'>{n_watch} Watch</span>"
-            f" &nbsp;·&nbsp; {n_hidden} hidden"
+            f" &nbsp;·&nbsp; {n_hidden} filtered out"
             f" &nbsp;·&nbsp; <span style='color:{C['muted']};'>{n_bias} Index/Commodity</span></div>",
             unsafe_allow_html=True,
         )
