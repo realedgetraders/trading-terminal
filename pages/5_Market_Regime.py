@@ -45,34 +45,6 @@ REGIMES = [
     (100, "EXTREME STRESS",  "⚫", C["purple"], "rgba(160,0,200,0.12)"),
 ]
 
-IMPLICATIONS: dict[str, list[str]] = {
-    "LOW VOLATILITY": [
-        "Trend-following setups favored — low noise, cleaner price action.",
-        "Breakouts are more reliable; fewer false signals.",
-        "Consider increasing position size modestly on high-conviction setups.",
-    ],
-    "NORMAL": [
-        "Standard swing setups. No special adjustments needed.",
-        "Risk/reward ratios behave as expected on most pairs.",
-        "All strategies valid — trade your plan without bias.",
-    ],
-    "MODERATE": [
-        "Increase selectivity. Prefer A+ setups only, skip marginal entries.",
-        "Tighten stops slightly; intra-day noise is expanding.",
-        "Watch for regime shift — elevated VIX may resolve in either direction.",
-    ],
-    "ELEVATED": [
-        "Reduce position sizes by 25–50% to manage vol-adjusted risk.",
-        "Expect wider spreads and increased slippage on execution.",
-        "Counter-trend traps are common — stick to established trend direction.",
-    ],
-    "EXTREME STRESS": [
-        "Risk-off environment. Safe haven flows dominant (JPY, CHF, USD).",
-        "Avoid new long positions in risk assets (AUD, NZD, high-beta equities).",
-        "Consider sitting out until VIX reverts below the 80th percentile.",
-    ],
-}
-
 
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  DATA
@@ -312,24 +284,6 @@ def _metric_card(label: str, value: str, sub: str = "", color: str = "") -> str:
     )
 
 
-def _implications_card(regime: str, color: str, bg: str) -> str:
-    points = IMPLICATIONS.get(regime, [])
-    bullets = "".join(
-        f"<div style='display:flex;gap:10px;margin-bottom:10px;'>"
-        f"<span style='color:{color};font-size:14px;flex-shrink:0;'>▸</span>"
-        f"<span style='font-size:13px;color:{C['text']};font-family:sans-serif;"
-        f"line-height:1.5;'>{p}</span></div>"
-        for p in points
-    )
-    return (
-        f"<div style='background:{bg};border:1px solid {color}40;"
-        f"border-radius:12px;padding:20px 22px;'>"
-        f"<div style='font-size:10px;color:{color};font-family:monospace;"
-        f"letter-spacing:2px;text-transform:uppercase;font-weight:700;"
-        f"margin-bottom:14px;'>📋 Trading Implications — {regime}</div>"
-        f"{bullets}</div>"
-    )
-
 
 def _stats_table(history: pd.Series, current: float, percentile: float) -> str:
     stats = {
@@ -539,14 +493,6 @@ def main():
             config={"displayModeBar": False},
         )
         st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
-
-    # ── ROW 4 — Trading Implications ───────────────────────────────────────────
-    st.markdown(
-        _implications_card(label, color, bg_color),
-        unsafe_allow_html=True,
-    )
 
     st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
 
