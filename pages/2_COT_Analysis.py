@@ -25,8 +25,8 @@ C = {
     "teal":     "#e63946",
     "teal_bg":  "rgba(230, 57, 70, 0.14)",
     "teal_dim": "rgba(230, 57, 70, 0.06)",
-    "green":    "#00c48c",
-    "green_bg": "rgba(0, 196, 140, 0.09)",
+    "green":    "#1a9b6a",
+    "green_bg": "rgba(26, 155, 106, 0.09)",
     "red":      "#f05262",
     "red_bg":   "rgba(240, 82, 98, 0.09)",
     "yellow":   "#f0b429",
@@ -304,10 +304,12 @@ def plot_long_short_donuts(df: pd.DataFrame, groups: list[str]) -> go.Figure:
             name=grp,
         ), row=1, col=i)
 
-        # Raw numbers annotation below each donut
+        # Raw numbers annotation centred below each donut
         raw_annotations.append(dict(
             x=xs[i - 1], y=-0.06,
             xref="paper", yref="paper",
+            xanchor="center",
+            yanchor="top",
             text=(
                 f"<span style='color:{C['green']}'>Long: {_fmt_contracts(l_val)}</span>"
                 f" &nbsp;·&nbsp; "
