@@ -119,7 +119,7 @@ def main():
       html, body, [data-testid="stAppViewContainer"],
       [data-testid="stHeader"], [data-testid="stToolbar"],
       [data-testid="stDecoration"] {{
-          background-color:#0d0d0d !important;
+          background: radial-gradient(ellipse at 50% 50%, #0d0d0d 40%, #160407 100%) !important;
       }}
       .stMainBlockContainer {{ padding-top:4rem !important; }}
       button[kind="primary"], button[kind="secondary"] {{
@@ -193,7 +193,7 @@ def main():
         subtitle = "Where traders build their edge"
 
     divider_color      = "#e63946" if section is None else C["teal"]
-    subtitle_lbl_color = "#e63946" if section is None else C["teal"]
+    subtitle_lbl_color = "#8b2530" if section is None else C["teal"]
 
     st.markdown(
         f"""
@@ -202,12 +202,14 @@ def main():
                       letter-spacing:3px;text-transform:uppercase;margin-bottom:12px;">
             {subtitle}
           </div>
-          <div style="font-size:36px;font-weight:800;color:{C['text']};
-                      font-family:monospace;letter-spacing:-1px;line-height:1.1;">
+          <div style="font-size:40px;font-weight:800;color:{C['text']};
+                      font-family:monospace;letter-spacing:-1px;line-height:1.1;
+                      text-shadow:0 0 60px rgba(230,57,70,0.2),0 0 120px rgba(230,57,70,0.1);">
             Real Edge Terminal
           </div>
-          <div style="width:48px;height:2px;background:{divider_color};
-                      margin:16px auto 0;border-radius:1px;"></div>
+          <div style="width:56px;height:3px;background:{divider_color};
+                      margin:16px auto 0;border-radius:2px;
+                      box-shadow:0 0 10px {divider_color},0 0 22px {divider_color}80;"></div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -217,17 +219,29 @@ def main():
     if section is None:
         st.markdown("""
         <style>
-          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:first-child button,
-          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child button {
-              background: #1a1a1a !important;
+          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:first-child button {
+              background: #c0392b !important;
               color: #ffffff !important;
-              border: 1px solid #e63946 !important;
+              border: none !important;
+              font-weight: 700 !important;
+              font-family: monospace !important;
               transition: background 0.2s ease, box-shadow 0.2s ease !important;
           }
-          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:first-child button:hover,
+          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:first-child button:hover {
+              background: #d44235 !important;
+              box-shadow: 0 0 28px rgba(192,57,43,0.55) !important;
+          }
+          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child button {
+              background: #f0a500 !important;
+              color: #000000 !important;
+              border: none !important;
+              font-weight: 700 !important;
+              font-family: monospace !important;
+              transition: background 0.2s ease, box-shadow 0.2s ease !important;
+          }
           [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child button:hover {
-              background: #e63946 !important;
-              box-shadow: 0 0 22px #e6394655 !important;
+              background: #ffb700 !important;
+              box-shadow: 0 0 28px rgba(240,165,0,0.55) !important;
           }
         </style>
         """, unsafe_allow_html=True)
@@ -275,15 +289,19 @@ def _render_landing():
         st.markdown(f"""
 <style>
   #ret-analysis-card {{
-    transition: box-shadow 0.25s ease, border-color 0.25s ease;
+    transition: box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease;
   }}
   #ret-analysis-card:hover {{
-    box-shadow: 0 0 48px {_RED}40;
+    box-shadow: inset 0 0 60px rgba(0,0,0,0.3), 0 0 50px rgba(192,57,43,0.35) !important;
     border-color: {_RED} !important;
+    background: linear-gradient(170deg, #252525 0%, #1e1e1e 60%, #1b1b1b 100%) !important;
   }}
 </style>
 <div id="ret-analysis-card"
-     style="background:{_CARD};border:1px solid #2a2a2a;border-radius:16px;
+     style="background:linear-gradient(170deg, #212121 0%, #1a1a1a 60%, #171717 100%);
+            border:1px solid #2a2a2a;border-top:2px solid {_RED}99;
+            box-shadow:inset 0 0 80px rgba(0,0,0,0.45),0 0 30px rgba(192,57,43,0.12);
+            border-radius:16px;
             padding:52px 40px 36px;text-align:center;min-height:340px;
             display:flex;flex-direction:column;align-items:center;
             justify-content:center;margin-bottom:12px;">
@@ -296,7 +314,7 @@ def _render_landing():
               letter-spacing:3px;text-transform:uppercase;margin-bottom:22px;">
     5 Live Modules
   </div>
-  <div style="font-size:12px;color:#666666;line-height:2.2;font-family:sans-serif;">
+  <div style="font-size:12px;color:#888888;line-height:2.2;font-family:sans-serif;">
     Seasonality &nbsp;·&nbsp; COT Analysis &nbsp;·&nbsp; Macro Bias
     <br>Geopolitics &nbsp;·&nbsp; Market Regime
   </div>
@@ -310,15 +328,19 @@ def _render_landing():
         st.markdown(f"""
 <style>
   #ret-journal-card {{
-    transition: box-shadow 0.25s ease, border-color 0.25s ease;
+    transition: box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease;
   }}
   #ret-journal-card:hover {{
-    box-shadow: 0 0 48px {_AMBER}38;
+    box-shadow: inset 0 0 60px rgba(0,0,0,0.3), 0 0 50px rgba(240,165,0,0.30) !important;
     border-color: {_AMBER} !important;
+    background: linear-gradient(170deg, #252520 0%, #1e1e1a 60%, #1b1b17 100%) !important;
   }}
 </style>
 <div id="ret-journal-card"
-     style="background:{_CARD};border:1px solid #2a2a2a;border-radius:16px;
+     style="background:linear-gradient(170deg, #212120 0%, #1a1a18 60%, #171715 100%);
+            border:1px solid #2a2a2a;border-top:2px solid {_AMBER}99;
+            box-shadow:inset 0 0 80px rgba(0,0,0,0.45),0 0 30px rgba(240,165,0,0.10);
+            border-radius:16px;
             padding:52px 40px 36px;text-align:center;min-height:340px;
             display:flex;flex-direction:column;align-items:center;
             justify-content:center;margin-bottom:12px;">
@@ -338,7 +360,7 @@ def _render_landing():
               letter-spacing:3px;text-transform:uppercase;margin-bottom:22px;">
     Coming Soon
   </div>
-  <div style="font-size:12px;color:#666666;line-height:2.2;font-family:sans-serif;">
+  <div style="font-size:12px;color:#888888;line-height:2.2;font-family:sans-serif;">
     Trade logging &nbsp;·&nbsp; Performance analytics
     <br>Edge tracking &nbsp;·&nbsp; Auth required
   </div>
