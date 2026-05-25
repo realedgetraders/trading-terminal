@@ -113,6 +113,18 @@ def main():
     # Sidebar switch button colour: amber when in analysis, teal when in journal
     sb_color = C["yellow"] if section == "analysis" else C["teal"]
 
+    # Teal button style only needed in section views (module-card buttons).
+    # On the landing page (section=None) the CTA buttons get their own colours below.
+    _section_btn_css = f"""
+      button[kind="primary"], button[kind="secondary"] {{
+          background:{C['teal']} !important;
+          color:#0a0c10 !important;
+          border:none !important;
+          font-weight:700 !important;
+          font-family:monospace !important;
+      }}
+""" if section is not None else ""
+
     # ── Global styles ──────────────────────────────────────────────────────────
     st.markdown(f"""
     <style>
@@ -122,13 +134,7 @@ def main():
           background: radial-gradient(ellipse at 50% 50%, #0d0d0d 40%, #160407 100%) !important;
       }}
       .stMainBlockContainer {{ padding-top:4rem !important; }}
-      button[kind="primary"], button[kind="secondary"] {{
-          background:{C['teal']} !important;
-          color:#0a0c10 !important;
-          border:none !important;
-          font-weight:700 !important;
-          font-family:monospace !important;
-      }}
+      {_section_btn_css}
       p, span, label {{ color:{C['text']}; }}
       /* ── Sidebar switch button ─────────────────────────────────────── */
       section[data-testid="stSidebar"] button {{
