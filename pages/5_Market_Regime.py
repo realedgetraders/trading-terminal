@@ -114,15 +114,15 @@ def calc_percentile(history: pd.Series, current: float) -> float:
 def calc_trend(history: pd.Series) -> tuple[str, str]:
     """Compare latest value to 5-day MA. Returns (arrow_label, color)."""
     if len(history) < 6:
-        return "→ Stable", C["muted"]
+        return "→ Stable", "#aaaaaa"
     ma5 = history.iloc[-5:].mean()
     current = history.iloc[-1]
     diff_pct = (current - ma5) / ma5 * 100
     if diff_pct > 2.0:
-        return "↑ Rising", C["red"]
+        return "↑ Rising", "#f07840"
     if diff_pct < -2.0:
-        return "↓ Falling", C["green"]
-    return "→ Stable", C["muted"]
+        return "↓ Falling", "#aaaaaa"
+    return "→ Stable", "#aaaaaa"
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════
@@ -150,15 +150,15 @@ def _gauge_chart(percentile: float, regime_color: str) -> go.Figure:
                 tickcolor="white",
                 tickfont=dict(color="white", size=10)
             ),
-            bar=dict(color=regime_color, thickness=0.3),
+            bar=dict(color=regime_color, thickness=0.15),
             bgcolor="rgba(0,0,0,0)",
             borderwidth=0,
             steps=[
-                dict(range=[0,   20], color="#1a3a2a"),
-                dict(range=[20,  40], color="#3a3a1a"),
-                dict(range=[40,  60], color="#3a2a1a"),
-                dict(range=[60,  80], color="#3a1a1a"),
-                dict(range=[80, 100], color="#2a1a3a"),
+                dict(range=[0,   20], color="#1a1f2e"),
+                dict(range=[20,  40], color="#1a1f2e"),
+                dict(range=[40,  60], color="#1a1f2e"),
+                dict(range=[60,  80], color="#1a1f2e"),
+                dict(range=[80, 100], color="#1a1f2e"),
             ]
         ),
     ))
@@ -256,11 +256,11 @@ def _line_chart(history: pd.Series) -> go.Figure:
     )
 
     fig.update_layout(
-        height=380,
+        height=450,
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(t=20, b=40, l=50, r=80),
+        margin=dict(l=60, r=80, t=40, b=40),
         showlegend=False,
         xaxis=dict(
             showgrid=False,
@@ -432,7 +432,7 @@ def main():
             f"MARKET REGIME VOLATILITY INDEX</div>"
             f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
             f"letter-spacing:1px;margin-top:4px;'>"
-            f"VIX Percentile Rank vs. 12-Month History</div>"
+            f"Real-time volatility regime detection · VIX percentile rank vs. 12-month rolling window</div>"
             f"</div>",
             unsafe_allow_html=True,
         )
