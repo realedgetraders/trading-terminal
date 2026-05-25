@@ -143,34 +143,24 @@ def _gauge_chart(percentile: float, regime_color: str) -> go.Figure:
             "text": "Current Percentile Rank",
             "font": {"size": 13, "color": C["muted"], "family": "monospace"},
         },
-        gauge = {
-            "axis": {
-                "range":     [0, 100],
-                "tickvals":  [0, 20, 40, 60, 80, 100],
-                "ticktext":  ["0", "20%", "40%", "60%", "80%", "100%"],
-                "tickfont":  {"size": 11, "color": C["muted"], "family": "monospace"},
-                "tickcolor": C["border"],
-                "linewidth": 1,
-            },
-            "bar": {
-                "color":     regime_color,
-                "thickness": 0.25,
-            },
-            "bgcolor":    "rgba(0,0,0,0)",
-            "bordercolor": C["border"],
-            "steps": [
-                {"range": [0,  20],  "color": "rgba(0,200,150,0.18)"},
-                {"range": [20, 40],  "color": "rgba(240,192,64,0.18)"},
-                {"range": [40, 60],  "color": "rgba(240,120,64,0.18)"},
-                {"range": [60, 80],  "color": "rgba(224,48,48,0.18)"},
-                {"range": [80, 100], "color": "rgba(160,0,200,0.18)"},
-            ],
-            "threshold": {
-                "line":  {"color": C["text"], "width": 2},
-                "thickness": 0.8,
-                "value": percentile,
-            },
-        },
+        gauge=dict(
+            axis=dict(
+                range=[0, 100],
+                tickwidth=1,
+                tickcolor="white",
+                tickfont=dict(color="white", size=10)
+            ),
+            bar=dict(color=regime_color, thickness=0.3),
+            bgcolor="rgba(0,0,0,0)",
+            borderwidth=0,
+            steps=[
+                dict(range=[0,   20], color="#1a3a2a"),
+                dict(range=[20,  40], color="#3a3a1a"),
+                dict(range=[40,  60], color="#3a2a1a"),
+                dict(range=[60,  80], color="#3a1a1a"),
+                dict(range=[80, 100], color="#2a1a3a"),
+            ]
+        ),
     ))
 
     # Regime zone labels inside gauge
