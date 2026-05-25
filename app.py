@@ -225,29 +225,32 @@ def main():
     if section is None:
         st.markdown("""
         <style>
-          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:first-child button {
-              background: #c0392b !important;
+          /* nth-child(2) = Analysis col, nth-child(3) = Journal col
+             (col 1 and 4 are empty 0.12 padding columns) */
+          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:nth-child(2) button {
+              background: transparent !important;
               color: #ffffff !important;
-              border: none !important;
+              border: 1.5px solid #e63946 !important;
               font-weight: 700 !important;
               font-family: monospace !important;
               transition: background 0.2s ease, box-shadow 0.2s ease !important;
           }
-          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:first-child button:hover {
-              background: #d44235 !important;
-              box-shadow: 0 0 28px rgba(192,57,43,0.55) !important;
+          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:nth-child(2) button:hover {
+              background: #e63946 !important;
+              box-shadow: 0 0 22px rgba(230,57,70,0.6) !important;
           }
-          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child button {
+          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:nth-child(3) button {
+              background: transparent !important;
+              color: #f0b429 !important;
+              border: 1.5px solid #f0b429 !important;
+              font-weight: 700 !important;
+              font-family: monospace !important;
+              transition: background 0.2s ease, box-shadow 0.2s ease !important;
+          }
+          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:nth-child(3) button:hover {
               background: #f0a500 !important;
               color: #000000 !important;
-              border: none !important;
-              font-weight: 700 !important;
-              font-family: monospace !important;
-              transition: background 0.2s ease, box-shadow 0.2s ease !important;
-          }
-          [data-testid="stHorizontalBlock"] [data-testid="stColumn"]:last-child button:hover {
-              background: #ffb700 !important;
-              box-shadow: 0 0 28px rgba(240,165,0,0.55) !important;
+              box-shadow: 0 0 22px rgba(240,165,0,0.6) !important;
           }
         </style>
         """, unsafe_allow_html=True)
@@ -298,15 +301,15 @@ def _render_landing():
     transition: box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease;
   }}
   #ret-analysis-card:hover {{
-    box-shadow: inset 0 0 60px rgba(0,0,0,0.3), 0 0 50px rgba(192,57,43,0.35) !important;
+    box-shadow: inset 0 0 60px rgba(0,0,0,0.3), 0 0 24px rgba(230,57,70,0.55), 0 0 48px rgba(230,57,70,0.25) !important;
     border-color: {_RED} !important;
     background: linear-gradient(170deg, #252525 0%, #1e1e1e 60%, #1b1b1b 100%) !important;
   }}
 </style>
 <div id="ret-analysis-card"
      style="background:linear-gradient(170deg, #212121 0%, #1a1a1a 60%, #171717 100%);
-            border:1px solid #2a2a2a;border-top:2px solid {_RED}99;
-            box-shadow:inset 0 0 80px rgba(0,0,0,0.45),0 0 30px rgba(192,57,43,0.12);
+            border:1.5px solid {_RED};
+            box-shadow:inset 0 0 80px rgba(0,0,0,0.45),0 0 16px rgba(230,57,70,0.15);
             border-radius:16px;
             padding:52px 40px 36px;text-align:center;min-height:340px;
             display:flex;flex-direction:column;align-items:center;
@@ -337,15 +340,15 @@ def _render_landing():
     transition: box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease;
   }}
   #ret-journal-card:hover {{
-    box-shadow: inset 0 0 60px rgba(0,0,0,0.3), 0 0 50px rgba(240,165,0,0.30) !important;
+    box-shadow: inset 0 0 60px rgba(0,0,0,0.3), 0 0 24px rgba(240,165,0,0.55), 0 0 48px rgba(240,165,0,0.25) !important;
     border-color: {_AMBER} !important;
     background: linear-gradient(170deg, #252520 0%, #1e1e1a 60%, #1b1b17 100%) !important;
   }}
 </style>
 <div id="ret-journal-card"
      style="background:linear-gradient(170deg, #212120 0%, #1a1a18 60%, #171715 100%);
-            border:1px solid #2a2a2a;border-top:2px solid {_AMBER}99;
-            box-shadow:inset 0 0 80px rgba(0,0,0,0.45),0 0 30px rgba(240,165,0,0.10);
+            border:1.5px solid {_AMBER};
+            box-shadow:inset 0 0 80px rgba(0,0,0,0.45),0 0 16px rgba(240,165,0,0.12);
             border-radius:16px;
             padding:52px 40px 36px;text-align:center;min-height:340px;
             display:flex;flex-direction:column;align-items:center;
