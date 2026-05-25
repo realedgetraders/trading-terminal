@@ -166,37 +166,27 @@ def _gauge_chart(percentile: float, regime_color: str) -> go.Figure:
 
 def _line_chart(history: pd.Series) -> go.Figure:
     """VIX line chart with colored background zones per regime (hrect)."""
-    # Percentile boundaries → actual VIX levels
-    p20 = float(np.percentile(history.values, 20))
-    p40 = float(np.percentile(history.values, 40))
-    p60 = float(np.percentile(history.values, 60))
-    p80 = float(np.percentile(history.values, 80))
-    y_max = float(history.max()) * 1.15   # upper bound for EXTREME zone
-
     fig = go.Figure()
 
-    # ── Background zones ──────────────────────────────────────────────────────
-    zones = [
-        (0,    p20,   "#00c896", "LOW VOL"),
-        (p20,  p40,   "#f0c040", "NORMAL"),
-        (p40,  p60,   "#f07840", "MODERATE"),
-        (p60,  p80,   "#e03030", "ELEVATED"),
-        (p80,  y_max, "#a000c8", "EXTREME"),
-    ]
-    for y0, y1, color, _ in zones:
-        fig.add_hrect(
-            y0=y0, y1=y1,
-            fillcolor=color,
-            opacity=0.07,
-            layer="below",
-            line_width=0,
-        )
+    # ── Background zones (fixed VIX levels) ──────────────────────────────────
+    fig.add_hrect(y0=0,  y1=15, fillcolor="#00c896", opacity=0.08, layer="below", line_width=0)
+    fig.add_hrect(y0=15, y1=18, fillcolor="#f0c040", opacity=0.08, layer="below", line_width=0)
+    fig.add_hrect(y0=18, y1=22, fillcolor="#f07840", opacity=0.09, layer="below", line_width=0)
+    fig.add_hrect(y0=22, y1=28, fillcolor="#e03030", opacity=0.10, layer="below", line_width=0)
+    fig.add_hrect(y0=28, y1=60, fillcolor="#a000c8", opacity=0.10, layer="below", line_width=0)
 
     # ── Zone labels — right of chart ──────────────────────────────────────────
-    for y0, y1, color, label in zones:
+    zone_labels = [
+        (7.5,  "#00c896", "LOW VOL"),
+        (16.5, "#f0c040", "NORMAL"),
+        (20.0, "#f07840", "MODERATE"),
+        (25.0, "#e03030", "ELEVATED"),
+        (32.0, "#a000c8", "EXTREME"),
+    ]
+    for y_mid, color, label in zone_labels:
         fig.add_annotation(
             x=1.01, xref="paper",
-            y=(y0 + y1) / 2, yref="y",
+            y=y_mid, yref="y",
             text=label,
             showarrow=False,
             font=dict(color=color, size=9, family="monospace"),
