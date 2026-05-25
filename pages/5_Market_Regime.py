@@ -220,7 +220,7 @@ def _line_chart(history: pd.Series) -> go.Figure:
             linecolor=C["border"],
         ),
         yaxis=dict(
-            range=[float(history.min()) * 0.85, y_max],
+            range=[float(history.min()) * 0.85, max(float(history.max()) * 1.15, 35)],
             title=dict(
                 text="VIX Level",
                 font=dict(size=11, color=C["muted"], family="monospace"),
