@@ -490,38 +490,18 @@ Needle = VIX percentile vs. last 12 months &nbsp;·&nbsp;
 
     st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
 
-    # ── ROW 5 — Statistics table ───────────────────────────────────────────────
-    col_stats, col_spacer = st.columns([1, 1])
-    with col_stats:
-        st.markdown(
-            _stats_table(vix, current_vix, percentile),
-            unsafe_allow_html=True,
-        )
-
-    # ── Regime legend ──────────────────────────────────────────────────────────
-    with col_spacer:
-        legend_rows = "".join(
-            f"<div style='display:flex;align-items:center;gap:12px;padding:8px 0;"
-            f"border-bottom:1px solid {C['border']};'>"
-            f"<span style='font-size:14px;'>{emoji}</span>"
-            f"<span style='font-size:11px;color:{col};font-family:monospace;"
-            f"font-weight:700;width:140px;'>{lbl}</span>"
-            f"<span style='font-size:11px;color:{C['muted']};font-family:monospace;'>"
-            f"P{prev}–P{pct}</span>"
-            f"</div>"
-            for (pct, lbl, emoji, col, _), prev in zip(
-                REGIMES, [0, 20, 40, 60, 80]
-            )
-        )
-        st.markdown(
-            f"<div style='background:{C['card']};border:1px solid {C['border']};"
-            f"border-radius:12px;padding:14px 16px;'>"
-            f"<div style='font-size:10px;color:{C['muted']};font-family:monospace;"
-            f"letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;'>"
-            f"Regime Reference</div>"
-            f"{legend_rows}</div>",
-            unsafe_allow_html=True,
-        )
+    # ── ROW 5 — 12M Statistics ────────────────────────────────────────────────
+    s1, s2, s3, s4, s5 = st.columns(5)
+    with s1:
+        st.metric("Min 12M",    f"{vix.min():.2f}")
+    with s2:
+        st.metric("Max 12M",    f"{vix.max():.2f}")
+    with s3:
+        st.metric("Mean 12M",   f"{vix.mean():.2f}")
+    with s4:
+        st.metric("Median 12M", f"{vix.median():.2f}")
+    with s5:
+        st.metric("Std Dev",    f"{vix.std():.2f}")
 
     # ── Footer ─────────────────────────────────────────────────────────────────
     st.markdown(
