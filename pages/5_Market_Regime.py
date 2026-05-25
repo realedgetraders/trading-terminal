@@ -463,18 +463,20 @@ def main():
             f"{emoji} {label}</span></div>",
             unsafe_allow_html=True,
         )
-        st.markdown(
-            f"""
-<div style='font-size:11px; color:#666; margin-top:12px;
-line-height:1.6; text-align:center;'>
-The needle shows where the current VIX stands<br>
-relative to the last 12 months.<br><br>
-<span style='color:#888'>{percentile:.1f}% = higher than {percentile:.1f}%<br>
-of all sessions in the past year</span>
+        st.markdown("""
+<div style='display:flex; justify-content:space-between;
+margin-top:12px; font-size:11px; color:#666; line-height:1.8;'>
+  <div>
+    The needle shows where<br>the current VIX stands<br>
+    relative to the last 12 months.
+  </div>
+  <div style='text-align:right; color:#888;'>
+    {percentile:.1f}% = higher than<br>
+    {percentile:.1f}% of all sessions<br>
+    in the past year
+  </div>
 </div>
-""",
-            unsafe_allow_html=True,
-        )
+""".format(percentile=percentile), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col_line:
