@@ -99,7 +99,7 @@ JOURNAL_MODULE = {
 
 def main():
     st.set_page_config(
-        page_title="Real Edge Terminal",
+        page_title="Real Edge",
         page_icon="📊",
         layout="wide",
         initial_sidebar_state="collapsed",
@@ -211,7 +211,7 @@ def main():
           <div style="font-size:40px;font-weight:800;color:{C['text']};
                       font-family:monospace;letter-spacing:-1px;line-height:1.1;
                       text-shadow:0 0 60px rgba(230,57,70,0.2),0 0 120px rgba(230,57,70,0.1);">
-            Real Edge Terminal
+            Real Edge
           </div>
           <div style="width:56px;height:3px;background:{divider_color};
                       margin:16px auto 0;border-radius:2px;
@@ -318,7 +318,7 @@ def _render_landing():
   <div style="font-size:56px;margin-bottom:22px;line-height:1;">📊</div>
   <div style="font-size:22px;font-weight:800;color:#ffffff;
               font-family:monospace;letter-spacing:-0.5px;margin-bottom:7px;">
-    Analysis Suite
+    Real Edge Terminal
   </div>
   <div style="font-size:9px;color:{_RED};font-family:monospace;
               letter-spacing:3px;text-transform:uppercase;margin-bottom:22px;">
@@ -364,7 +364,7 @@ def _render_landing():
   <div style="font-size:56px;margin-bottom:22px;line-height:1;">📓</div>
   <div style="font-size:22px;font-weight:800;color:#ffffff;
               font-family:monospace;letter-spacing:-0.5px;margin-bottom:7px;">
-    Journal Your Edge
+    Edge Journal
   </div>
   <div style="font-size:9px;color:{_AMBER};font-family:monospace;
               letter-spacing:3px;text-transform:uppercase;margin-bottom:22px;">
