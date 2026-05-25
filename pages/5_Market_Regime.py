@@ -490,19 +490,6 @@ Needle = VIX percentile vs. last 12 months &nbsp;·&nbsp;
 
     st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
 
-    # ── ROW 5 — 12M Statistics ────────────────────────────────────────────────
-    s1, s2, s3, s4, s5 = st.columns(5)
-    with s1:
-        st.metric("Min 12M",    f"{vix.min():.2f}")
-    with s2:
-        st.metric("Max 12M",    f"{vix.max():.2f}")
-    with s3:
-        st.metric("Mean 12M",   f"{vix.mean():.2f}")
-    with s4:
-        st.metric("Median 12M", f"{vix.median():.2f}")
-    with s5:
-        st.metric("Std Dev",    f"{vix.std():.2f}")
-
     # ── Footer ─────────────────────────────────────────────────────────────────
     st.markdown(
         f"<div style='margin-top:40px;padding-top:16px;"
