@@ -463,15 +463,18 @@ def main():
             f"{emoji} {label}</span></div>",
             unsafe_allow_html=True,
         )
-        st.markdown("""
-<div style='font-size:11px; color:#888; line-height:2; margin-top:8px;'>
-<span style='color:#00c896'>●</span> <b style='color:#ccc'>LOW VOL</b> &nbsp;&nbsp; VIX &lt; 15<br>
-<span style='color:#f0c040'>●</span> <b style='color:#ccc'>NORMAL</b> &nbsp;&nbsp;&nbsp; VIX 15–18<br>
-<span style='color:#f07840'>●</span> <b style='color:#ccc'>MODERATE</b> &nbsp; VIX 18–22<br>
-<span style='color:#e03030'>●</span> <b style='color:#ccc'>ELEVATED</b> &nbsp; VIX 22–28<br>
-<span style='color:#a000c8'>●</span> <b style='color:#ccc'>EXTREME</b> &nbsp;&nbsp; VIX &gt; 28
+        st.markdown(
+            f"""
+<div style='font-size:11px; color:#666; margin-top:12px;
+line-height:1.6; text-align:center;'>
+The needle shows where the current VIX stands<br>
+relative to the last 12 months.<br><br>
+<span style='color:#888'>{percentile:.1f}% = higher than {percentile:.1f}%<br>
+of all sessions in the past year</span>
 </div>
-""", unsafe_allow_html=True)
+""",
+            unsafe_allow_html=True,
+        )
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col_line:
