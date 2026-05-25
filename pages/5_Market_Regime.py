@@ -66,12 +66,20 @@ def fetch_vix() -> pd.Series | None:
         return None
 
 
-def classify_regime(pct: float) -> tuple[str, str, str, str, str]:
-    """Return (label, emoji, color, bg_color, description) for a given percentile."""
-    for max_pct, label, emoji, color, bg in REGIMES:
-        if pct <= max_pct:
-            return label, emoji, color, bg, label
-    return REGIMES[-1][1], REGIMES[-1][2], REGIMES[-1][3], REGIMES[-1][4], REGIMES[-1][1]
+def classify_regime(vix_level: float) -> tuple[str, str, str, str, str]:
+    """Return (label, emoji, color, bg_color, description) based on fixed VIX thresholds."""
+    if vix_level < 15:
+        idx = 0  # LOW VOLATILITY
+    elif vix_level < 18:
+        idx = 1  # NORMAL
+    elif vix_level < 22:
+        idx = 2  # MODERATE
+    elif vix_level < 28:
+        idx = 3  # ELEVATED
+    else:
+        idx = 4  # EXTREME STRESS
+    _, label, emoji, color, bg = REGIMES[idx]
+    return label, emoji, color, bg, label
 
 
 def calc_percentile(history: pd.Series, current: float) -> float:
@@ -402,7 +410,7 @@ def main():
     # ── Core calculations ──────────────────────────────────────────────────────
     current_vix  = float(vix.iloc[-1])
     percentile   = calc_percentile(vix, current_vix)
-    label, emoji, color, bg_color, _ = classify_regime(percentile)
+    label, emoji, color, bg_color, _ = classify_regime(current_vix)
     trend_label, trend_color         = calc_trend(vix)
     last_date    = vix.index[-1].strftime("%b %d, %Y")
     n_days       = len(vix)
