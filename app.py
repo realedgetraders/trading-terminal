@@ -464,33 +464,10 @@ def _render_analysis():
 
 
 def _render_journal_section():
-    """Journal section — amber-themed hub with upcoming journal feature cards."""
+    """Journal section — amber-themed hub with 3 feature cards (2 + 1 centred)."""
     _AMBER     = "#f0b429"
     _AMBER_BG  = "rgba(240,180,41,0.10)"
     _AMBER_DIM = "rgba(240,180,41,0.28)"
-
-    JOURNAL_FEATURES = [
-        {
-            "icon":  "📝",
-            "title": "Trade Log",
-            "desc":  "Log every trade with entry, exit, size, direction, and personal notes — the foundation of tracking your real edge.",
-        },
-        {
-            "icon":  "📊",
-            "title": "Performance Stats",
-            "desc":  "Win rate, risk-reward, P&L, max drawdown, and expectancy — automatically calculated from your full trade history.",
-        },
-        {
-            "icon":  "📈",
-            "title": "Equity Curve",
-            "desc":  "Visual equity curve over time. See exactly where you make money, where you give it back, and how consistent your edge really is.",
-        },
-        {
-            "icon":  "👤",
-            "title": "Trade Profiles",
-            "desc":  "Separate your Live, Backtest, and Paper trading. Track each independently and compare your edge across all three contexts.",
-        },
-    ]
 
     # ── Auth notice
     st.markdown(
@@ -506,38 +483,96 @@ def _render_journal_section():
         unsafe_allow_html=True,
     )
 
-    # ── Feature card grid (2 columns)
-    for row_start in range(0, len(JOURNAL_FEATURES), 2):
-        col_l, col_r = st.columns(2, gap="large")
-        for col, feat in zip([col_l, col_r], JOURNAL_FEATURES[row_start:row_start + 2]):
-            with col:
-                st.markdown(
-                    f"""
-                    <div style="background:{C['card']};
-                                border:1px solid {_AMBER_DIM};
-                                border-radius:12px;padding:24px 24px 20px;
-                                min-height:140px;margin-bottom:16px;opacity:0.72;
-                                transition:box-shadow 0.25s ease,border-color 0.25s ease;">
-                      <div style="display:flex;align-items:flex-start;
-                                  justify-content:space-between;margin-bottom:10px;">
-                        <div style="display:flex;align-items:center;gap:10px;">
-                          <span style="font-size:22px;">{feat['icon']}</span>
-                          <span style="font-size:15px;font-weight:700;color:{C['text']};
-                                       font-family:monospace;letter-spacing:2px;">{feat['title']}</span>
-                        </div>
-                        <span style="background:{_AMBER_BG};color:{_AMBER};
-                                     font-size:9px;font-family:monospace;font-weight:700;
-                                     letter-spacing:1px;padding:2px 8px;border-radius:4px;
-                                     text-transform:uppercase;border:1px solid {_AMBER_DIM};">
-                          Coming Soon
-                        </span>
-                      </div>
-                      <div style="font-size:12px;color:{C['muted']};line-height:1.6;
-                                  font-family:sans-serif;">{feat['desc']}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+    def _journal_card(icon, title, desc):
+        st.markdown(
+            f"""
+            <div class="ret-journal-card"
+                 style="background:{C['card']};
+                        border:1px solid {_AMBER_DIM};
+                        border-radius:12px;padding:24px 24px 20px;
+                        height:160px;overflow:hidden;opacity:0.78;
+                        cursor:pointer;
+                        transition:box-shadow 0.25s ease,border-color 0.25s ease;">
+              <div style="display:flex;align-items:flex-start;
+                          justify-content:space-between;margin-bottom:10px;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <span style="font-size:22px;">{icon}</span>
+                  <span style="font-size:15px;font-weight:700;color:{C['text']};
+                               font-family:monospace;letter-spacing:2px;">{title}</span>
+                </div>
+                <span style="background:{_AMBER_BG};color:{_AMBER};
+                             font-size:9px;font-family:monospace;font-weight:700;
+                             letter-spacing:1px;padding:2px 8px;border-radius:4px;
+                             text-transform:uppercase;border:1px solid {_AMBER_DIM};">
+                  Coming Soon
+                </span>
+              </div>
+              <div style="font-size:12px;color:{C['muted']};line-height:1.6;
+                          font-family:sans-serif;">{desc}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        # Invisible overlay button — no page yet, just absorbs the click
+        st.button(" ", key=f"jcard_{title}", use_container_width=True, disabled=True)
+
+    # ── Row 1: Trade Log + Performance Stats
+    col_l, col_r = st.columns(2, gap="large")
+    with col_l:
+        _journal_card(
+            "📝", "Trade Log",
+            "Enter and save every trade — symbol, direction, entry, exit, size, and personal notes. The raw data your edge is built on.",
+        )
+    with col_r:
+        _journal_card(
+            "📊", "Performance Stats",
+            "Win rate, risk-reward, P&L, drawdown, expectancy, and equity curve — switch between Live and Backtest to compare your real vs. tested edge.",
+        )
+
+    # ── Row 2: Trader Profile (centred, half-width)
+    _, col_c, _ = st.columns([1, 2, 1])
+    with col_c:
+        _journal_card(
+            "👤", "Trader Profile",
+            "Your personal trading identity — more details coming soon.",
+        )
+
+    # ── Amber hover glow (journal cards)
+    st.markdown(f"""
+    <style>
+      div[data-testid="stElementContainer"]:has(.ret-journal-card):has(+ div[data-testid="stElementContainer"]:hover) .ret-journal-card {{
+          box-shadow:
+              0 0 0 1px rgba(240,180,41,0.45),
+              0 0 16px rgba(240,180,41,0.22),
+              0 0 36px rgba(240,180,41,0.08) !important;
+          border-color: rgba(240,180,41,0.7) !important;
+          opacity: 0.95 !important;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-journal-card) {{
+          position: relative; z-index: 1;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-journal-card)
+        + div[data-testid="stElementContainer"] {{
+          margin-top: -176px;
+          margin-bottom: 20px;
+          height: 160px;
+          position: relative;
+          z-index: 10;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-journal-card)
+        + div[data-testid="stElementContainer"] button {{
+          width: 100% !important;
+          height: 160px !important;
+          min-height: 0 !important;
+          opacity: 0 !important;
+          cursor: pointer !important;
+          border-radius: 12px !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          display: block !important;
+      }}
+    </style>
+    """, unsafe_allow_html=True)
 
 
 # ── Module card renderer ───────────────────────────────────────────────────────
