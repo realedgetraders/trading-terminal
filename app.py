@@ -295,7 +295,7 @@ def main():
         # Analysis / Journal sub-sections: keep branded EdgeLab title
         subtitle      = (f"<span style='color:{C['teal']}'>▸ Analysis Suite</span>"
                          if section == "analysis"
-                         else f"<span style='color:{C['yellow']}'>▸ Edge Journal</span>")
+                         else f"<span style='color:{C['yellow']}'>▸ Journal Suite</span>")
         divider_color = C["teal"] if section == "analysis" else C["yellow"]
         st.markdown(
             f"""
