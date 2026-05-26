@@ -598,18 +598,6 @@ def plot_seasonal_curve(curve_df: pd.DataFrame,
     # Baseline at 100
     fig.add_hline(y=100, line_color=C["muted"], line_width=0.8, opacity=0.35)
 
-    # Invisible click-zone markers — one per data point, covers full curve width
-    # Streamlit's on_select fires when the user clicks near any of these markers.
-    fig.add_trace(go.Scatter(
-        x    = [d.isoformat() for d in dates],
-        y    = index_y,
-        mode = "markers",
-        marker = dict(size=14, opacity=0.001, color=C["teal"]),
-        hoverinfo  = "skip",
-        showlegend = False,
-        name = "__click__",
-    ))
-
     # Pattern boundary lines with date labels
     if has_pattern and s_date is not None and e_date is not None:
         for dv in [s_date, e_date]:
@@ -886,43 +874,6 @@ def _radar_html(df: pd.DataFrame) -> str:
         f"<thead><tr>{header}</tr></thead>"
         f"<tbody>{body}</tbody>"
         f"</table></div>"
-    )
-
-
-# ─── Chart event helpers ──────────────────────────────────────────────────────
-
-def _parse_plotly_date(val) -> dt_date | None:
-    """Convert a Plotly relayout date value (ISO string or ms epoch) to dt_date."""
-    try:
-        if isinstance(val, (int, float)):
-            return pd.Timestamp(val, unit="ms").date()
-        return pd.Timestamp(str(val)).date()
-    except Exception:
-        return None
-
-
-def _render_visual_timeline(s_doy: int, e_doy: int):
-    """Thin bar flush under the chart x-axis showing the selected window — no labels."""
-    total = 365
-    s_pct = (s_doy - 1) / total * 100
-    e_pct = (e_doy - 1) / total * 100
-    segs = (
-        [(s_pct, e_pct - s_pct)]
-        if s_doy <= e_doy
-        else [(s_pct, 100 - s_pct), (0.0, e_pct)]
-    )
-    seg_html = "".join(
-        f"<div style='position:absolute;left:{l:.2f}%;width:{max(w,0.3):.2f}%;height:100%;"
-        f"background:rgba(79,142,247,0.28);border-left:2px solid rgba(79,142,247,0.7);"
-        f"border-right:2px solid rgba(79,142,247,0.7);border-radius:1px;'></div>"
-        for l, w in segs
-    )
-    st.markdown(
-        f"<div style='padding:0 20px 0 60px;box-sizing:border-box;margin-top:-14px;margin-bottom:2px;'>"
-        f"<div style='position:relative;height:5px;background:#1a1a1a;border-radius:2px;'>"
-        f"{seg_html}</div>"
-        f"</div>",
-        unsafe_allow_html=True,
     )
 
 
@@ -1282,57 +1233,24 @@ def main():
         year_paths   = yr_paths,
     )
 
-    # ── Click-to-set mode indicator ───────────────────────────────────────────
-    _click_mode = st.session_state.get("_click_mode", "start")
-    _mode_lbl   = "Start Date" if _click_mode == "start" else "End Date"
-    _mode_col   = C["teal"]    if _click_mode == "start" else C["yellow"]
-    st.markdown(
-        f"<div style='font-size:11px;font-family:monospace;color:{C['muted']};"
-        f"margin-bottom:2px;'>"
-        f"🖱 Click the chart line — setting: "
-        f"<span style='color:{_mode_col};font-weight:700;'>{_mode_lbl}</span>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-
-    # ── Chart (native Streamlit click via on_select) ──────────────────────────
-    # Key increments after each processed click → resets selection state,
-    # preventing the same event from replaying on subsequent re-renders.
-    _chart_v  = st.session_state.get("_chart_v", 0)
-    _chart_ev = st.plotly_chart(
-        fig,
-        use_container_width = True,
-        on_select            = "rerun",
-        selection_mode       = "points",
-        key                  = f"seasonal_chart_{_chart_v}",
-    )
-
-    # ── Visual timeline bar flush on x-axis (no labels — chart already has them)
-    _render_visual_timeline(_s_doy, _e_doy)
+    st.plotly_chart(fig, use_container_width=True)
 
     st.markdown(
         f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
-        f"margin:2px 0 2px;text-align:right;'>"
+        f"margin:-8px 0 2px;text-align:right;'>"
         f"Normalized price paths averaged per DOY (Seasonax method) &nbsp;·&nbsp; {years}y lookback"
         f"</div>",
         unsafe_allow_html=True,
     )
 
-    # ── Handle click → set Start or End date ─────────────────────────────────
-    _pts = getattr(getattr(_chart_ev, "selection", None), "points", None) or []
-    if _pts:
-        _x = _pts[0].get("x")
-        if _x:
-            _d = _parse_plotly_date(_x)
-            if _d and _cal_min <= _d <= _cal_max:
-                if _click_mode == "start":
-                    st.session_state["pat_start_cal"] = _d
-                    st.session_state["_click_mode"]   = "end"
-                else:
-                    st.session_state["pat_end_cal"]  = _d
-                    st.session_state["_click_mode"]  = "start"
-                st.session_state["_chart_v"] = _chart_v + 1
-                st.rerun()
+    # ── Pattern range slider ──────────────────────────────────────────────────
+    st.select_slider(
+        "Pattern window",
+        options=_DOY_LABELS,
+        value=(_s_lbl, _e_lbl),
+        label_visibility="collapsed",
+        key="pat_doy_range",
+    )
 
     # ── Pattern Analysis ──────────────────────────────────────────────────────
     if not pat_active:
@@ -1340,7 +1258,7 @@ def main():
             f"<div style='background:{C['panel']};border:1px solid {C['border']};"
             f"border-radius:8px;padding:20px 24px;color:{C['muted']};"
             f"font-family:monospace;font-size:12px;text-align:center;'>"
-            f"Click the chart line above to set a Start and End date and activate pattern analysis."
+            f"Drag the Pattern Window slider to activate pattern analysis."
             f"</div>",
             unsafe_allow_html=True,
         )
