@@ -312,7 +312,7 @@ def main():
               <div style="width:56px;height:3px;background:{divider_color};
                           margin:16px auto 0;border-radius:2px;
                           box-shadow:0 0 10px {divider_color},0 0 22px {divider_color}80;"></div>
-              {'<div style="font-size:11px;color:#666666;font-family:monospace;letter-spacing:1px;margin-top:14px;">A Place Where Traders Analyze Their Edge</div>' if section == 'analysis' else ''}
+              {'<div style="font-size:11px;color:#666666;font-family:monospace;letter-spacing:1px;margin-top:14px;">A Place Where Traders Analyze Their Assets</div>' if section == 'analysis' else ''}
             </div>
             """,
             unsafe_allow_html=True,
