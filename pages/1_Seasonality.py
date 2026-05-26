@@ -601,6 +601,39 @@ def plot_seasonal_curve(curve_df: pd.DataFrame,
         for dv in [s_date, e_date]:
             fig.add_vline(x=dv.isoformat(), line_color="rgba(255,255,255,0.7)", line_width=1.5)
 
+    # Slider-sync dashed lines — track each handle; label shows exact date
+    if has_pattern and s_date is not None and e_date is not None:
+        fig.add_vline(
+            x=s_date.isoformat(),
+            line_color="rgba(79,142,247,0.5)",
+            line_width=1,
+            line_dash="dash",
+            annotation_text=s_date.strftime("%b %d"),
+            annotation_position="top right",
+            annotation_font_color="#4f8ef7",
+            annotation_font_size=10,
+            annotation_font_family="monospace",
+            annotation_bgcolor="rgba(13,13,13,0.75)",
+            annotation_bordercolor="rgba(79,142,247,0.35)",
+            annotation_borderwidth=1,
+            annotation_borderpad=3,
+        )
+        fig.add_vline(
+            x=e_date.isoformat(),
+            line_color="rgba(79,142,247,0.5)",
+            line_width=1,
+            line_dash="dash",
+            annotation_text=e_date.strftime("%b %d"),
+            annotation_position="top left",
+            annotation_font_color="#4f8ef7",
+            annotation_font_size=10,
+            annotation_font_family="monospace",
+            annotation_bgcolor="rgba(13,13,13,0.75)",
+            annotation_bordercolor="rgba(79,142,247,0.35)",
+            annotation_borderwidth=1,
+            annotation_borderpad=3,
+        )
+
     # Inline chart title
     title_text = (
         f"Seasonal Trend of {display_name} Over {years} Years"
