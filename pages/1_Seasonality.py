@@ -361,10 +361,9 @@ def calc_pattern_analysis(df: pd.DataFrame,
             continue
 
         # Entry: Close of the last trading day BEFORE the window (Seasonax method)
+        # Fall back to first window bar if no prior data exists (earliest year in dataset)
         df_before = df[df.index < pat.index[0]]
-        if df_before.empty:
-            continue                        # no prior bar — skip year
-        sp  = float(df_before["Close"].iloc[-1])
+        sp = float(df_before["Close"].iloc[-1]) if not df_before.empty else float(pat["Close"].iloc[0])
         ep  = float(pat["Close"].iloc[-1])  # exit = Close of last window day
         pnl = ep - sp
         pct = (ep / sp - 1) * 100
