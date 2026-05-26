@@ -1285,12 +1285,15 @@ def main():
     )
 
     # ── Chart (click-enabled) ─────────────────────────────────────────────────
+    # Key increments on every processed click so the component resets its stored
+    # event — prevents the same click from being replayed on every re-render.
+    _chart_v = st.session_state.get("_chart_v", 0)
     _click = plotly_events(
         fig,
         click_event=True,
         hover_event=False,
         select_event=False,
-        key="seasonal_chart",
+        key=f"seasonal_chart_{_chart_v}",
         override_height=440,
     )
 
@@ -1318,6 +1321,8 @@ def main():
                 else:
                     st.session_state["pat_end_cal"]  = _d
                     st.session_state["_click_mode"]  = "start"
+                # Bump version → fresh component instance on next render
+                st.session_state["_chart_v"] = _chart_v + 1
                 st.rerun()
 
     # ── Pattern Analysis ──────────────────────────────────────────────────────
@@ -1326,7 +1331,7 @@ def main():
             f"<div style='background:{C['panel']};border:1px solid {C['border']};"
             f"border-radius:8px;padding:20px 24px;color:{C['muted']};"
             f"font-family:monospace;font-size:12px;text-align:center;'>"
-            f"Drag the white lines in the chart above to activate pattern analysis."
+            f"Click the chart line above to set a Start and End date and activate pattern analysis."
             f"</div>",
             unsafe_allow_html=True,
         )
