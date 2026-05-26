@@ -1360,13 +1360,10 @@ def main():
     # ── Description blurb ─────────────────────────────────────────────────────
     st.markdown(
         f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
-        f"line-height:1.7;margin:8px 0 14px;max-width:860px;'>"
-        f"The 10 forex pairs with the strongest historical seasonal pattern over the next 30 days, "
-        f"ranked by how far their Long&nbsp;% deviates from 50&nbsp;%. "
-        f"⚡&nbsp;<span style='color:{C['text']};'>Extreme</span> = qualified signal (≥70&nbsp;% or ≤30&nbsp;% Long, "
-        f"7+ years of data). "
-        f"⚠&nbsp;<span style='color:{C['text']};'>Watch</span> = directional bias, below threshold. "
-        f"Always cross-check with fundamentals and current market structure before acting."
+        f"line-height:1.7;margin:8px 0 14px;'>"
+        f"⚡&nbsp;<span style='color:{C['text']};'>Extreme</span> = ≥70&nbsp;% or ≤30&nbsp;% Long, min. 7 occurrences in 10Y data.&nbsp;&nbsp;"
+        f"⚠&nbsp;<span style='color:{C['text']};'>Watch</span> = directional bias below threshold.&nbsp;&nbsp;"
+        f"Always confirm with current market context."
         f"</div>",
         unsafe_allow_html=True,
     )
