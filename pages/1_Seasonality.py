@@ -10,7 +10,6 @@ import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime, timedelta, date as dt_date
 from dateutil.relativedelta import relativedelta
-from streamlit_plotly_events import plotly_events
 
 # DOY → "Mon DD" label for every day of a non-leap year (index 0 = DOY 1)
 _DOY_LABELS: list[str] = [
@@ -536,7 +535,7 @@ def plot_seasonal_curve(curve_df: pd.DataFrame,
                         display_name: str = "",
                         years: int = 10,
                         date_start: str = "", date_end: str = "",
-                        year_paths: dict | None = None) -> tuple:
+                        year_paths: dict | None = None) -> go.Figure:
     fig = go.Figure()
 
     dates   = curve_df["date"].tolist()   # pd.Timestamps in _REF_YEAR
@@ -599,24 +598,10 @@ def plot_seasonal_curve(curve_df: pd.DataFrame,
     # Baseline at 100
     fig.add_hline(y=100, line_color=C["muted"], line_width=0.8, opacity=0.35)
 
-    # Draggable boundary lines — grab and drag directly in the chart to move the window
-    start_shape_idx: int | None = None
-    end_shape_idx:   int | None = None
+    # Pattern boundary lines with date labels
     if has_pattern and s_date is not None and e_date is not None:
-        start_shape_idx = len(fig.layout.shapes)
-        fig.add_shape(
-            type="line", xref="x", yref="paper",
-            x0=s_date.isoformat(), x1=s_date.isoformat(), y0=0, y1=1,
-            line=dict(color="rgba(255,255,255,0.75)", width=2),
-            editable=True,
-        )
-        end_shape_idx = len(fig.layout.shapes)
-        fig.add_shape(
-            type="line", xref="x", yref="paper",
-            x0=e_date.isoformat(), x1=e_date.isoformat(), y0=0, y1=1,
-            line=dict(color="rgba(255,255,255,0.75)", width=2),
-            editable=True,
-        )
+        for dv in [s_date, e_date]:
+            fig.add_vline(x=dv.isoformat(), line_color="rgba(255,255,255,0.7)", line_width=1.5)
         for dv, xanchor in [(s_date, "left"), (e_date, "right")]:
             fig.add_annotation(
                 x=dv.isoformat(), y=1.0, xref="x", yref="paper",
@@ -688,7 +673,7 @@ def plot_seasonal_curve(curve_df: pd.DataFrame,
         modebar_remove = ["zoom","pan","select","lasso2d","zoomIn2d","zoomOut2d",
                           "autoScale2d","resetScale2d","toImage"],
     )
-    return fig, start_shape_idx, end_shape_idx
+    return fig
 
 def plot_donut(win_rate: float) -> go.Figure:
     loss_rate = 100.0 - win_rate
@@ -1286,7 +1271,7 @@ def main():
     sm, sd = (pat_start.month, pat_start.day) if pat_active else (None, None)
     em, ed = (pat_end.month,   pat_end.day)   if pat_active else (None, None)
 
-    fig, _start_idx, _end_idx = plot_seasonal_curve(
+    fig = plot_seasonal_curve(
         curve, sm, sd, em, ed,
         display_name = display_name,
         years        = years,
@@ -1295,36 +1280,7 @@ def main():
         year_paths   = yr_paths,
     )
 
-    _relayout = plotly_events(
-        fig,
-        click_event=False,
-        hover_event=False,
-        select_event=False,
-        relayout_event=True,
-        key="seasonal_chart",
-        override_height=440,
-        override_width="100%",
-    )
-
-    # Handle shape drag → update pattern window dates and re-render
-    if _relayout and _start_idx is not None and _end_idx is not None:
-        _ev = _relayout[0] if isinstance(_relayout, list) else _relayout
-        if isinstance(_ev, dict):
-            _changed = False
-            _ns = _ev.get(f"shapes[{_start_idx}].x0")
-            _ne = _ev.get(f"shapes[{_end_idx}].x0")
-            if _ns is not None:
-                _d = _parse_plotly_date(_ns)
-                if _d and _cal_min <= _d <= _cal_max:
-                    st.session_state["pat_start_cal"] = _d
-                    _changed = True
-            if _ne is not None:
-                _d = _parse_plotly_date(_ne)
-                if _d and _cal_min <= _d <= _cal_max:
-                    st.session_state["pat_end_cal"] = _d
-                    _changed = True
-            if _changed:
-                st.rerun()
+    st.plotly_chart(fig, use_container_width=True)
 
     st.markdown(
         f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
