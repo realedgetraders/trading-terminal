@@ -526,7 +526,7 @@ def _render_journal_section():
     with col_r:
         _journal_card(
             "📊", "Performance Stats",
-            "Win rate, risk-reward, P&L, drawdown, expectancy, and equity curve — switch between Live and Backtest to compare your real vs. tested edge.",
+            "Analyze your full trading performance in detail. Track Live and Backtest trades separately, let the data evaluate your edge, and export everything as CSV — ready to feed into an AI for deep pattern recognition across your trades.",
         )
 
     # ── Row 2: Trader Profile (centred, half-width)
