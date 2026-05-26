@@ -393,17 +393,20 @@ def calc_pattern_analysis(df: pd.DataFrame,
     losses = int((profits <= 0).sum())
 
     # ── Sharpe: Seasonax methodology ─────────────────────────────────────────
-    # Build the mean normalised curve from all qualifying years (aligned by
-    # relative trading-day position), then compute daily pct-changes on it.
-    # Sharpe = mean(daily_rets) / std(daily_rets), no RF rate, no annualisation.
+    # Pool all daily pct-changes from every qualifying year within the window,
+    # then annualise: Sharpe = (mean / std) × √252.
+    # Pooling keeps realistic cross-year variance; annualisation matches Seasonax.
     sharpe = 0.0
     if len(norm_paths) >= 2:
-        min_len = min(len(p) for p in norm_paths)
-        if min_len >= 2:
-            mean_curve  = np.mean([p[:min_len] for p in norm_paths], axis=0)
-            daily_rets  = np.diff(mean_curve) / mean_curve[:-1]
-            dr_std      = float(daily_rets.std())
-            sharpe      = float(daily_rets.mean()) / dr_std if dr_std > 0 else 0.0
+        pooled = []
+        for p in norm_paths:
+            if len(p) >= 2:
+                dr = np.diff(p) / p[:-1]   # daily pct-changes, dimensionless
+                pooled.extend(dr.tolist())
+        if len(pooled) >= 4:
+            arr    = np.array(pooled)
+            dr_std = float(arr.std())
+            sharpe = float(arr.mean()) / dr_std * np.sqrt(252) if dr_std > 0 else 0.0
 
     # Current streak (from most-recent year backwards)
     profit_list = profits.tolist()
