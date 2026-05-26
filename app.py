@@ -307,11 +307,12 @@ def main():
               <div style="font-size:40px;font-weight:800;color:{C['text']};
                           font-family:monospace;letter-spacing:-1px;line-height:1.1;
                           text-shadow:0 0 60px rgba(79,142,247,0.12),0 0 120px rgba(79,142,247,0.06);">
-                EdgeLab
+                {'Real Edge Terminal' if section == 'analysis' else 'EdgeLab'}
               </div>
               <div style="width:56px;height:3px;background:{divider_color};
                           margin:16px auto 0;border-radius:2px;
                           box-shadow:0 0 10px {divider_color},0 0 22px {divider_color}80;"></div>
+              {'<div style="font-size:11px;color:#666666;font-family:monospace;letter-spacing:1px;margin-top:14px;">A Place Where Traders Analyze Their Edge</div>' if section == 'analysis' else ''}
             </div>
             """,
             unsafe_allow_html=True,
