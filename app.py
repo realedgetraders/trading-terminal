@@ -51,7 +51,7 @@ MODULES = [
     {
         "title":    "Market Phase Scanner",
         "icon":     "⚡",
-        "desc":     "VIX-based market phase detection — current volatility percentile rank vs. 6-month history with trading implications.",
+        "desc":     "Volatility index that shows which market phase we are currently in — highly volatile, elevated, calm, or compressed — so you know what kind of market you are trading.",
         "active":   True,
         "page":     "pages/5_Market_Regime.py",
     },
