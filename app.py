@@ -30,7 +30,7 @@ MODULES = [
     {
         "title":    "COT Analysis",
         "icon":     "📊",
-        "desc":     "CFTC Commitments of Traders — net positioning, COT Index, and extreme signals across Forex, Commodities, Indices, and Bonds.",
+        "desc":     "CFTC Commitments of Traders — net positioning, COT Index, and a COT scanner that surfaces the strongest positioning extremes across markets.",
         "active":   True,
         "page":     "pages/2_COT_Analysis.py",
     },
