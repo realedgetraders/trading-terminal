@@ -285,7 +285,7 @@ def main():
                           box-shadow:0 0 8px rgba(255,255,255,0.55),0 0 18px rgba(255,255,255,0.25);"></div>
               <div style="font-size:11px;color:#888888;font-family:monospace;
                           letter-spacing:2px;text-transform:uppercase;margin-top:16px;">
-                A Place Where Traders Build Their Real Edge
+                A Place Where Traders Build Their Edge
               </div>
             </div>
             """,
