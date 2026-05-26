@@ -332,7 +332,8 @@ def calc_pattern_analysis(df: pd.DataFrame,
 
     current_year = dt_date.today().year
     data_start   = df.index[0]   # earliest date in dataset
-    rows  = []
+    rows       = []
+    norm_paths = []   # normalised Close paths — one array per qualifying year
     years = sorted(df["Year"].unique())
 
     for year in years:
@@ -377,6 +378,9 @@ def calc_pattern_analysis(df: pd.DataFrame,
             "_hold":       len(pat),
         })
 
+        # Collect normalised path for daily-returns Sharpe (Close / first Close)
+        norm_paths.append((pat["Close"] / sp).to_numpy())
+
     if not rows:
         return None, None
 
@@ -387,6 +391,19 @@ def calc_pattern_analysis(df: pd.DataFrame,
 
     gains  = int((profits > 0).sum())
     losses = int((profits <= 0).sum())
+
+    # ── Sharpe: Seasonax methodology ─────────────────────────────────────────
+    # Build the mean normalised curve from all qualifying years (aligned by
+    # relative trading-day position), then compute daily pct-changes on it.
+    # Sharpe = mean(daily_rets) / std(daily_rets), no RF rate, no annualisation.
+    sharpe = 0.0
+    if len(norm_paths) >= 2:
+        min_len = min(len(p) for p in norm_paths)
+        if min_len >= 2:
+            mean_curve  = np.mean([p[:min_len] for p in norm_paths], axis=0)
+            daily_rets  = np.diff(mean_curve) / mean_curve[:-1]
+            dr_std      = float(daily_rets.std())
+            sharpe      = float(daily_rets.mean()) / dr_std if dr_std > 0 else 0.0
 
     # Current streak (from most-recent year backwards)
     profit_list = profits.tolist()
@@ -411,7 +428,7 @@ def calc_pattern_analysis(df: pd.DataFrame,
         "avg_ret":    profits.mean(),
         "med_ret":    profits.median(),
         "win_rate":   (profits > 0).mean() * 100,
-        "sharpe":     profits.mean() / std if std > 0 else 0,
+        "sharpe":     sharpe,
         "ann_ret":    ann_ret,
         "ann_label":  "Ann. Return (Long)" if ann_ret >= 0 else "Ann. Return (Short)",
         "n":          len(table),
