@@ -23,7 +23,7 @@ MODULES = [
     {
         "title":    "Seasonality",
         "icon":     "📈",
-        "desc":     "Decode recurring price patterns across 25 years — custom windows, win rates, Sharpe, and a full radar of the strongest seasonal setups.",
+        "desc":     "Decode recurring price patterns across 25 years — custom windows, win rates, and a seasonality scanner that surfaces the strongest upcoming setups.",
         "active":   True,
         "page":     "pages/1_Seasonality.py",
     },
