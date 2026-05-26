@@ -464,9 +464,80 @@ def _render_analysis():
 
 
 def _render_journal_section():
-    """Journal section — single centred module card linking to 6_Journal.py."""
-    _, col_c, _ = st.columns([1, 2, 1])
-    _render_module_card(col_c, JOURNAL_MODULE)
+    """Journal section — amber-themed hub with upcoming journal feature cards."""
+    _AMBER     = "#f0b429"
+    _AMBER_BG  = "rgba(240,180,41,0.10)"
+    _AMBER_DIM = "rgba(240,180,41,0.28)"
+
+    JOURNAL_FEATURES = [
+        {
+            "icon":  "📝",
+            "title": "Trade Log",
+            "desc":  "Log every trade with entry, exit, size, direction, and personal notes — the foundation of tracking your real edge.",
+        },
+        {
+            "icon":  "📊",
+            "title": "Performance Stats",
+            "desc":  "Win rate, risk-reward, P&L, max drawdown, and expectancy — automatically calculated from your full trade history.",
+        },
+        {
+            "icon":  "📈",
+            "title": "Equity Curve",
+            "desc":  "Visual equity curve over time. See exactly where you make money, where you give it back, and how consistent your edge really is.",
+        },
+        {
+            "icon":  "👤",
+            "title": "Trade Profiles",
+            "desc":  "Separate your Live, Backtest, and Paper trading. Track each independently and compare your edge across all three contexts.",
+        },
+    ]
+
+    # ── Auth notice
+    st.markdown(
+        f"""
+        <div style="text-align:center;margin-bottom:32px;">
+          <span style="background:rgba(240,180,41,0.08);border:1px solid rgba(240,180,41,0.25);
+                       border-radius:8px;padding:8px 20px;
+                       font-size:11px;font-family:monospace;color:#888888;letter-spacing:1px;">
+            🔒 &nbsp; Authentication required &nbsp;·&nbsp; Launching soon
+          </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # ── Feature card grid (2 columns)
+    for row_start in range(0, len(JOURNAL_FEATURES), 2):
+        col_l, col_r = st.columns(2, gap="large")
+        for col, feat in zip([col_l, col_r], JOURNAL_FEATURES[row_start:row_start + 2]):
+            with col:
+                st.markdown(
+                    f"""
+                    <div style="background:{C['card']};
+                                border:1px solid {_AMBER_DIM};
+                                border-radius:12px;padding:24px 24px 20px;
+                                min-height:140px;margin-bottom:16px;opacity:0.72;
+                                transition:box-shadow 0.25s ease,border-color 0.25s ease;">
+                      <div style="display:flex;align-items:flex-start;
+                                  justify-content:space-between;margin-bottom:10px;">
+                        <div style="display:flex;align-items:center;gap:10px;">
+                          <span style="font-size:22px;">{feat['icon']}</span>
+                          <span style="font-size:15px;font-weight:700;color:{C['text']};
+                                       font-family:monospace;letter-spacing:2px;">{feat['title']}</span>
+                        </div>
+                        <span style="background:{_AMBER_BG};color:{_AMBER};
+                                     font-size:9px;font-family:monospace;font-weight:700;
+                                     letter-spacing:1px;padding:2px 8px;border-radius:4px;
+                                     text-transform:uppercase;border:1px solid {_AMBER_DIM};">
+                          Coming Soon
+                        </span>
+                      </div>
+                      <div style="font-size:12px;color:{C['muted']};line-height:1.6;
+                                  font-family:sans-serif;">{feat['desc']}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
 
 # ── Module card renderer ───────────────────────────────────────────────────────
