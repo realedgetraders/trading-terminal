@@ -10,6 +10,7 @@ import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime, timedelta, date as dt_date
 from dateutil.relativedelta import relativedelta
+from streamlit_plotly_events import plotly_events
 
 # DOY → "Mon DD" label for every day of a non-leap year (index 0 = DOY 1)
 _DOY_LABELS: list[str] = [
@@ -535,7 +536,7 @@ def plot_seasonal_curve(curve_df: pd.DataFrame,
                         display_name: str = "",
                         years: int = 10,
                         date_start: str = "", date_end: str = "",
-                        year_paths: dict | None = None) -> go.Figure:
+                        year_paths: dict | None = None) -> tuple:
     fig = go.Figure()
 
     dates   = curve_df["date"].tolist()   # pd.Timestamps in _REF_YEAR
@@ -575,12 +576,14 @@ def plot_seasonal_curve(curve_df: pd.DataFrame,
         if s_date is not None and e_date is not None:
             x_min = pd.Timestamp(ref_year, 1, 1).isoformat()
             x_max = pd.Timestamp(ref_year, 12, 31).isoformat()
-            shade_kw = dict(fillcolor="rgba(255,255,255,0.05)", layer="below", line_width=0)
+            _shade = dict(type="rect", xref="x", yref="paper", y0=0, y1=1,
+                          fillcolor="rgba(255,255,255,0.05)", layer="below",
+                          line_width=0, editable=False)
             if s_date <= e_date:
-                fig.add_vrect(x0=s_date.isoformat(), x1=e_date.isoformat(), **shade_kw)
+                fig.add_shape(**_shade, x0=s_date.isoformat(), x1=e_date.isoformat())
             else:
-                fig.add_vrect(x0=s_date.isoformat(), x1=x_max, **shade_kw)
-                fig.add_vrect(x0=x_min, x1=e_date.isoformat(),  **shade_kw)
+                fig.add_shape(**_shade, x0=s_date.isoformat(), x1=x_max)
+                fig.add_shape(**_shade, x0=x_min, x1=e_date.isoformat())
 
     # Mean seasonal line
     fig.add_trace(go.Scatter(
@@ -596,34 +599,33 @@ def plot_seasonal_curve(curve_df: pd.DataFrame,
     # Baseline at 100
     fig.add_hline(y=100, line_color=C["muted"], line_width=0.8, opacity=0.35)
 
-    # Pattern boundary lines — white solid, like Seasonax
+    # Draggable boundary lines — grab and drag directly in the chart to move the window
+    start_shape_idx: int | None = None
+    end_shape_idx:   int | None = None
     if has_pattern and s_date is not None and e_date is not None:
-        for dv in [s_date, e_date]:
-            fig.add_vline(x=dv.isoformat(), line_color="rgba(255,255,255,0.7)", line_width=1.5)
-
-    # Slider-sync dashed lines — track each handle; label shows exact date
-    if has_pattern and s_date is not None and e_date is not None:
+        start_shape_idx = len(fig.layout.shapes)
+        fig.add_shape(
+            type="line", xref="x", yref="paper",
+            x0=s_date.isoformat(), x1=s_date.isoformat(), y0=0, y1=1,
+            line=dict(color="rgba(255,255,255,0.75)", width=2),
+            editable=True,
+        )
+        end_shape_idx = len(fig.layout.shapes)
+        fig.add_shape(
+            type="line", xref="x", yref="paper",
+            x0=e_date.isoformat(), x1=e_date.isoformat(), y0=0, y1=1,
+            line=dict(color="rgba(255,255,255,0.75)", width=2),
+            editable=True,
+        )
         for dv, xanchor in [(s_date, "left"), (e_date, "right")]:
-            fig.add_vline(
-                x=dv.isoformat(),
-                line_color="rgba(79,142,247,0.5)",
-                line_width=1,
-                line_dash="dash",
-            )
             fig.add_annotation(
-                x=dv.isoformat(),
-                y=1.0,
-                xref="x",
-                yref="paper",
+                x=dv.isoformat(), y=1.0, xref="x", yref="paper",
                 text=dv.strftime("%b %d"),
-                showarrow=False,
-                xanchor=xanchor,
-                yanchor="top",
+                showarrow=False, xanchor=xanchor, yanchor="top",
                 font=dict(color="#4f8ef7", size=10, family="monospace"),
                 bgcolor="rgba(13,13,13,0.75)",
                 bordercolor="rgba(79,142,247,0.35)",
-                borderwidth=1,
-                borderpad=3,
+                borderwidth=1, borderpad=3,
             )
 
     # Inline chart title
@@ -686,7 +688,7 @@ def plot_seasonal_curve(curve_df: pd.DataFrame,
         modebar_remove = ["zoom","pan","select","lasso2d","zoomIn2d","zoomOut2d",
                           "autoScale2d","resetScale2d","toImage"],
     )
-    return fig
+    return fig, start_shape_idx, end_shape_idx
 
 def plot_donut(win_rate: float) -> go.Figure:
     loss_rate = 100.0 - win_rate
@@ -887,6 +889,53 @@ def _radar_html(df: pd.DataFrame) -> str:
         f"<thead><tr>{header}</tr></thead>"
         f"<tbody>{body}</tbody>"
         f"</table></div>"
+    )
+
+
+# ─── Chart event helpers ──────────────────────────────────────────────────────
+
+def _parse_plotly_date(val) -> dt_date | None:
+    """Convert a Plotly relayout date value (ISO string or ms epoch) to dt_date."""
+    try:
+        if isinstance(val, (int, float)):
+            return pd.Timestamp(val, unit="ms").date()
+        return pd.Timestamp(str(val)).date()
+    except Exception:
+        return None
+
+
+def _render_visual_timeline(s_doy: int, e_doy: int):
+    """Read-only horizontal timeline bar showing the selected pattern window."""
+    total = 365
+    s_pct = (s_doy - 1) / total * 100
+    e_pct = (e_doy - 1) / total * 100
+    segs = (
+        [(s_pct, e_pct - s_pct)]
+        if s_doy <= e_doy
+        else [(s_pct, 100 - s_pct), (0.0, e_pct)]
+    )
+    seg_html = "".join(
+        f"<div style='position:absolute;left:{l:.2f}%;width:{max(w,0.3):.2f}%;height:100%;"
+        f"background:rgba(79,142,247,0.22);border-left:2px solid rgba(79,142,247,0.6);"
+        f"border-right:2px solid rgba(79,142,247,0.6);border-radius:1px;'></div>"
+        for l, w in segs
+    )
+    month_doys  = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335]
+    month_names = ["Jan","Feb","Mar","Apr","May","Jun",
+                   "Jul","Aug","Sep","Oct","Nov","Dec"]
+    ticks = "".join(
+        f"<span style='position:absolute;left:{(d-1)/total*100:.2f}%;"
+        f"transform:translateX(-50%);color:#484848;font-size:9px;"
+        f"font-family:monospace;'>{n}</span>"
+        for d, n in zip(month_doys, month_names)
+    )
+    st.markdown(
+        f"<div style='padding:0 20px 0 60px;box-sizing:border-box;margin-top:-6px;'>"
+        f"<div style='position:relative;height:12px;background:#1c1c1c;border-radius:3px;'>"
+        f"{seg_html}</div>"
+        f"<div style='position:relative;height:16px;margin-top:3px;'>{ticks}</div>"
+        f"</div>",
+        unsafe_allow_html=True,
     )
 
 
@@ -1237,7 +1286,7 @@ def main():
     sm, sd = (pat_start.month, pat_start.day) if pat_active else (None, None)
     em, ed = (pat_end.month,   pat_end.day)   if pat_active else (None, None)
 
-    fig = plot_seasonal_curve(
+    fig, _start_idx, _end_idx = plot_seasonal_curve(
         curve, sm, sd, em, ed,
         display_name = display_name,
         years        = years,
@@ -1246,7 +1295,36 @@ def main():
         year_paths   = yr_paths,
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    _relayout = plotly_events(
+        fig,
+        click_event=False,
+        hover_event=False,
+        select_event=False,
+        relayout_event=True,
+        key="seasonal_chart",
+        override_height=440,
+        override_width="100%",
+    )
+
+    # Handle shape drag → update pattern window dates and re-render
+    if _relayout and _start_idx is not None and _end_idx is not None:
+        _ev = _relayout[0] if isinstance(_relayout, list) else _relayout
+        if isinstance(_ev, dict):
+            _changed = False
+            _ns = _ev.get(f"shapes[{_start_idx}].x0")
+            _ne = _ev.get(f"shapes[{_end_idx}].x0")
+            if _ns is not None:
+                _d = _parse_plotly_date(_ns)
+                if _d and _cal_min <= _d <= _cal_max:
+                    st.session_state["pat_start_cal"] = _d
+                    _changed = True
+            if _ne is not None:
+                _d = _parse_plotly_date(_ne)
+                if _d and _cal_min <= _d <= _cal_max:
+                    st.session_state["pat_end_cal"] = _d
+                    _changed = True
+            if _changed:
+                st.rerun()
 
     st.markdown(
         f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
@@ -1256,14 +1334,8 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # ── Pattern range slider ──────────────────────────────────────────────────
-    st.select_slider(
-        "Pattern window",
-        options=_DOY_LABELS,
-        value=(_s_lbl, _e_lbl),
-        label_visibility="collapsed",
-        key="pat_doy_range",
-    )
+    # ── Visual timeline (read-only — drag the white lines in the chart above) ──
+    _render_visual_timeline(_s_doy, _e_doy)
 
     # ── Pattern Analysis ──────────────────────────────────────────────────────
     if not pat_active:
@@ -1271,7 +1343,7 @@ def main():
             f"<div style='background:{C['panel']};border:1px solid {C['border']};"
             f"border-radius:8px;padding:20px 24px;color:{C['muted']};"
             f"font-family:monospace;font-size:12px;text-align:center;'>"
-            f"Drag the Pattern Window slider above the chart to activate pattern analysis."
+            f"Drag the white lines in the chart above to activate pattern analysis."
             f"</div>",
             unsafe_allow_html=True,
         )
