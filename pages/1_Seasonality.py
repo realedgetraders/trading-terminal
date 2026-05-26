@@ -360,8 +360,12 @@ def calc_pattern_analysis(df: pd.DataFrame,
         if pat.index[0] < data_start:
             continue
 
-        sp  = float(pat["Close"].iloc[0])   # entry = Close on entry date (or next trading day)
-        ep  = float(pat["Close"].iloc[-1])  # exit  = Close on exit  date (or prev trading day)
+        # Entry: Close of the last trading day BEFORE the window (Seasonax method)
+        df_before = df[df.index < pat.index[0]]
+        if df_before.empty:
+            continue                        # no prior bar — skip year
+        sp  = float(df_before["Close"].iloc[-1])
+        ep  = float(pat["Close"].iloc[-1])  # exit = Close of last window day
         pnl = ep - sp
         pct = (ep / sp - 1) * 100
 
@@ -378,8 +382,9 @@ def calc_pattern_analysis(df: pd.DataFrame,
             "_hold":       len(pat),
         })
 
-        # Collect normalised path for daily-returns Sharpe (Close / first Close)
-        norm_paths.append((pat["Close"] / sp).to_numpy())
+        # Norm path for Sharpe: prepend entry (1.0) then window closes / sp
+        # This captures both the gap-move into the window and within-window moves
+        norm_paths.append(np.concatenate([[1.0], (pat["Close"] / sp).to_numpy()]))
 
     if not rows:
         return None, None
