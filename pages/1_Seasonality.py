@@ -603,36 +603,28 @@ def plot_seasonal_curve(curve_df: pd.DataFrame,
 
     # Slider-sync dashed lines — track each handle; label shows exact date
     if has_pattern and s_date is not None and e_date is not None:
-        fig.add_vline(
-            x=s_date.isoformat(),
-            line_color="rgba(79,142,247,0.5)",
-            line_width=1,
-            line_dash="dash",
-            annotation_text=s_date.strftime("%b %d"),
-            annotation_position="top right",
-            annotation_font_color="#4f8ef7",
-            annotation_font_size=10,
-            annotation_font_family="monospace",
-            annotation_bgcolor="rgba(13,13,13,0.75)",
-            annotation_bordercolor="rgba(79,142,247,0.35)",
-            annotation_borderwidth=1,
-            annotation_borderpad=3,
-        )
-        fig.add_vline(
-            x=e_date.isoformat(),
-            line_color="rgba(79,142,247,0.5)",
-            line_width=1,
-            line_dash="dash",
-            annotation_text=e_date.strftime("%b %d"),
-            annotation_position="top left",
-            annotation_font_color="#4f8ef7",
-            annotation_font_size=10,
-            annotation_font_family="monospace",
-            annotation_bgcolor="rgba(13,13,13,0.75)",
-            annotation_bordercolor="rgba(79,142,247,0.35)",
-            annotation_borderwidth=1,
-            annotation_borderpad=3,
-        )
+        for dv, xanchor in [(s_date, "left"), (e_date, "right")]:
+            fig.add_vline(
+                x=dv.isoformat(),
+                line_color="rgba(79,142,247,0.5)",
+                line_width=1,
+                line_dash="dash",
+            )
+            fig.add_annotation(
+                x=dv.isoformat(),
+                y=1.0,
+                xref="x",
+                yref="paper",
+                text=dv.strftime("%b %d"),
+                showarrow=False,
+                xanchor=xanchor,
+                yanchor="top",
+                font=dict(color="#4f8ef7", size=10, family="monospace"),
+                bgcolor="rgba(13,13,13,0.75)",
+                bordercolor="rgba(79,142,247,0.35)",
+                borderwidth=1,
+                borderpad=3,
+            )
 
     # Inline chart title
     title_text = (
