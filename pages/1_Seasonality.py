@@ -10,7 +10,6 @@ import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime, timedelta, date as dt_date
 from dateutil.relativedelta import relativedelta
-from streamlit_plotly_events import plotly_events
 
 # DOY → "Mon DD" label for every day of a non-leap year (index 0 = DOY 1)
 _DOY_LABELS: list[str] = [
@@ -598,6 +597,18 @@ def plot_seasonal_curve(curve_df: pd.DataFrame,
 
     # Baseline at 100
     fig.add_hline(y=100, line_color=C["muted"], line_width=0.8, opacity=0.35)
+
+    # Invisible click-zone markers — one per data point, covers full curve width
+    # Streamlit's on_select fires when the user clicks near any of these markers.
+    fig.add_trace(go.Scatter(
+        x    = [d.isoformat() for d in dates],
+        y    = index_y,
+        mode = "markers",
+        marker = dict(size=14, opacity=0.001, color=C["teal"]),
+        hoverinfo  = "skip",
+        showlegend = False,
+        name = "__click__",
+    ))
 
     # Pattern boundary lines with date labels
     if has_pattern and s_date is not None and e_date is not None:
@@ -1284,17 +1295,16 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # ── Chart (click-enabled) ─────────────────────────────────────────────────
-    # Key increments on every processed click so the component resets its stored
-    # event — prevents the same click from being replayed on every re-render.
-    _chart_v = st.session_state.get("_chart_v", 0)
-    _click = plotly_events(
+    # ── Chart (native Streamlit click via on_select) ──────────────────────────
+    # Key increments after each processed click → resets selection state,
+    # preventing the same event from replaying on subsequent re-renders.
+    _chart_v  = st.session_state.get("_chart_v", 0)
+    _chart_ev = st.plotly_chart(
         fig,
-        click_event=True,
-        hover_event=False,
-        select_event=False,
-        key=f"seasonal_chart_{_chart_v}",
-        override_height=440,
+        use_container_width = True,
+        on_select            = "rerun",
+        selection_mode       = "points",
+        key                  = f"seasonal_chart_{_chart_v}",
     )
 
     # ── Visual timeline bar flush on x-axis (no labels — chart already has them)
@@ -1309,9 +1319,9 @@ def main():
     )
 
     # ── Handle click → set Start or End date ─────────────────────────────────
-    if _click:
-        _ev = _click[0] if isinstance(_click, list) else _click
-        _x  = _ev.get("x") if isinstance(_ev, dict) else None
+    _pts = getattr(getattr(_chart_ev, "selection", None), "points", None) or []
+    if _pts:
+        _x = _pts[0].get("x")
         if _x:
             _d = _parse_plotly_date(_x)
             if _d and _cal_min <= _d <= _cal_max:
@@ -1321,7 +1331,6 @@ def main():
                 else:
                     st.session_state["pat_end_cal"]  = _d
                     st.session_state["_click_mode"]  = "start"
-                # Bump version → fresh component instance on next render
                 st.session_state["_chart_v"] = _chart_v + 1
                 st.rerun()
 
