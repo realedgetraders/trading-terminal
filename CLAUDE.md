@@ -33,6 +33,7 @@ streamlit run app.py
 
 ### Git-Regeln
 - **Immer direkt auf main committen**
+- **Nach jedem Commit sofort pushen (`git push origin main`) — kein manuelles Triggern nötig**
 - **Niemals Pull Requests erstellen**
 - Änderungen müssen chirurgisch und gezielt sein
 - Keine anderen Module oder Logik anfassen als explizit gefragt
