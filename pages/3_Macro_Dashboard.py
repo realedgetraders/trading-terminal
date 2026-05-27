@@ -3236,7 +3236,7 @@ def _calc_bias_score_legacy(indicators_df: pd.DataFrame, currency: str) -> dict:
     elif final >  0.10: level, lc = "MILD BULLISH",   C["green"]
     elif final >= 0.0:  level, lc = "MILD BULLISH",   C["green"]
     elif final > -0.30: level, lc = "MILD BEARISH",   C["yellow"]
-    elif final >= -0.60: level, lc = "SLIGHT BEARISH", "#f08080"
+    elif final >= -0.60: level, lc = "SLIGHT BEARISH", C["red"]
     else:                level, lc = "STRONG BEARISH", C["red"]
 
     # ── Per-indicator tags for bias panel ─────────────────────────────────────

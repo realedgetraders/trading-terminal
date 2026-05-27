@@ -29,19 +29,19 @@ C = {
     "text":   "#e8e8e8",
     "muted":  "#666666",
     "teal":   "#4f8ef7",
-    "green":  "#00c896",
+    "green":  "#1a9b6a",
     "yellow": "#f0c040",
     "orange": "#f07840",
-    "red":    "#e03030",
+    "red":    "#f05262",
     "purple": "#a000c8",
 }
 
 # Regime definitions: (max_pct, label, emoji, color, bg_color)
 REGIMES = [
-    (20,  "LOW VOLATILITY",  "🟢", C["green"],  "rgba(0,200,150,0.12)"),
+    (20,  "LOW VOLATILITY",  "🟢", C["green"],  "rgba(26,155,106,0.12)"),
     (40,  "NORMAL",          "🟡", C["yellow"], "rgba(240,192,64,0.12)"),
     (60,  "MODERATE",        "🟠", C["orange"], "rgba(240,120,64,0.12)"),
-    (80,  "ELEVATED",        "🔴", C["red"],    "rgba(224,48,48,0.12)"),
+    (80,  "ELEVATED",        "🔴", C["red"],    "rgba(240,82,98,0.12)"),
     (100, "EXTREME STRESS",  "⚫", C["purple"], "rgba(160,0,200,0.12)"),
 ]
 
@@ -159,18 +159,18 @@ def _line_chart(history: pd.Series) -> go.Figure:
     fig = go.Figure()
 
     # ── Background zones (fixed VIX levels) ──────────────────────────────────
-    fig.add_hrect(y0=0,  y1=15, fillcolor="#00c896", opacity=0.08, layer="below", line_width=0)
+    fig.add_hrect(y0=0,  y1=15, fillcolor="#1a9b6a", opacity=0.08, layer="below", line_width=0)
     fig.add_hrect(y0=15, y1=18, fillcolor="#f0c040", opacity=0.08, layer="below", line_width=0)
     fig.add_hrect(y0=18, y1=22, fillcolor="#f07840", opacity=0.09, layer="below", line_width=0)
-    fig.add_hrect(y0=22, y1=28, fillcolor="#e03030", opacity=0.10, layer="below", line_width=0)
+    fig.add_hrect(y0=22, y1=28, fillcolor="#f05262", opacity=0.10, layer="below", line_width=0)
     fig.add_hrect(y0=28, y1=60, fillcolor="#a000c8", opacity=0.10, layer="below", line_width=0)
 
     # ── Zone labels — right of chart ──────────────────────────────────────────
     zone_labels = [
-        (7.5,  "#00c896", "LOW VOL"),
+        (7.5,  "#1a9b6a", "LOW VOL"),
         (16.5, "#f0c040", "NORMAL"),
         (20.0, "#f07840", "MODERATE"),
-        (25.0, "#e03030", "ELEVATED"),
+        (25.0, "#f05262", "ELEVATED"),
         (32.0, "#a000c8", "EXTREME"),
     ]
     for y_mid, color, label in zone_labels:
