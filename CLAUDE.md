@@ -260,8 +260,8 @@ Currency-filtered macro scanner for 8 major FX currencies (USD EUR GBP JPY AUD C
 - 12M chart: true monthly re-score per month
 
 ### Session State Keys
-- `macro_scores_{CCY}`: dict with keys `score, label, label_color, indicator_scores, monthly_scores, n_indicators`
-- `macro_last_rerun`: timestamp for 5-min auto-rerun timer
+- `macro_scores_{CCY}`: dict with keys `total` (float score), `level` (label string e.g. "BULLISH"), `currency` (str), `fmt` ("indicator_12m")
+- `last_refresh_ts`: float timestamp for 5-min auto-rerun timer (NOT `macro_last_rerun`)
 - `macro_currency`: selected currency radio value
 
 ### Indicator Weights (_IND_WEIGHTS)
@@ -345,7 +345,7 @@ pages/6_Journal.py
 ## Known Open Items (as of 2026-05-25)
 
 1. **Economic Calendar (Module 4)** — still fewer events than Investing.com; FF feed coverage gaps not fully resolved
-2. **Divergence Pair Table (Module 3)** — not verified against current `calc_all_biases` session state format (`macro_scores_{CCY}` dict with key `score`)
+2. **Divergence Pair Table (Module 3)** — not verified against current `calc_all_biases` session state format (`macro_scores_{CCY}` dict with key `total`, not `score`)
 
 ---
 

@@ -1492,8 +1492,20 @@ def main():
         else:
             with st.spinner("Loading economic calendar..."):
                 cal_df = fetch_ff_calendar_m4()
-            calendar_view = build_calendar_view_m4(cal_df, selected_ccy)
-            st.markdown(render_calendar_table_m4(calendar_view), unsafe_allow_html=True)
+            # If FF fetch failed and static fallback is entirely in the past, show warning
+            if cal_df.empty:
+                _static_max = max(
+                    (pd.to_datetime(ev["date"]) for ev in _STATIC_CALENDAR_M4),
+                    default=pd.Timestamp.min,
+                )
+                if _static_max.date() < pd.Timestamp.today().date():
+                    st.warning("Economic calendar temporarily unavailable. Please check back later.")
+                else:
+                    calendar_view = build_calendar_view_m4(cal_df, selected_ccy)
+                    st.markdown(render_calendar_table_m4(calendar_view), unsafe_allow_html=True)
+            else:
+                calendar_view = build_calendar_view_m4(cal_df, selected_ccy)
+                st.markdown(render_calendar_table_m4(calendar_view), unsafe_allow_html=True)
 
     # ── Footer ─────────────────────────────────────────────────────────────────
     st.markdown(

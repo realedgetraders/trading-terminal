@@ -4352,6 +4352,12 @@ def main():
         with st.spinner("⏳ Fetching current data…"):
             if currency == "USD":
                 official = fetch_fred_indicators(FRED_API_KEY)
+                if not _FRED_KEY_VALID:
+                    st.warning(
+                        "⚠ FRED API key is missing or invalid. USD indicator data is falling back "
+                        "to static May 2026 values. Set FRED_API_KEY in your Streamlit secrets or "
+                        "environment to enable live USD data.",
+                    )
             else:
                 # ── Layer 1: ForexFactory — quick base for upcoming-event previous values ──
                 ff_data = fetch_ff_macro_data(currency)
@@ -4371,6 +4377,14 @@ def main():
                 # ── Layer 2: Trading Economics — PMI, GDP, Retail, Wage, Unemployment ──
                 te_data = fetch_te_indicators(currency)
                 official.update(te_data)   # TE overrides FF where available
+                if not te_data:
+                    _te_missing = [i for i in ("Manufacturing PMI", "Services PMI", "GDP Growth")
+                                   if i not in official]
+                    if _te_missing:
+                        st.warning(
+                            f"⚠ Live Trading Economics data unavailable. Falling back to static "
+                            f"values for: {', '.join(_te_missing)}.",
+                        )
 
                 # ── Layer 3: FRED OECD/ILO + ONS — more authoritative unemployment/CPI ──
                 intl_data = fetch_international_indicators(currency, FRED_API_KEY)
