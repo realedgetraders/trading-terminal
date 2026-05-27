@@ -596,7 +596,7 @@ def main():
     col_back, col_title, _ = st.columns([2, 5, 2])
     with col_back:
         st.markdown("<div style='margin-top:6px;'>", unsafe_allow_html=True)
-        if st.button("← Back to Hub", key="back_btn"):
+        if st.button("← Back to Terminal", key="back_btn"):
             st.switch_page("app.py")
         st.markdown("</div>", unsafe_allow_html=True)
     with col_title:

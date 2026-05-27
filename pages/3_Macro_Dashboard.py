@@ -4171,7 +4171,7 @@ def main():
     # ── Title row ──────────────────────────────────────────────────────────────
     col_back, col_title, col_ref = st.columns([2, 5, 2])
     with col_back:
-        if st.button("← Back to Hub"):
+        if st.button("← Back to Terminal"):
             st.switch_page("app.py")
     with col_title:
         st.markdown(
