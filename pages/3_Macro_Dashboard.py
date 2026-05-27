@@ -642,7 +642,9 @@ STATIC_INDICATORS: dict[str, dict[str, dict]] = {
 # ║  12-MONTH STATIC HISTORY FALLBACK  (Jun 2025 → May 2026, index 0=oldest)
 # ║  Used when live API fetch is unavailable.
 # ║  Latest 6 values (index 6-11) match the STATIC_INDICATORS "actual" series.
+# ║  Update _HISTORY_FALLBACK_DATE whenever this block is refreshed.
 # ╚══════════════════════════════════════════════════════════════════════════════
+_HISTORY_FALLBACK_DATE = "2026-05-24"  # update this whenever HISTORY_FALLBACK is refreshed
 HISTORY_FALLBACK: dict[str, dict[str, list[float]]] = {
     "USD": {
         # FRED live — verified 2026-05-24  (Jun 2025 → Apr/May 2026, oldest first)
@@ -2988,6 +2990,35 @@ def build_indicators_table(
 
     df = pd.DataFrame(result_rows)
 
+    # ── FF forecast override: replace hardcoded forecasts with live FF values ──
+    # fetch_ff_macro_data is cached (ttl=1800), so this is a free cache hit.
+    # Skips Interest Rate and CPI m/m (already excluded by _FF_SKIP_INDICATORS).
+    try:
+        _ff = fetch_ff_macro_data(currency)
+        if _ff:
+            for _i, _r in df.iterrows():
+                _entry = _ff.get(_r["indicator"])
+                if _entry and _entry.get("forecast") is not None:
+                    df.at[_i, "forecast"] = _entry["forecast"]
+                    # recompute beat/miss with the updated forecast
+                    try:
+                        _a = _r["actual"]
+                        _f = float(_entry["forecast"])
+                        if _a is not None:
+                            _lower = LOWER_IS_BETTER.get(_r["indicator"], False)
+                            _rel   = abs(float(_a) - _f) / max(abs(_f), 0.01)
+                            if _rel < 0.005:
+                                df.at[_i, "beat_miss"] = "inline"
+                            elif (not _lower and float(_a) > _f) or \
+                                 (_lower and float(_a) < _f):
+                                df.at[_i, "beat_miss"] = "beat"
+                            else:
+                                df.at[_i, "beat_miss"] = "miss"
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
     # Source label for UI
     live_apis = sources_used & {"FRED", "ECB", "BoE", "TE"}
     if live_apis:
@@ -4165,6 +4196,10 @@ def main():
         fetch_oecd_history.clear()
         fetch_te_history.clear()
         fetch_investing_history.clear()
+        fetch_fred_indicators.clear()
+        fetch_ecb_rate.clear()
+        fetch_ecb_cpi.clear()
+        fetch_boe_rate.clear()
         st.session_state.last_refresh_ts = _now
         st.rerun()
 
@@ -4290,6 +4325,19 @@ def main():
 
     with col_rank:
         st.markdown(_section_header("All Currencies — Bias Ranking"), unsafe_allow_html=True)
+        # ── Fallback age warning ──────────────────────────────────────────────
+        try:
+            import datetime as _dt
+            _fb_age = (_dt.date.today() - _dt.date.fromisoformat(_HISTORY_FALLBACK_DATE)).days
+            if _fb_age > 30:
+                st.warning(
+                    f"⚠ Peer comparison data is {_fb_age} days old (last updated {_HISTORY_FALLBACK_DATE}). "
+                    f"Rankings for currencies without a live session score are based on static fallback data "
+                    f"and may not reflect current conditions. Navigate to each currency to refresh its score.",
+                    icon=None,
+                )
+        except Exception:
+            pass
         st.markdown(render_all_currencies_overview(currency), unsafe_allow_html=True)
 
     with col_raw:
