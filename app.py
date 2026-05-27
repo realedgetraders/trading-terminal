@@ -115,6 +115,8 @@ def main():
 
     # Teal button style only needed in section views (module-card buttons).
     # On the landing page (section=None) the CTA buttons get their own colours below.
+    _btn_hover_color = C["yellow"] if section == "journal" else C["teal"]
+    _btn_hover_rgba  = "rgba(240,180,41,0.14)" if section == "journal" else "rgba(79,142,247,0.14)"
     _section_btn_css = f"""
       button[kind="primary"], button[kind="secondary"] {{
           background: #161616 !important;
@@ -125,9 +127,9 @@ def main():
           transition: border-color 0.22s ease, color 0.22s ease, box-shadow 0.22s ease !important;
       }}
       button[kind="primary"]:hover, button[kind="secondary"]:hover {{
-          border-color: {C['teal']}70 !important;
-          color: {C['teal']} !important;
-          box-shadow: 0 0 12px rgba(79,142,247,0.14) !important;
+          border-color: {_btn_hover_color}70 !important;
+          color: {_btn_hover_color} !important;
+          box-shadow: 0 0 12px {_btn_hover_rgba} !important;
       }}
 """ if section is not None else ""
 
