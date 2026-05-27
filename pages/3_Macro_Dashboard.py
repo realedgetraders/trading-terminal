@@ -4250,14 +4250,16 @@ def main():
     _all_biases = calc_all_biases(_all_hist)
     bias_result = _all_biases[currency]
 
-    # ── 3. Store all 8 normalized scores in session state ────────────────────
-    for _ccy, _b in _all_biases.items():
-        st.session_state[f"macro_scores_{_ccy}"] = {
-            "total":    _b["score"],
-            "level":    _b["label"],
-            "currency": _ccy,
-            "fmt":      "indicator_12m",
-        }
+    # ── 3. Store ONLY the selected currency's score in session state ─────────
+    # Storing all 8 would overwrite other currencies with fallback-normalised
+    # scores (they use HISTORY_FALLBACK above), corrupting the ranking panel.
+    # Each currency's score is stored only when it is the active selection.
+    st.session_state[f"macro_scores_{currency}"] = {
+        "total":    bias_result["score"],
+        "level":    bias_result["label"],
+        "currency": currency,
+        "fmt":      "indicator_12m",
+    }
 
     # ── 5. Bias gauge panel ───────────────────────────────────────────────────
     st.markdown(render_bias_panel(currency, bias_result), unsafe_allow_html=True)
