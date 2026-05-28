@@ -39,6 +39,7 @@ MODULES = [
         "icon":     "🗓️",
         "desc":     "Aggregates live macroeconomic data across 8 major currencies, scores key indicators by impact, and converts them into a directional bias — geopolitical events can override this signal at any time.",
         "active":   True,
+        "pro":      True,
         "page":     "pages/3_Macro_Dashboard.py",
     },
     {
