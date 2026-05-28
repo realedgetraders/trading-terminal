@@ -379,6 +379,33 @@ def fetch_yf_price(ticker: str):
     except Exception:
         return None
 
+
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_yf_price_with_prev(ticker: str, lookback: int = 20):
+    """Fetch latest close + ~lookback trading-days-ago close from yfinance.
+    Returns (current, prev) — prev is approx 1 calendar month ago."""
+    try:
+        import yfinance as yf
+        df = yf.download(ticker, period="60d", progress=False, auto_adjust=True)
+        if df.empty:
+            return None, None
+        close = df["Close"]
+        if isinstance(close, pd.DataFrame):
+            close = close.iloc[:, 0]
+        vals = close.dropna()
+        if vals.empty:
+            return None, None
+        current = float(vals.iloc[-1])
+        if len(vals) > lookback:
+            prev = float(vals.iloc[-lookback])
+        elif len(vals) > 1:
+            prev = float(vals.iloc[0])
+        else:
+            prev = None
+        return current, prev
+    except Exception:
+        return None, None
+
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  FOREXFACTORY CALENDAR  (ttl=1800)
 # ╚══════════════════════════════════════════════════════════════════════════════
@@ -976,29 +1003,64 @@ def _beat_miss_label(s):
 
 
 def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
-    """D5: Currency-specific proxy indicators."""
+    """D5: Currency-specific proxy indicators.
+    PREV column = ~1 month ago value for market prices (20 trading days via yfinance),
+    derived from component prev values for computed metrics (real rate, spread, carry).
+    COT index rows leave PREV as None — no natural prior-period normalised comparison.
+    """
     cot = _cot_index(ccy)
 
     rows = []
     scores = []
 
     if ccy == "USD":
-        dgs10 = _fred_latest("DGS10", 60)   # daily — 60 obs covers ~3 months incl. holidays
+        N = _NEUTRAL_RATE["USD"]
+
+        # ── 10Y Yield — FRED (daily) with yfinance ^TNX fallback; both current + prev ──
+        dgs10, dgs10_prev = None, None
+        _dgs10_data = fetch_fred_series("DGS10", 60)
+        if _dgs10_data:
+            dgs10 = _dgs10_data[-1][1]
+            dgs10_prev = _dgs10_data[-2][1] if len(_dgs10_data) >= 2 else None
         if dgs10 is None:
-            _tnx = fetch_yf_price("^TNX")   # yfinance ^TNX = 10Y Treasury yield (same % units)
-            if _tnx is not None:
-                dgs10 = _tnx
-        dgs2 = _fred_latest("DGS2", 60)     # daily — higher limit absorbs holiday/weekend gaps
+            dgs10, dgs10_prev = fetch_yf_price_with_prev("^TNX", 20)
+        if dgs10_prev is None:
+            dgs10_prev = 4.55  # static fallback: ~month-ago 10Y yield
+
+        # ── 2Y Yield — FRED (daily) with yfinance ^IRX fallback ─────────────────
+        dgs2, dgs2_prev = None, None
+        _dgs2_data = fetch_fred_series("DGS2", 60)
+        if _dgs2_data:
+            dgs2 = _dgs2_data[-1][1]
+            dgs2_prev = _dgs2_data[-2][1] if len(_dgs2_data) >= 2 else None
         if dgs2 is None:
-            dgs2 = fetch_yf_price("^IRX")   # 13-week T-Bill as front-end curve proxy
-        dxy  = fetch_yf_price("DX-Y.NYB")
+            dgs2, dgs2_prev = fetch_yf_price_with_prev("^IRX", 20)
+
+        # ── DXY — yfinance primary; alternative ticker fallback ──────────────────
+        dxy, dxy_prev = fetch_yf_price_with_prev("DX-Y.NYB", 20)
         if dxy is None:
-            dxy = fetch_yf_price("DX=F")    # alternative DXY futures ticker
-        rate = _fred_latest("FEDFUNDS", 10) or _FB_RATES["USD"]
-        N    = _NEUTRAL_RATE["USD"]
-        conf = _fred_latest("UMCSENT", 24)  # doubled limit — preliminary months may be "."
+            dxy, dxy_prev = fetch_yf_price_with_prev("DX=F", 20)
+        if dxy_prev is None:
+            dxy_prev = 100.5  # static fallback: ~month-ago DXY level
+
+        # ── Spread = 10Y – 2Y ────────────────────────────────────────────────────
+        spread      = (dgs10 - dgs2)           if dgs10 is not None and dgs2 is not None else None
+        spread_prev = (dgs10_prev - dgs2_prev) if dgs10_prev is not None and dgs2_prev is not None else None
+        if spread_prev is None:
+            spread_prev = -0.15  # static fallback: recent 2s10s spread
+
+        # ── Fed Funds — current + prev for Rate vs Neutral ──────────────────────
+        rate, rate_prev_raw = _fred_latest_with_prev("FEDFUNDS", 10)
+        if rate is None:
+            rate = _FB_RATES["USD"]
+        if rate_prev_raw is None:
+            rate_prev_raw = _FB_PREV_RATES["USD"]
+        rate_vs_neutral      = rate - N
+        rate_vs_neutral_prev = rate_prev_raw - N
+
+        # ── Consumer Confidence — FRED UMCSENT + FF fallback ────────────────────
+        conf, conf_prev = _fred_latest_with_prev("UMCSENT", 30)
         if conf is None:
-            # FF fallback: UMich Consumer Sentiment — try several title variants
             try:
                 if not ff_df.empty:
                     for _cs_pat in ("Consumer Sentiment", "UoM Consumer", "Michigan Sentiment"):
@@ -1009,16 +1071,17 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
                         for _, r in sub_cs.iterrows():
                             if r["actual"] is not None:
                                 conf = float(r["actual"])
+                                if conf_prev is None:
+                                    conf_prev = r["previous"]
                                 break
                         if conf is not None:
                             break
             except Exception:
                 pass
         if conf is None:
-            conf = _FB_CONF_USD   # static fallback when both FRED and FF fail
-        spread = None
-        if dgs10 is not None and dgs2 is not None:
-            spread = dgs10 - dgs2
+            conf = _FB_CONF_USD
+        if conf_prev is None:
+            conf_prev = 70.0  # static fallback: prior month UMich
 
         # DGS10: >4.0% = positive for USD (higher yields = tighter = bullish)
         # DXY: >98 = positive, <95 = negative; no invert — higher DXY = stronger USD
@@ -1026,30 +1089,38 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         s1 = _score(dgs10, 3.0, 3.5, 4.0, 4.5)
         s2 = _score(dxy,   90.0, 95.0, 98.0, 102.0)
         s3 = _score(spread, -1.0, -0.2, 0.5, 1.0)
-        s4 = _score(rate - N, -1.0, -0.5, 0.5, 1.0)
+        s4 = _score(rate_vs_neutral, -1.0, -0.5, 0.5, 1.0)
         s5 = _score(conf, 60.0, 70.0, 80.0, 90.0)
         scores = [s1, s2, s3, s4, s5]
         rows = [
-            ("10Y Yield (DGS10)", dgs10, None, None, None, s1, "FRED/yfinance"),
-            ("DXY Level",         dxy,   None, None, None, s2, "yfinance"),
-            ("2s10s Spread",      spread, None, None, None, s3, "FRED/yfinance"),
-            ("Rate vs Neutral",   rate - N if rate is not None else None, None, None, None, s4, "FRED"),
-            ("Consumer Confidence", conf, None, None, None, s5, "FRED"),
+            ("10Y Yield (DGS10)",   dgs10,             dgs10_prev,            None, None, s1, "FRED/yfinance"),
+            ("DXY Level",           dxy,               dxy_prev,              None, None, s2, "yfinance"),
+            ("2s10s Spread",        spread,            spread_prev,           None, None, s3, "FRED/yfinance"),
+            ("Rate vs Neutral",     rate_vs_neutral,   rate_vs_neutral_prev,  None, None, s4, "FRED"),
+            ("Consumer Confidence", conf,              conf_prev,             None, None, s5, "FRED"),
         ]
 
     elif ccy == "EUR":
-        eurchf = fetch_yf_price("EURCHF=X")
+        eurchf, eurchf_prev = fetch_yf_price_with_prev("EURCHF=X", 20)
         cpi  = fetch_ecb_series("ICP", "M.U2.N.000000.4.ANR") or _FB_CPI["EUR"]
         rate = fetch_ecb_series("FM", "M.U2.EUR.RT0.DFR.R.1.Z5.I.A") or _FB_RATES["EUR"]
-        pmi  = _FB_PMI["EUR"]
+        rate_prev = _FB_PREV_RATES["EUR"]
+        cpi_prev  = _FB_PREV_CPI["EUR"]
+        pmi, pmi_prev = _FB_PMI["EUR"], None
         try:
             if not ff_df.empty:
-                sub = ff_df[(ff_df["currency"] == "EUR") & ff_df["title"].str.contains("Manufacturing PMI", case=False, na=False)]
-                if not sub.empty and sub.sort_values("date").iloc[-1]["actual"] is not None:
-                    pmi = float(sub.sort_values("date").iloc[-1]["actual"])
+                sub = ff_df[(ff_df["currency"] == "EUR") &
+                            ff_df["title"].str.contains("Manufacturing PMI", case=False, na=False)]
+                sub_s = sub.sort_values("date")
+                if not sub_s.empty and sub_s.iloc[-1]["actual"] is not None:
+                    pmi      = float(sub_s.iloc[-1]["actual"])
+                    pmi_prev = sub_s.iloc[-1]["previous"]
         except Exception:
             pass
-        real_rate = rate - cpi if rate and cpi else None
+        if pmi_prev is None:
+            pmi_prev = _FB_PREV_PMI.get("EUR")
+        real_rate      = (rate - cpi)           if rate and cpi else None
+        real_rate_prev = (rate_prev - cpi_prev) if rate_prev and cpi_prev else None
         s1 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s2 = _score(pmi, 47.0, 49.0, 51.0, 53.0)
         s3 = _score(eurchf, 0.93, 0.95, 0.97, 0.99)
@@ -1057,49 +1128,65 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         s5 = _score(rate, 3.5, 4.0, 5.0, 5.5, invert=True)
         scores = [s1, s2, s3, s4, s5]
         rows = [
-            ("EUR COT Index", cot, None, None, None, s1, "CFTC"),
-            ("Mfg PMI", pmi, None, None, None, s2, "ForexFactory"),
-            ("EURCHF Level", eurchf, None, None, None, s3, "yfinance"),
-            ("Real Rate (rate-CPI)", real_rate, None, None, None, s4, "FRED/ECB"),
-            ("Deposit Rate (inverted)", rate, None, None, None, s5, "ECB"),
+            ("EUR COT Index",           cot,       None,           None, None, s1, "CFTC"),
+            ("Mfg PMI",                 pmi,       pmi_prev,       None, None, s2, "ForexFactory"),
+            ("EURCHF Level",            eurchf,    eurchf_prev,    None, None, s3, "yfinance"),
+            ("Real Rate (rate-CPI)",    real_rate, real_rate_prev, None, None, s4, "FRED/ECB"),
+            ("Deposit Rate (inverted)", rate,      rate_prev,      None, None, s5, "ECB"),
         ]
 
     elif ccy == "GBP":
-        rate  = _fred_latest("BOERUKM156N", 5) or _FB_RATES["GBP"]
-        cpi   = _fred_latest("CPALTT01GBM659N", 5) or _FB_CPI["GBP"]
-        real_rate = rate - cpi
-        pmi = _FB_PMI["GBP"]
+        rate, rate_prev_raw = _fred_latest_with_prev("BOERUKM156N", 5)
+        rate = rate or _FB_RATES["GBP"]
+        rate_prev_raw = rate_prev_raw or _FB_PREV_RATES["GBP"]
+        cpi  = _fred_latest("CPALTT01GBM659N", 5) or _FB_CPI["GBP"]
+        cpi_prev  = _FB_PREV_CPI["GBP"]
+        real_rate      = rate - cpi
+        real_rate_prev = rate_prev_raw - cpi_prev
+        N_gbp = _NEUTRAL_RATE["GBP"]
+        pmi, pmi_prev = _FB_PMI["GBP"], None
         try:
             if not ff_df.empty:
-                sub = ff_df[(ff_df["currency"] == "GBP") & ff_df["title"].str.contains("Services PMI", case=False, na=False)]
-                if not sub.empty and sub.sort_values("date").iloc[-1]["actual"] is not None:
-                    pmi = float(sub.sort_values("date").iloc[-1]["actual"])
+                sub = ff_df[(ff_df["currency"] == "GBP") &
+                            ff_df["title"].str.contains("Services PMI", case=False, na=False)]
+                sub_s = sub.sort_values("date")
+                if not sub_s.empty and sub_s.iloc[-1]["actual"] is not None:
+                    pmi      = float(sub_s.iloc[-1]["actual"])
+                    pmi_prev = sub_s.iloc[-1]["previous"]
         except Exception:
             pass
+        if pmi_prev is None:
+            pmi_prev = _FB_PREV_PMI.get("GBP")
         s1 = _score(pmi, 47.0, 49.0, 51.0, 53.0)
         s2 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s3 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
-        s4 = _score(rate - _NEUTRAL_RATE["GBP"], -1.0, -0.5, 0.5, 1.0)
+        s4 = _score(rate - N_gbp, -1.0, -0.5, 0.5, 1.0)
         s5 = _score(cpi, 1.0, 1.5, 2.5, 3.5)
         scores = [s1, s2, s3, s4, s5]
         rows = [
-            ("UK Services PMI", pmi, None, None, None, s1, "ForexFactory"),
-            ("GBP COT Index", cot, None, None, None, s2, "CFTC"),
-            ("Real Rate (rate-CPI)", real_rate, None, None, None, s3, "FRED"),
-            ("Rate vs Neutral", rate - _NEUTRAL_RATE["GBP"], None, None, None, s4, "FRED"),
-            ("CPI YoY %", cpi, None, None, None, s5, "FRED"),
+            ("UK Services PMI",      pmi,                          pmi_prev,                          None, None, s1, "ForexFactory"),
+            ("GBP COT Index",        cot,                          None,                              None, None, s2, "CFTC"),
+            ("Real Rate (rate-CPI)", real_rate,                    real_rate_prev,                    None, None, s3, "FRED"),
+            ("Rate vs Neutral",      rate - N_gbp,                 rate_prev_raw - N_gbp,             None, None, s4, "FRED"),
+            ("CPI YoY %",            cpi,                          cpi_prev,                          None, None, s5, "FRED"),
         ]
 
     elif ccy == "JPY":
-        jpy_rate = _FB_RATES["JPY"]
-        usd_rate = _fred_latest("FEDFUNDS", 5) or _FB_RATES["USD"]
-        jpy_cpi  = _fred_latest("CPALTT01JPM659N", 5) or _FB_CPI["JPY"]
-        carry    = usd_rate - jpy_rate
-        vix      = fetch_yf_price("^VIX")
-        nikkei   = fetch_yf_price("^N225")
-        sp500    = fetch_yf_price("^GSPC")
-        nk_sp    = (nikkei / sp500) if nikkei and sp500 and sp500 > 0 else None
-        real_rate = jpy_rate - jpy_cpi
+        jpy_rate     = _FB_RATES["JPY"]
+        usd_rate, _  = _fred_latest_with_prev("FEDFUNDS", 5)
+        usd_rate     = usd_rate or _FB_RATES["USD"]
+        usd_rate_prev = _FB_PREV_RATES["USD"]
+        jpy_cpi      = _fred_latest("CPALTT01JPM659N", 5) or _FB_CPI["JPY"]
+        jpy_cpi_prev = _FB_PREV_CPI["JPY"]
+        carry        = usd_rate - jpy_rate
+        carry_prev   = usd_rate_prev - jpy_rate
+        vix,    vix_prev    = fetch_yf_price_with_prev("^VIX",  20)
+        nikkei, nikkei_prev = fetch_yf_price_with_prev("^N225", 20)
+        sp500,  sp500_prev  = fetch_yf_price_with_prev("^GSPC", 20)
+        nk_sp      = (nikkei / sp500)           if nikkei and sp500 and sp500 > 0 else None
+        nk_sp_prev = (nikkei_prev / sp500_prev) if nikkei_prev and sp500_prev and sp500_prev > 0 else None
+        real_rate      = jpy_rate - jpy_cpi
+        real_rate_prev = jpy_rate - jpy_cpi_prev  # BOJ rate unchanged; prior CPI
 
         s1 = _score(carry, 3.0, 4.0, 5.5, 6.5, invert=True)
         s2 = _score(vix, 30.0, 22.0, 15.0, 12.0, invert=True)
@@ -1108,33 +1195,39 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         s5 = _score(real_rate, -3.0, -1.5, -0.5, 0.5)
         scores = [s1, s2, s3, s4, s5]
         rows = [
-            ("USD-JPY Carry (inverted)", carry, None, None, None, s1, "FRED"),
-            ("VIX (inverted)", vix, None, None, None, s2, "yfinance"),
-            ("JPY COT Index", cot, None, None, None, s3, "CFTC"),
-            ("Nikkei/S&P ratio (inv)", nk_sp, None, None, None, s4, "yfinance"),
-            ("Real Rate (JPY rate-CPI)", real_rate, None, None, None, s5, "FRED"),
+            ("USD-JPY Carry (inverted)",  carry,     carry_prev,    None, None, s1, "FRED"),
+            ("VIX (inverted)",            vix,       vix_prev,      None, None, s2, "yfinance"),
+            ("JPY COT Index",             cot,       None,          None, None, s3, "CFTC"),
+            ("Nikkei/S&P ratio (inv)",    nk_sp,     nk_sp_prev,    None, None, s4, "yfinance"),
+            ("Real Rate (JPY rate-CPI)",  real_rate, real_rate_prev,None, None, s5, "FRED"),
         ]
 
     elif ccy == "AUD":
-        iron  = fetch_yf_price("BHP")   # BHP Group — major iron ore proxy (TIO=F unavailable)
-        crude = fetch_yf_price("CL=F")
-        rate  = _FB_RATES["AUD"]
-        cpi   = _fred_latest("CPALTT01AUM659N", 5) or _FB_CPI["AUD"]
-        real_rate = rate - cpi
-        pmi   = _FB_PMI["AUD"]
+        iron,  iron_prev  = fetch_yf_price_with_prev("BHP",  20)   # BHP — iron ore proxy
+        crude, crude_prev = fetch_yf_price_with_prev("CL=F", 20)
+        rate     = _FB_RATES["AUD"]
+        cpi      = _fred_latest("CPALTT01AUM659N", 5) or _FB_CPI["AUD"]
+        cpi_prev = _FB_PREV_CPI["AUD"]
+        real_rate      = rate - cpi
+        real_rate_prev = rate - cpi_prev
+        pmi = _FB_PMI["AUD"]
         try:
             if not ff_df.empty:
-                sub = ff_df[(ff_df["currency"] == "AUD") & ff_df["title"].str.contains("Manufacturing PMI", case=False, na=False)]
-                if not sub.empty and sub.sort_values("date").iloc[-1]["actual"] is not None:
-                    pmi = float(sub.sort_values("date").iloc[-1]["actual"])
+                sub = ff_df[(ff_df["currency"] == "AUD") &
+                            ff_df["title"].str.contains("Manufacturing PMI", case=False, na=False)]
+                sub_s = sub.sort_values("date")
+                if not sub_s.empty and sub_s.iloc[-1]["actual"] is not None:
+                    pmi = float(sub_s.iloc[-1]["actual"])
         except Exception:
             pass
         caixin = _FB_PMI["AUD"]
         try:
             if not ff_df.empty:
-                sub = ff_df[(ff_df["currency"] == "CNY") & ff_df["title"].str.contains("Caixin", case=False, na=False)]
-                if not sub.empty and sub.sort_values("date").iloc[-1]["actual"] is not None:
-                    caixin = float(sub.sort_values("date").iloc[-1]["actual"])
+                sub = ff_df[(ff_df["currency"] == "CNY") &
+                            ff_df["title"].str.contains("Caixin", case=False, na=False)]
+                sub_s = sub.sort_values("date")
+                if not sub_s.empty and sub_s.iloc[-1]["actual"] is not None:
+                    caixin = float(sub_s.iloc[-1]["actual"])
         except Exception:
             pass
 
@@ -1145,50 +1238,56 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         s5 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
         scores = [s1, s2, s3, s4, s5]
         rows = [
-            ("Iron Ore (BHP proxy)", iron, None, None, None, s1, "yfinance"),
-            ("WTI Crude", crude, None, None, None, s2, "yfinance"),
-            ("Caixin PMI (China)", caixin, None, None, None, s3, "ForexFactory"),
-            ("AUD COT Index", cot, None, None, None, s4, "CFTC"),
-            ("Real Rate (RBA-CPI)", real_rate, None, None, None, s5, "FRED"),
+            ("Iron Ore (BHP proxy)",  iron,      iron_prev,      None, None, s1, "yfinance"),
+            ("WTI Crude",             crude,     crude_prev,     None, None, s2, "yfinance"),
+            ("Caixin PMI (China)",    caixin,    None,           None, None, s3, "ForexFactory"),
+            ("AUD COT Index",         cot,       None,           None, None, s4, "CFTC"),
+            ("Real Rate (RBA-CPI)",   real_rate, real_rate_prev, None, None, s5, "FRED"),
         ]
 
     elif ccy == "NZD":
-        bhp   = fetch_yf_price("BHP")   # BHP — commodity / iron ore proxy
-        gold  = fetch_yf_price("GC=F")
-        rate  = _FB_RATES["NZD"]
-        cpi   = _fred_latest("CPALTT01NZM659N", 5) or _FB_CPI["NZD"]
-        real_rate = rate - cpi
+        bhp,  bhp_prev  = fetch_yf_price_with_prev("BHP",  20)   # BHP — commodity proxy
+        gold, gold_prev = fetch_yf_price_with_prev("GC=F", 20)
+        rate     = _FB_RATES["NZD"]
+        cpi      = _fred_latest("CPALTT01NZM659N", 5) or _FB_CPI["NZD"]
+        cpi_prev = _FB_PREV_CPI["NZD"]
+        real_rate      = rate - cpi
+        real_rate_prev = rate - cpi_prev
         caixin = _FB_PMI["AUD"]
         try:
             if not ff_df.empty:
-                sub = ff_df[(ff_df["currency"] == "CNY") & ff_df["title"].str.contains("Caixin", case=False, na=False)]
-                if not sub.empty and sub.sort_values("date").iloc[-1]["actual"] is not None:
-                    caixin = float(sub.sort_values("date").iloc[-1]["actual"])
+                sub = ff_df[(ff_df["currency"] == "CNY") &
+                            ff_df["title"].str.contains("Caixin", case=False, na=False)]
+                sub_s = sub.sort_values("date")
+                if not sub_s.empty and sub_s.iloc[-1]["actual"] is not None:
+                    caixin = float(sub_s.iloc[-1]["actual"])
         except Exception:
             pass
 
-        s1 = _score(bhp, 35.0, 42.0, 52.0, 62.0)    # BHP NYSE price as commodity proxy
+        s1 = _score(bhp, 35.0, 42.0, 52.0, 62.0)
         s2 = _score(caixin, 47.0, 49.0, 51.0, 53.0)
         s3 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s4 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
         s5 = _score(gold, 1800.0, 1950.0, 2300.0, 2500.0)
         scores = [s1, s2, s3, s4, s5]
         rows = [
-            ("Commodity (BHP proxy)", bhp, None, None, None, s1, "yfinance"),
-            ("Caixin PMI (China)", caixin, None, None, None, s2, "ForexFactory"),
-            ("NZD COT Index", cot, None, None, None, s3, "CFTC"),
-            ("Real Rate (RBNZ-CPI)", real_rate, None, None, None, s4, "FRED"),
-            ("Gold (risk proxy)", gold, None, None, None, s5, "yfinance"),
+            ("Commodity (BHP proxy)", bhp,      bhp_prev,       None, None, s1, "yfinance"),
+            ("Caixin PMI (China)",    caixin,   None,           None, None, s2, "ForexFactory"),
+            ("NZD COT Index",         cot,      None,           None, None, s3, "CFTC"),
+            ("Real Rate (RBNZ-CPI)",  real_rate,real_rate_prev, None, None, s4, "FRED"),
+            ("Gold (risk proxy)",     gold,     gold_prev,      None, None, s5, "yfinance"),
         ]
 
     elif ccy == "CAD":
-        crude = fetch_yf_price("CL=F")
-        rate  = _FB_RATES["CAD"]
-        cpi   = _fred_latest("CPALTT01CAM659N", 5) or _FB_CPI["CAD"]
-        real_rate = rate - cpi
-        usdcad = None
+        crude, crude_prev = fetch_yf_price_with_prev("CL=F", 20)
+        rate     = _FB_RATES["CAD"]
+        cpi      = _fred_latest("CPALTT01CAM659N", 5) or _FB_CPI["CAD"]
+        cpi_prev = _FB_PREV_CPI["CAD"]
+        real_rate      = rate - cpi
+        real_rate_prev = rate - cpi_prev
+        usdcad, usdcad_prev = None, None
         try:
-            usdcad = fetch_yf_price("USDCAD=X")
+            usdcad, usdcad_prev = fetch_yf_price_with_prev("USDCAD=X", 20)
         except Exception:
             pass
 
@@ -1199,20 +1298,22 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         s5 = _score(crude, 55.0, 65.0, 80.0, 95.0)  # oil again as proxy for oil/gas ratio
         scores = [s1, s2, s3, s4, s5]
         rows = [
-            ("WTI Crude", crude, None, None, None, s1, "yfinance"),
-            ("CAD COT Index", cot, None, None, None, s2, "CFTC"),
-            ("Real Rate (BOC-CPI)", real_rate, None, None, None, s3, "FRED"),
-            ("USD/CAD Level (inverted)", usdcad, None, None, None, s4, "yfinance"),
-            ("Oil Price (2nd proxy)", crude, None, None, None, s5, "yfinance"),
+            ("WTI Crude",                crude,     crude_prev,     None, None, s1, "yfinance"),
+            ("CAD COT Index",            cot,       None,           None, None, s2, "CFTC"),
+            ("Real Rate (BOC-CPI)",      real_rate, real_rate_prev, None, None, s3, "FRED"),
+            ("USD/CAD Level (inverted)", usdcad,    usdcad_prev,    None, None, s4, "yfinance"),
+            ("Oil Price (2nd proxy)",    crude,     crude_prev,     None, None, s5, "yfinance"),
         ]
 
     elif ccy == "CHF":
-        gold  = fetch_yf_price("GC=F")
-        eurchf = fetch_yf_price("EURCHF=X")
-        vix   = fetch_yf_price("^VIX")
-        rate  = _FB_RATES["CHF"]
-        cpi   = _fred_latest("CPALTT01CHM659N", 5) or _FB_CPI["CHF"]
-        real_rate = rate - cpi
+        gold,   gold_prev   = fetch_yf_price_with_prev("GC=F",    20)
+        eurchf, eurchf_prev = fetch_yf_price_with_prev("EURCHF=X", 20)
+        vix,    vix_prev    = fetch_yf_price_with_prev("^VIX",    20)
+        rate     = _FB_RATES["CHF"]
+        cpi      = _fred_latest("CPALTT01CHM659N", 5) or _FB_CPI["CHF"]
+        cpi_prev = _FB_PREV_CPI["CHF"]
+        real_rate      = rate - cpi
+        real_rate_prev = rate - cpi_prev
 
         s1 = _score(gold, 1800.0, 1950.0, 2300.0, 2500.0)
         s2 = _score(eurchf, 0.92, 0.94, 0.96, 0.98)
@@ -1221,11 +1322,11 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         s5 = _score(real_rate, -2.0, -1.0, 0.0, 1.0)
         scores = [s1, s2, s3, s4, s5]
         rows = [
-            ("Gold Price", gold, None, None, None, s1, "yfinance"),
-            ("EUR/CHF Level", eurchf, None, None, None, s2, "yfinance"),
-            ("VIX (inverted)", vix, None, None, None, s3, "yfinance"),
-            ("CHF COT Index", cot, None, None, None, s4, "CFTC"),
-            ("Real Rate (SNB-CPI)", real_rate, None, None, None, s5, "FRED"),
+            ("Gold Price",           gold,      gold_prev,      None, None, s1, "yfinance"),
+            ("EUR/CHF Level",        eurchf,    eurchf_prev,    None, None, s2, "yfinance"),
+            ("VIX (inverted)",       vix,       vix_prev,       None, None, s3, "yfinance"),
+            ("CHF COT Index",        cot,       None,           None, None, s4, "CFTC"),
+            ("Real Rate (SNB-CPI)",  real_rate, real_rate_prev, None, None, s5, "FRED"),
         ]
 
     else:
@@ -1273,6 +1374,7 @@ _CACHE_FUNS = [
     fetch_fred_series,
     fetch_ecb_series,
     fetch_yf_price,
+    fetch_yf_price_with_prev,
     fetch_ff_calendar,
     fetch_cot_data,
 ]
