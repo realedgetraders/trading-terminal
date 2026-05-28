@@ -19,8 +19,6 @@ C = {
     "teal":   "#f0b429",   # amber — Back button (journal accent)
 }
 
-_PASSWORD = "12345"
-
 _FEATURES = [
     ("📝", "Trade Log",          "Enter and save every trade — symbol, direction, entry, exit, size, and personal notes."),
     ("📊", "Performance Stats",  "Full analytics: win rate, expectancy, profit factor, setup breakdown, and CSV export for AI analysis."),
@@ -73,39 +71,6 @@ def main():
       p, span, label {{ color:{C['text']}; }}
     </style>
     """, unsafe_allow_html=True)
-
-    # ── Password gate ──────────────────────────────────────────────────────────
-    if not st.session_state.get("journal_auth"):
-        st.markdown("<div style='height:12vh;'></div>", unsafe_allow_html=True)
-        _, col_c, _ = st.columns([3, 2, 3])
-        with col_c:
-            st.markdown(
-                f"<div style='text-align:center;margin-bottom:22px;'>"
-                f"<span style='background:{C['amber']};color:#0a0c10;font-size:9px;"
-                f"font-weight:800;font-family:monospace;letter-spacing:2px;"
-                f"padding:3px 12px;border-radius:12px;'>PRO ACCESS</span>"
-                f"<div style='font-size:22px;font-weight:800;color:{C['text']};"
-                f"font-family:monospace;letter-spacing:-0.5px;margin-top:14px;'>"
-                f"Edge Journal</div>"
-                f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
-                f"margin-top:5px;'>Enter password to continue</div>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-            pw = st.text_input(
-                "Password",
-                type="password",
-                placeholder="Enter password…",
-                label_visibility="collapsed",
-                key="journal_pw",
-            )
-            if st.button("Unlock →", use_container_width=True, key="journal_unlock"):
-                if pw == _PASSWORD:
-                    st.session_state["journal_auth"] = True
-                    st.rerun()
-                else:
-                    st.error("Incorrect password.")
-        return
 
     # ── Title row ──────────────────────────────────────────────────────────────
     col_back, col_title, _ = st.columns([2, 6, 2])
