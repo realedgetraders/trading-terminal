@@ -1393,108 +1393,80 @@ def _render_calendar(ff_df: pd.DataFrame, ccy: str):
 
 
 def _render_password_gate():
-    """Render PRO password gate."""
-    _card   = C["card"]
-    _muted  = C["muted"]
-    _text   = C["text"]
-    _teal   = C["teal"]
-    _yellow = C["yellow"]
-    _red    = C["red"]
+    """Render PRO password gate — blue theme, amber PRO badge only."""
+    _card = C["card"]
+    _muted = C["muted"]
+    _text  = C["text"]
+    _red   = C["red"]
 
-    # Gate-specific CSS (style tags render fine — only HTML comments break rendering)
+    # Blue-toned CSS — PRO badge is the only amber element
     st.markdown(
         f"<style>"
-        f"[data-testid='stTextInput'] input {{"
-        f"  background:#1c1c1c !important;"
-        f"  border:1px solid rgba(240,180,41,0.28) !important;"
-        f"  color:{_text} !important;"
-        f"  font-family:monospace !important;"
-        f"  border-radius:8px !important;"
-        f"  font-size:13px !important;"
+        f"[data-testid='stTextInput'] input{{"
+        f"background:#1c1c1c !important;"
+        f"border:1px solid rgba(79,142,247,0.28) !important;"
+        f"color:{_text} !important;"
+        f"font-family:monospace !important;"
+        f"border-radius:8px !important;"
+        f"font-size:13px !important;"
         f"}}"
-        f"[data-testid='stTextInput'] input::placeholder {{"
-        f"  color:#555 !important; letter-spacing:1px !important;"
+        f"[data-testid='stTextInput'] input::placeholder{{color:#555 !important;}}"
+        f"[data-testid='stTextInput'] input:focus{{"
+        f"border-color:rgba(79,142,247,0.65) !important;"
+        f"box-shadow:0 0 0 3px rgba(79,142,247,0.10) !important;"
         f"}}"
-        f"[data-testid='stTextInput'] input:focus {{"
-        f"  border-color:rgba(240,180,41,0.65) !important;"
-        f"  box-shadow:0 0 0 3px rgba(240,180,41,0.10) !important;"
+        f"button[kind='secondary']{{"
+        f"background:rgba(79,142,247,0.10) !important;"
+        f"border:1px solid rgba(79,142,247,0.35) !important;"
+        f"color:#4f8ef7 !important;"
+        f"font-family:monospace !important;font-weight:700 !important;"
+        f"font-size:11px !important;letter-spacing:3px !important;"
+        f"border-radius:8px !important;"
+        f"transition:all 0.22s ease !important;"
         f"}}"
-        f"button[kind='secondary'] {{"
-        f"  background:rgba(240,180,41,0.11) !important;"
-        f"  border:1px solid rgba(240,180,41,0.45) !important;"
-        f"  color:{_yellow} !important;"
-        f"  font-family:monospace !important; font-weight:700 !important;"
-        f"  font-size:11px !important; letter-spacing:3px !important;"
-        f"  border-radius:8px !important;"
-        f"  transition:all 0.22s ease !important;"
-        f"}}"
-        f"button[kind='secondary']:hover {{"
-        f"  background:rgba(240,180,41,0.20) !important;"
-        f"  border-color:rgba(240,180,41,0.75) !important;"
-        f"  box-shadow:0 0 18px rgba(240,180,41,0.18) !important;"
+        f"button[kind='secondary']:hover{{"
+        f"background:rgba(79,142,247,0.18) !important;"
+        f"border-color:rgba(79,142,247,0.65) !important;"
+        f"box-shadow:0 0 16px rgba(79,142,247,0.18) !important;"
         f"}}"
         f"</style>",
         unsafe_allow_html=True,
     )
 
-    st.markdown("<div style='height:9vh;'></div>", unsafe_allow_html=True)
-    _, col, _ = st.columns([1, 2, 1])
+    st.markdown("<div style='height:8vh;'></div>", unsafe_allow_html=True)
+    _, col, _ = st.columns([1.5, 1, 1.5])
     with col:
-        # Blue module identity bar
-        st.markdown(
-            f"<div style='display:flex;align-items:center;gap:10px;"
-            f"background:rgba(79,142,247,0.07);"
-            f"border:1px solid rgba(79,142,247,0.18);"
-            f"border-bottom:none;border-radius:10px 10px 0 0;padding:10px 20px;'>"
-            f"<div style='width:5px;height:5px;border-radius:50%;background:{_teal};"
-            f"box-shadow:0 0 7px rgba(79,142,247,0.85);flex-shrink:0;'></div>"
-            f"<span style='font-size:9px;color:{_teal};font-family:monospace;"
-            f"letter-spacing:2.5px;text-transform:uppercase;'>Module 3</span>"
-            f"<div style='flex:1;height:1px;background:rgba(79,142,247,0.12);'></div>"
-            f"<span style='font-size:9px;color:{_muted};font-family:monospace;"
-            f"letter-spacing:1.5px;text-transform:uppercase;'>Real Edge Terminal</span>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-        # Main PRO card — open bottom so Streamlit components slot in naturally
+        # Card
         st.markdown(
             f"<div style='background:{_card};"
-            f"border:1px solid rgba(240,180,41,0.22);border-top:none;border-bottom:none;"
-            f"padding:38px 40px 28px;"
-            f"box-shadow:0 0 50px rgba(240,180,41,0.05),0 4px 32px rgba(0,0,0,0.3);'>"
-            # PRO badge
-            f"<div style='text-align:center;margin-bottom:22px;'>"
-            f"<span style='background:{_yellow};color:#0a0c10;font-size:9px;"
-            f"font-family:monospace;font-weight:800;letter-spacing:3px;"
-            f"padding:4px 14px;border-radius:20px;text-transform:uppercase;'>PRO</span>"
+            f"border:1px solid rgba(79,142,247,0.22);"
+            f"border-radius:14px;"
+            f"padding:36px 32px 28px;"
+            f"text-align:center;"
+            f"box-shadow:0 0 40px rgba(79,142,247,0.07),0 4px 24px rgba(0,0,0,0.3);'>"
+            f"<div style='margin-bottom:20px;'>"
+            f"<span style='background:#f0b429;color:#0a0c10;"
+            f"font-size:9px;font-family:monospace;font-weight:800;"
+            f"letter-spacing:3px;padding:3px 12px;border-radius:20px;"
+            f"text-transform:uppercase;'>PRO</span>"
             f"</div>"
-            # Lock icon
-            f"<div style='text-align:center;font-size:34px;line-height:1;margin-bottom:18px;'>🔒</div>"
-            # Title
-            f"<div style='text-align:center;font-size:21px;font-weight:800;color:{_text};"
-            f"font-family:monospace;letter-spacing:-0.5px;margin-bottom:10px;'>"
+            f"<div style='font-size:30px;line-height:1;margin-bottom:18px;'>🔒</div>"
+            f"<div style='font-size:19px;font-weight:800;color:{_text};"
+            f"font-family:monospace;letter-spacing:-0.5px;margin-bottom:6px;'>"
             f"Economic Bias Engine</div>"
-            # Description
-            f"<div style='text-align:center;font-size:11px;color:{_muted};"
-            f"font-family:monospace;line-height:1.85;margin-bottom:26px;'>"
-            f"5-dimension macro scoring &nbsp;·&nbsp; 8 major currencies<br>"
-            f"Monetary · Inflation · Labour · Surprises · Proxies</div>"
-            # Mixed divider
-            f"<div style='height:1px;background:linear-gradient("
-            f"90deg,transparent,rgba(240,180,41,0.20),rgba(79,142,247,0.14),transparent);"
-            f"margin-bottom:22px;'></div>"
-            # Label above input
-            f"<div style='text-align:center;font-size:9px;color:#555;font-family:monospace;"
+            f"<div style='font-size:9px;color:#4f8ef7;font-family:monospace;"
             f"letter-spacing:2px;text-transform:uppercase;margin-bottom:14px;'>"
-            f"Access code required</div>"
+            f"Module 3 &nbsp;·&nbsp; Real Edge Terminal</div>"
+            f"<div style='font-size:11px;color:{_muted};"
+            f"font-family:monospace;line-height:1.7;'>"
+            f"5-dimension macro scoring &nbsp;·&nbsp; 8 major currencies</div>"
             f"</div>",
             unsafe_allow_html=True,
         )
-        # Input field
+        st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
         pwd = st.text_input("", type="password", placeholder="Enter access code ···",
                             label_visibility="collapsed", key="m3_pwd_input")
-        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-        # Unlock button
+        st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
         if st.button("UNLOCK", use_container_width=True, key="m3_unlock_btn"):
             if pwd == "12345":
                 st.session_state["m3_auth"] = True
@@ -1502,17 +1474,9 @@ def _render_password_gate():
             else:
                 st.markdown(
                     f"<p style='color:{_red};font-family:monospace;font-size:11px;"
-                    "text-align:center;margin-top:10px;'>Incorrect access code.</p>",
+                    "text-align:center;margin-top:8px;'>Incorrect access code.</p>",
                     unsafe_allow_html=True,
                 )
-        # Bottom card cap — closes the border visually below the button
-        st.markdown(
-            f"<div style='background:{_card};"
-            f"border:1px solid rgba(240,180,41,0.22);border-top:none;"
-            f"border-radius:0 0 12px 12px;height:28px;"
-            f"box-shadow:0 6px 32px rgba(0,0,0,0.28);'></div>",
-            unsafe_allow_html=True,
-        )
     return False
 
 
