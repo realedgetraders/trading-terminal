@@ -84,6 +84,15 @@ _FB_PREV_UNEMP = {"USD": 4.1,  "EUR": 6.3,  "GBP": 4.4,  "JPY": 2.5,
 # Employment change fallback (thousands of persons, same units as FRED PAYEMS MoM diff)
 _FB_EMPLOY     = {"USD": 177.0, "EUR": 50.0, "GBP": 40.0, "JPY": 10.0,
                   "AUD": 30.0,  "NZD": 5.0,  "CAD": 20.0, "CHF": 5.0}
+_FB_PREV_EMPLOY= {"USD": 185.0, "EUR": 55.0, "GBP": 45.0, "JPY": 12.0,
+                  "AUD": 35.0,  "NZD": 6.0,  "CAD": 25.0, "CHF": 6.0}
+# PMI, Trade Balance, Retail Sales previous-period fallbacks (FF calendar source)
+_FB_PREV_PMI   = {"USD": 50.3, "EUR": 45.5, "GBP": 44.9, "JPY": 48.4,
+                  "AUD": 52.0, "NZD": 53.5, "CAD": 47.5, "CHF": 46.0}
+_FB_PREV_TRADE = {"USD": -72.0, "EUR": 28.0, "GBP": -5.5, "JPY": 0.3,
+                  "AUD": 4.5,   "NZD": -1.0, "CAD": -2.8, "CHF": 4.5}
+_FB_PREV_RETAIL= {"USD": 0.2, "EUR": 0.2, "GBP": 0.1, "JPY": -1.0,
+                  "AUD": 0.4, "NZD": -0.2, "CAD": -0.3, "CHF": 0.1}
 # Consumer confidence fallback (USD = UMich UMCSENT scale 0-100)
 _FB_CONF_USD   = 67.0
 
@@ -728,6 +737,8 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
                     break
     except Exception:
         pass
+    if pmi_prev is None:
+        pmi_prev = _FB_PREV_PMI.get(ccy)
 
     s_cpi  = _score(cpi, 1.0, 1.5, 2.5, 3.5)
     s_ccpi = _score(core_cpi, 1.0, 1.5, 2.5, 3.0)
@@ -803,6 +814,8 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
             # Static fallback — ensures cell never shows "—" when both APIs fail
             if employ_change is None:
                 employ_change = _FB_EMPLOY.get(ccy)
+            if employ_prev is None:
+                employ_prev = _FB_PREV_EMPLOY.get(ccy)
         else:
             if not ff_df.empty:
                 sub_e = ff_df[
@@ -832,6 +845,8 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
                     break
     except Exception:
         pass
+    if trade_prev is None:
+        trade_prev = _FB_PREV_TRADE.get(ccy)
 
     # Retail sales from FF — newest-first, store prev
     retail_prev = None
@@ -848,6 +863,8 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
                     break
     except Exception:
         pass
+    if retail_prev is None:
+        retail_prev = _FB_PREV_RETAIL.get(ccy)
 
     # USD retail from FRED (overrides FF if we still have the fallback value)
     if ccy == "USD" and retail == _FB_RETAIL.get(ccy):
@@ -896,13 +913,28 @@ def _d4_surprises(ccy: str, ff_df: pd.DataFrame):
         emp_fore = _emp_prev
         s_emp    = _score_surprise(emp_act, _emp_prev)
 
-        # ── FF fallback when any FRED indicator is unavailable ────────────────
+        # ── FF fallback: when FRED series unavailable ─────────────────────────
         if s_cpi is None:
             cpi_act, cpi_fore, s_cpi = _ff_beat_miss(ff_df, ccy, "CPI m/m")
         if s_gdp is None:
             gdp_act, gdp_fore, s_gdp = _ff_beat_miss(ff_df, ccy, "GDP q/q")
         if s_emp is None:
             emp_act, emp_fore, s_emp = _ff_beat_miss(ff_df, ccy, "Nonfarm Payrolls")
+
+        # ── Static fallback: compare current vs previous period FB values ──────
+        # Ensures D4 always shows direction even when all live sources fail.
+        if s_cpi is None:
+            cpi_act  = _FB_CPI.get(ccy)
+            cpi_fore = _FB_PREV_CPI.get(ccy)
+            s_cpi    = _score_surprise(cpi_act, cpi_fore)
+        if s_gdp is None:
+            gdp_act  = _FB_GDP.get(ccy)
+            gdp_fore = _FB_PREV_GDP.get(ccy)
+            s_gdp    = _score_surprise(gdp_act, gdp_fore)
+        if s_emp is None:
+            emp_act  = _FB_EMPLOY.get(ccy)
+            emp_fore = _FB_PREV_EMPLOY.get(ccy)
+            s_emp    = _score_surprise(emp_act, emp_fore)
 
         src = "FRED"
 
@@ -988,17 +1020,20 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         if dgs10 is not None and dgs2 is not None:
             spread = dgs10 - dgs2
 
-        s1 = _score(dgs10, 3.5, 4.0, 5.0, 5.5)
-        s2 = _score(dxy, 95.0, 98.0, 104.0, 107.0, invert=True)
+        # DGS10: >4.0% = positive for USD (higher yields = tighter = bullish)
+        # DXY: >98 = positive, <95 = negative; no invert — higher DXY = stronger USD
+        # Conf: calibrated to UMCSENT scale (0-100); 70-90 = neutral-mild, >90 = strong
+        s1 = _score(dgs10, 3.0, 3.5, 4.0, 4.5)
+        s2 = _score(dxy,   90.0, 95.0, 98.0, 102.0)
         s3 = _score(spread, -1.0, -0.2, 0.5, 1.0)
         s4 = _score(rate - N, -1.0, -0.5, 0.5, 1.0)
-        s5 = _score(conf, 60.0, 70.0, 90.0, 100.0)
+        s5 = _score(conf, 60.0, 70.0, 80.0, 90.0)
         scores = [s1, s2, s3, s4, s5]
         rows = [
-            ("10Y Yield (DGS10)", dgs10, None, None, None, s1, "FRED"),
-            ("DXY (inverted)", dxy, None, None, None, s2, "yfinance"),
-            ("2s10s Spread", spread, None, None, None, s3, "FRED"),
-            ("Rate vs Neutral", rate - N if rate is not None else None, None, None, None, s4, "FRED"),
+            ("10Y Yield (DGS10)", dgs10, None, None, None, s1, "FRED/yfinance"),
+            ("DXY Level",         dxy,   None, None, None, s2, "yfinance"),
+            ("2s10s Spread",      spread, None, None, None, s3, "FRED/yfinance"),
+            ("Rate vs Neutral",   rate - N if rate is not None else None, None, None, None, s4, "FRED"),
             ("Consumer Confidence", conf, None, None, None, s5, "FRED"),
         ]
 
