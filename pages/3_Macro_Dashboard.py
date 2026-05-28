@@ -1400,41 +1400,150 @@ def _render_password_gate():
     _text   = C["text"]
     _teal   = C["teal"]
     _yellow = C["yellow"]
+    _red    = C["red"]
 
-    st.markdown(
-        f"""
-<div style='max-width:440px;margin:80px auto 0;text-align:center;'>
-  <div style='background:{_card};border:1px solid {_border};border-radius:14px;padding:40px 36px;'>
-    <div style='display:inline-block;background:rgba(240,180,41,0.14);
-                border:1px solid rgba(240,180,41,0.35);border-radius:6px;
-                padding:3px 10px;font-size:10px;font-family:monospace;
-                color:{_yellow};letter-spacing:2px;margin-bottom:20px;'>PRO</div>
-    <div style='font-size:20px;font-weight:700;color:{_text};font-family:monospace;
-                margin-bottom:8px;'>Economic Bias Engine</div>
-    <div style='font-size:12px;color:{_muted};font-family:monospace;margin-bottom:30px;'>
-      Module 3 — Enter your access code to continue
-    </div>
+    # ── Gate-specific CSS ─────────────────────────────────────────────────────
+    st.markdown(f"""
+<style>
+  /* Input: amber focus ring */
+  [data-testid="stTextInput"] input {{
+    background: #1c1c1c !important;
+    border: 1px solid rgba(240,180,41,0.28) !important;
+    color: {_text} !important;
+    font-family: monospace !important;
+    border-radius: 8px !important;
+    font-size: 13px !important;
+    padding: 10px 14px !important;
+  }}
+  [data-testid="stTextInput"] input::placeholder {{
+    color: #555 !important;
+    letter-spacing: 1px !important;
+  }}
+  [data-testid="stTextInput"] input:focus {{
+    border-color: rgba(240,180,41,0.65) !important;
+    box-shadow: 0 0 0 3px rgba(240,180,41,0.10) !important;
+    outline: none !important;
+  }}
+  /* UNLOCK button: solid amber */
+  button[kind="secondary"] {{
+    background: rgba(240,180,41,0.11) !important;
+    border: 1px solid rgba(240,180,41,0.45) !important;
+    color: {_yellow} !important;
+    font-family: monospace !important;
+    font-weight: 700 !important;
+    font-size: 11px !important;
+    letter-spacing: 3px !important;
+    border-radius: 8px !important;
+    transition: background 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease !important;
+  }}
+  button[kind="secondary"]:hover {{
+    background: rgba(240,180,41,0.20) !important;
+    border-color: rgba(240,180,41,0.75) !important;
+    box-shadow: 0 0 18px rgba(240,180,41,0.18) !important;
+  }}
+  /* Tighten the gap between card HTML and the Streamlit column */
+  .stMainBlockContainer .stVerticalBlock {{
+    gap: 0 !important;
+  }}
+</style>
+""", unsafe_allow_html=True)
+
+    # ── Card ──────────────────────────────────────────────────────────────────
+    st.markdown(f"""
+<div style='max-width:480px;margin:52px auto 0;'>
+
+  <!-- Blue module identity header bar -->
+  <div style='display:flex;align-items:center;gap:10px;
+              background:rgba(79,142,247,0.07);
+              border:1px solid rgba(79,142,247,0.18);
+              border-bottom:1px solid rgba(79,142,247,0.10);
+              border-radius:12px 12px 0 0;
+              padding:10px 22px;'>
+    <div style='width:5px;height:5px;border-radius:50%;
+                background:{_teal};
+                box-shadow:0 0 7px rgba(79,142,247,0.9);
+                flex-shrink:0;'></div>
+    <span style='font-size:9px;color:{_teal};font-family:monospace;
+                 letter-spacing:2.5px;text-transform:uppercase;'>Module 3</span>
+    <div style='flex:1;height:1px;background:rgba(79,142,247,0.12);'></div>
+    <span style='font-size:9px;color:{_muted};font-family:monospace;
+                 letter-spacing:1.5px;text-transform:uppercase;'>Real Edge Terminal</span>
   </div>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
 
-    _, col, _ = st.columns([1, 2, 1])
+  <!-- Amber PRO card body -->
+  <div style='background:{_card};
+              border:1px solid rgba(240,180,41,0.22);
+              border-top:none;
+              border-radius:0 0 0 0;
+              padding:44px 48px 16px;
+              box-shadow:0 0 60px rgba(240,180,41,0.05), 0 6px 40px rgba(0,0,0,0.35);'>
+
+    <!-- PRO badge -->
+    <div style='text-align:center;margin-bottom:26px;'>
+      <span style='background:{_yellow};color:#0a0c10;
+                   font-size:9px;font-family:monospace;font-weight:800;
+                   letter-spacing:3px;padding:4px 14px;border-radius:20px;
+                   text-transform:uppercase;'>PRO</span>
+    </div>
+
+    <!-- Lock icon -->
+    <div style='text-align:center;font-size:36px;line-height:1;margin-bottom:22px;'>🔒</div>
+
+    <!-- Title -->
+    <div style='text-align:center;font-size:22px;font-weight:800;
+                color:{_text};font-family:monospace;letter-spacing:-0.5px;
+                margin-bottom:10px;'>Economic Bias Engine</div>
+
+    <!-- Description -->
+    <div style='text-align:center;font-size:11px;color:{_muted};
+                font-family:monospace;line-height:1.85;margin-bottom:30px;'>
+      5-dimension macro scoring &nbsp;·&nbsp; 8 major currencies<br>
+      Monetary · Inflation · Labour · Surprises · Proxies
+    </div>
+
+    <!-- Gradient divider -->
+    <div style='height:1px;
+                background:linear-gradient(90deg,transparent,rgba(240,180,41,0.18),rgba(79,142,247,0.12),transparent);
+                margin-bottom:22px;'></div>
+
+    <!-- "Access required" label -->
+    <div style='text-align:center;font-size:9px;color:#555;font-family:monospace;
+                letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;'>
+      Access code required
+    </div>
+
+  </div>
+
+  <!-- Input + button area — visually continues the card -->
+  <div style='background:{_card};
+              border:1px solid rgba(240,180,41,0.22);
+              border-top:1px solid rgba(240,180,41,0.08);
+              border-radius:0 0 12px 12px;
+              padding:20px 48px 32px;
+              box-shadow:0 6px 40px rgba(0,0,0,0.35);'>
+  </div>
+
+</div>
+""", unsafe_allow_html=True)
+
+    # ── Input + button (overlaid onto the card bottom via negative margin) ────
+    _, col, _ = st.columns([1, 2.1, 1])
     with col:
-        pwd = st.text_input("", type="password", placeholder="Enter access code",
+        st.markdown("<div style='margin-top:-96px;'>", unsafe_allow_html=True)
+        pwd = st.text_input("", type="password", placeholder="Enter access code ···",
                             label_visibility="collapsed", key="m3_pwd_input")
+        st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
         if st.button("UNLOCK", use_container_width=True, key="m3_unlock_btn"):
             if pwd == "12345":
                 st.session_state["m3_auth"] = True
                 st.rerun()
             else:
-                err_col = C["red"]
                 st.markdown(
-                    f"<p style='color:{err_col};font-family:monospace;font-size:11px;"
-                    "text-align:center;margin-top:8px;'>Incorrect access code.</p>",
+                    f"<p style='color:{_red};font-family:monospace;font-size:11px;"
+                    "text-align:center;margin-top:10px;'>Incorrect access code.</p>",
                     unsafe_allow_html=True,
                 )
+        st.markdown("</div>", unsafe_allow_html=True)
     return False
 
 
