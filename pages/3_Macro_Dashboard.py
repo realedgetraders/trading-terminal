@@ -81,6 +81,11 @@ _FB_PREV_GDP   = {"USD": 2.4,  "EUR": 0.4,  "GBP": 0.6,  "JPY": 0.1,
                   "AUD": 0.4,  "NZD": -0.1, "CAD": 1.1,  "CHF": 0.2}
 _FB_PREV_UNEMP = {"USD": 4.1,  "EUR": 6.3,  "GBP": 4.4,  "JPY": 2.5,
                   "AUD": 4.1,  "NZD": 5.0,  "CAD": 6.8,  "CHF": 2.8}
+# Employment change fallback (thousands of persons, same units as FRED PAYEMS MoM diff)
+_FB_EMPLOY     = {"USD": 177.0, "EUR": 50.0, "GBP": 40.0, "JPY": 10.0,
+                  "AUD": 30.0,  "NZD": 5.0,  "CAD": 20.0, "CHF": 5.0}
+# Consumer confidence fallback (USD = UMich UMCSENT scale 0-100)
+_FB_CONF_USD   = 67.0
 
 _NEUTRAL_RATE  = {"USD": 2.5, "EUR": 2.0, "GBP": 2.5, "JPY": 0.25,
                   "AUD": 3.0, "NZD": 3.0, "CAD": 2.5, "CHF": 0.5}
@@ -787,7 +792,17 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
                     if r["actual"] is not None:
                         employ_change = float(r["actual"])
                         employ_prev   = r["previous"]
+                        # FF stores NFP as "177K" → _parse_num gives 177000 (absolute).
+                        # FRED PAYEMS MoM diff is in thousands (e.g. 177 for 177K jobs).
+                        # Normalise: if absolute value > 1000, it's in persons → ÷ 1000
+                        if abs(employ_change) > 1000:
+                            employ_change /= 1000.0
+                        if employ_prev is not None and abs(employ_prev) > 1000:
+                            employ_prev /= 1000.0
                         break
+            # Static fallback — ensures cell never shows "—" when both APIs fail
+            if employ_change is None:
+                employ_change = _FB_EMPLOY.get(ccy)
         else:
             if not ff_df.empty:
                 sub_e = ff_df[
@@ -855,15 +870,53 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
 
 
 def _d4_surprises(ccy: str, ff_df: pd.DataFrame):
-    """D4: Economic Surprises — beat/miss for CPI, GDP, Employment."""
-    patterns = _FF_PATTERNS.get(ccy, [])
-    cpi_pat    = patterns[0] if len(patterns) > 0 else "CPI"
-    gdp_pat    = patterns[3] if len(patterns) > 3 else "GDP"
-    employ_pat = patterns[2] if len(patterns) > 2 else "Employment"
+    """D4: Economic Surprises.
+    USD — FRED two-observation approach: compare current release vs prior release as
+          implicit forecast baseline. Falls back to FF when FRED unavailable.
+    Others — ForexFactory beat/miss vs published consensus forecast.
+    """
+    if ccy == "USD":
+        # ── CPI: current YoY vs prior month YoY ───────────────────────────────
+        cpi_curr, cpi_prev = _fred_yoy_with_prev("CPIAUCSL")
+        cpi_act  = cpi_curr
+        cpi_fore = cpi_prev      # prior YoY = implicit forecast baseline
+        s_cpi    = _score_surprise(cpi_curr, cpi_prev)
 
-    cpi_act, cpi_fore, s_cpi = _ff_beat_miss(ff_df, ccy, cpi_pat)
-    gdp_act, gdp_fore, s_gdp = _ff_beat_miss(ff_df, ccy, gdp_pat)
-    emp_act, emp_fore, s_emp = _ff_beat_miss(ff_df, ccy, employ_pat)
+        # ── GDP: current QoQ vs prior quarter QoQ ────────────────────────────
+        _gdp_data  = fetch_fred_series("A191RL1Q225SBEA", 5)
+        gdp_act    = _gdp_data[-1][1] if _gdp_data else None
+        _gdp_prev  = _gdp_data[-2][1] if len(_gdp_data) >= 2 else None
+        gdp_fore   = _gdp_prev
+        s_gdp      = _score_surprise(gdp_act, _gdp_prev)
+
+        # ── Employment: current MoM change vs prior MoM change ───────────────
+        _pems  = fetch_fred_series("PAYEMS", 5)
+        emp_act  = (_pems[-1][1] - _pems[-2][1]) if len(_pems) >= 2 else None
+        _emp_prev = (_pems[-2][1] - _pems[-3][1]) if len(_pems) >= 3 else None
+        emp_fore = _emp_prev
+        s_emp    = _score_surprise(emp_act, _emp_prev)
+
+        # ── FF fallback when any FRED indicator is unavailable ────────────────
+        if s_cpi is None:
+            cpi_act, cpi_fore, s_cpi = _ff_beat_miss(ff_df, ccy, "CPI m/m")
+        if s_gdp is None:
+            gdp_act, gdp_fore, s_gdp = _ff_beat_miss(ff_df, ccy, "GDP q/q")
+        if s_emp is None:
+            emp_act, emp_fore, s_emp = _ff_beat_miss(ff_df, ccy, "Nonfarm Payrolls")
+
+        src = "FRED"
+
+    else:
+        # ── Non-USD: FF calendar with published consensus forecast ─────────────
+        patterns   = _FF_PATTERNS.get(ccy, [])
+        cpi_pat    = patterns[0] if len(patterns) > 0 else "CPI"
+        gdp_pat    = patterns[3] if len(patterns) > 3 else "GDP"
+        employ_pat = patterns[2] if len(patterns) > 2 else "Employment"
+
+        cpi_act, cpi_fore, s_cpi = _ff_beat_miss(ff_df, ccy, cpi_pat)
+        gdp_act, gdp_fore, s_gdp = _ff_beat_miss(ff_df, ccy, gdp_pat)
+        emp_act, emp_fore, s_emp = _ff_beat_miss(ff_df, ccy, employ_pat)
+        src = "ForexFactory"
 
     # Only average non-None scores — None means "no data", not "neutral (0.0)"
     _subs = [s for s in (s_cpi, s_gdp, s_emp) if s is not None]
@@ -871,12 +924,11 @@ def _d4_surprises(ccy: str, ff_df: pd.DataFrame):
     _all  = [s for s in (s_cpi, s_gdp, s_emp, momentum) if s is not None]
     d4 = (sum(_all) / len(_all)) if _all else 0.0
 
-    # _beat_miss_label(None) already returns "—"; score=None renders as "—" in table
     rows = [
-        (f"CPI Surprise ({cpi_pat[:20]})", cpi_act, None, cpi_fore, _beat_miss_label(s_cpi), s_cpi, "ForexFactory"),
-        (f"GDP Surprise ({gdp_pat[:20]})", gdp_act, None, gdp_fore, _beat_miss_label(s_gdp), s_gdp, "ForexFactory"),
-        ("Employment Surprise",            emp_act, None, emp_fore, _beat_miss_label(s_emp), s_emp, "ForexFactory"),
-        ("Surprise Momentum",              momentum, None, None, None, momentum, "Composite"),
+        ("CPI Surprise",       cpi_act,  None, cpi_fore, _beat_miss_label(s_cpi), s_cpi, src),
+        ("GDP Surprise",       gdp_act,  None, gdp_fore, _beat_miss_label(s_gdp), s_gdp, src),
+        ("Employment Surprise", emp_act, None, emp_fore, _beat_miss_label(s_emp), s_emp, src),
+        ("Surprise Momentum",  momentum, None, None,     None, momentum, "Composite"),
     ]
     return d4, rows
 
@@ -914,19 +966,24 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         N    = _NEUTRAL_RATE["USD"]
         conf = _fred_latest("UMCSENT", 24)  # doubled limit — preliminary months may be "."
         if conf is None:
-            # FF fallback: look for Consumer Sentiment release in calendar
+            # FF fallback: UMich Consumer Sentiment — try several title variants
             try:
                 if not ff_df.empty:
-                    sub_cs = ff_df[
-                        (ff_df["currency"] == "USD") &
-                        ff_df["title"].str.contains("Consumer Sentiment", case=False, na=False)
-                    ].sort_values("date", ascending=False)
-                    for _, r in sub_cs.iterrows():
-                        if r["actual"] is not None:
-                            conf = float(r["actual"])
+                    for _cs_pat in ("Consumer Sentiment", "UoM Consumer", "Michigan Sentiment"):
+                        sub_cs = ff_df[
+                            (ff_df["currency"] == "USD") &
+                            ff_df["title"].str.contains(_cs_pat, case=False, na=False)
+                        ].sort_values("date", ascending=False)
+                        for _, r in sub_cs.iterrows():
+                            if r["actual"] is not None:
+                                conf = float(r["actual"])
+                                break
+                        if conf is not None:
                             break
             except Exception:
                 pass
+        if conf is None:
+            conf = _FB_CONF_USD   # static fallback when both FRED and FF fail
         spread = None
         if dgs10 is not None and dgs2 is not None:
             spread = dgs10 - dgs2
@@ -1781,12 +1838,31 @@ def main():
             st.error(f"DGS2 error: {_e}")
 
         # UMCSENT
-        st.markdown("**UMCSENT — Consumer Sentiment (limit=12)**")
+        st.markdown("**UMCSENT — Consumer Sentiment (limit=24)**")
         try:
-            _ums = fetch_fred_series("UMCSENT", 12)
-            st.write({"count": len(_ums), "all": _ums})
+            _ums = fetch_fred_series("UMCSENT", 24)
+            st.write({"count": len(_ums), "latest": _ums[-1] if _ums else None,
+                      "all_tail": _ums[-4:] if _ums else []})
         except Exception as _e:
             st.error(f"UMCSENT error: {_e}")
+
+        # D4 FRED path (USD only)
+        st.markdown("**D4 FRED path — CPI/GDP/Employment two-obs comparison**")
+        try:
+            _d4_cpi_c, _d4_cpi_p = _fred_yoy_with_prev("CPIAUCSL")
+            _d4_gdp = fetch_fred_series("A191RL1Q225SBEA", 5)
+            _d4_pems = fetch_fred_series("PAYEMS", 5)
+            _d4_emp_c = (_d4_pems[-1][1] - _d4_pems[-2][1]) if len(_d4_pems) >= 2 else None
+            _d4_emp_p = (_d4_pems[-2][1] - _d4_pems[-3][1]) if len(_d4_pems) >= 3 else None
+            st.write({
+                "CPI_curr": _d4_cpi_c, "CPI_prev": _d4_cpi_p,
+                "GDP_curr": _d4_gdp[-1][1] if _d4_gdp else None,
+                "GDP_prev": _d4_gdp[-2][1] if len(_d4_gdp) >= 2 else None,
+                "EMP_curr_K": _d4_emp_c, "EMP_prev_K": _d4_emp_p,
+                "PAYEMS_tail": _d4_pems,
+            })
+        except Exception as _e:
+            st.error(f"D4 FRED error: {_e}")
 
         # yfinance DXY
         st.markdown("**yfinance DX-Y.NYB — DXY**")
