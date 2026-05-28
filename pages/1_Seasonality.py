@@ -901,6 +901,107 @@ def _radar_html(df: pd.DataFrame) -> str:
     )
 
 
+# ─── Password Gate ────────────────────────────────────────────────────────────
+
+def _inject_gate_css():
+    """Minimal background + sidebar CSS injected before authentication."""
+    st.markdown(
+        f"<style>"
+        f"html,body,[data-testid='stAppViewContainer'],"
+        f"[data-testid='stHeader'],[data-testid='stToolbar'],"
+        f"[data-testid='stDecoration']{{background-color:{C['bg']} !important;}}"
+        f"section[data-testid='stSidebar']{{display:none !important;}}"
+        f".stMainBlockContainer{{padding-top:3.5rem !important;}}"
+        f"</style>",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_password_gate():
+    """PRO password gate — blue theme, amber PRO badge. Matches Module 3 & 6."""
+    _card  = C["card"]
+    _muted = C["muted"]
+    _text  = C["text"]
+    _red   = C["red"]
+
+    st.markdown(
+        f"<style>"
+        f"[data-testid='stTextInput'] input{{"
+        f"background:#1c1c1c !important;"
+        f"border:1px solid rgba(79,142,247,0.28) !important;"
+        f"color:{_text} !important;"
+        f"font-family:monospace !important;"
+        f"border-radius:8px !important;"
+        f"font-size:13px !important;"
+        f"}}"
+        f"[data-testid='stTextInput'] input::placeholder{{color:#555 !important;}}"
+        f"[data-testid='stTextInput'] input:focus{{"
+        f"border-color:rgba(79,142,247,0.65) !important;"
+        f"box-shadow:0 0 0 3px rgba(79,142,247,0.10) !important;"
+        f"}}"
+        f"button[kind='secondary']{{"
+        f"background:rgba(79,142,247,0.10) !important;"
+        f"border:1px solid rgba(79,142,247,0.35) !important;"
+        f"color:#4f8ef7 !important;"
+        f"font-family:monospace !important;font-weight:700 !important;"
+        f"font-size:11px !important;letter-spacing:3px !important;"
+        f"border-radius:8px !important;"
+        f"transition:all 0.22s ease !important;"
+        f"}}"
+        f"button[kind='secondary']:hover{{"
+        f"background:rgba(79,142,247,0.18) !important;"
+        f"border-color:rgba(79,142,247,0.65) !important;"
+        f"box-shadow:0 0 16px rgba(79,142,247,0.18) !important;"
+        f"}}"
+        f"</style>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("<div style='height:7vh;'></div>", unsafe_allow_html=True)
+    _, col, _ = st.columns([2, 3, 2])
+    with col:
+        st.markdown(
+            f"<div style='background:{_card};"
+            f"border:1px solid rgba(79,142,247,0.22);"
+            f"border-radius:16px;"
+            f"padding:48px 48px 40px;"
+            f"text-align:center;"
+            f"box-shadow:0 0 48px rgba(79,142,247,0.08),0 6px 32px rgba(0,0,0,0.35);'>"
+            f"<div style='margin-bottom:24px;'>"
+            f"<span style='background:#f0b429;color:#0a0c10;"
+            f"font-size:10px;font-family:monospace;font-weight:800;"
+            f"letter-spacing:3px;padding:4px 14px;border-radius:20px;"
+            f"text-transform:uppercase;'>PRO</span>"
+            f"</div>"
+            f"<div style='font-size:40px;line-height:1;margin-bottom:20px;'>🔒</div>"
+            f"<div style='font-size:24px;font-weight:800;color:{_text};"
+            f"font-family:monospace;letter-spacing:-0.5px;margin-bottom:8px;'>"
+            f"Seasonality Tracker</div>"
+            f"<div style='font-size:10px;color:#4f8ef7;font-family:monospace;"
+            f"letter-spacing:2px;text-transform:uppercase;margin-bottom:16px;'>"
+            f"Module 1 &nbsp;·&nbsp; Real Edge Terminal</div>"
+            f"<div style='font-size:12px;color:{_muted};"
+            f"font-family:monospace;line-height:1.7;'>"
+            f"Seasonal patterns &nbsp;·&nbsp; Radar scanner &nbsp;·&nbsp; Year-by-year breakdown</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
+        pwd = st.text_input("", type="password", placeholder="Enter access code ···",
+                            label_visibility="collapsed", key="s1_pwd_input")
+        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+        if st.button("UNLOCK", use_container_width=True, key="s1_unlock_btn"):
+            if pwd == "12345":
+                st.session_state["season_auth"] = True
+                st.rerun()
+            else:
+                st.markdown(
+                    f"<p style='color:{_red};font-family:monospace;font-size:11px;"
+                    "text-align:center;margin-top:8px;'>Incorrect access code.</p>",
+                    unsafe_allow_html=True,
+                )
+
+
 # ─── Footer ───────────────────────────────────────────────────────────────────
 
 def _render_footer():
@@ -921,6 +1022,13 @@ def main():
         layout="wide",
         initial_sidebar_state="collapsed",
     )
+
+    # ── Password gate ─────────────────────────────────────────────────────────
+    if not st.session_state.get("season_auth", False):
+        _inject_gate_css()
+        _render_password_gate()
+        _render_footer()
+        return
 
     st.markdown(f"""
     <style>
