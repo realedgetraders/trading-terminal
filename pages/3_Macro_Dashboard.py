@@ -81,11 +81,13 @@ _FB_PREV_GDP   = {"USD": 2.4,  "EUR": 0.4,  "GBP": 0.6,  "JPY": 0.1,
                   "AUD": 0.4,  "NZD": -0.1, "CAD": 1.1,  "CHF": 0.2}
 _FB_PREV_UNEMP = {"USD": 4.1,  "EUR": 6.3,  "GBP": 4.4,  "JPY": 2.5,
                   "AUD": 4.1,  "NZD": 5.0,  "CAD": 6.8,  "CHF": 2.8}
-# Employment change fallback (thousands of persons, same units as FRED PAYEMS MoM diff)
-_FB_EMPLOY     = {"USD": 177.0, "EUR": 50.0, "GBP": 40.0, "JPY": 10.0,
-                  "AUD": 30.0,  "NZD": 5.0,  "CAD": 20.0, "CHF": 5.0}
-_FB_PREV_EMPLOY= {"USD": 185.0, "EUR": 55.0, "GBP": 45.0, "JPY": 12.0,
-                  "AUD": 35.0,  "NZD": 6.0,  "CAD": 25.0, "CHF": 6.0}
+# Employment change fallback — units: K persons for USD/GBP/AUD/CAD/JPY; % q/q for EUR/NZD/CHF
+_FB_EMPLOY     = {"USD": 177.0, "EUR": 0.3,  "GBP": 40.0,  "JPY": 10.0,
+                  "AUD": 30.0,  "NZD": 0.4,  "CAD": 20.0,  "CHF": 0.2}
+_FB_PREV_EMPLOY= {"USD": 185.0, "EUR": 0.2,  "GBP": 45.0,  "JPY": 12.0,
+                  "AUD": 35.0,  "NZD": 0.3,  "CAD": 25.0,  "CHF": 0.1}
+# EUR/NZD/CHF report employment change as QoQ % (not K persons)
+_EMPLOY_IS_PCT = {"EUR", "NZD", "CHF"}
 # PMI, Trade Balance, Retail Sales previous-period fallbacks (FF calendar source)
 _FB_PREV_PMI   = {"USD": 50.3, "EUR": 45.5, "GBP": 44.9, "JPY": 48.4,
                   "AUD": 52.0, "NZD": 53.5, "CAD": 47.5, "CHF": 46.0}
@@ -891,6 +893,12 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
             # Non-USD: _ff_latest_two returns last two actual Employment Change releases
             if not ff_df.empty:
                 employ_change, employ_prev = _ff_latest_two(ff_df, ccy, "Employment Change")
+                # K-unit currencies: FF stores "38.5K" → 38500 → normalise to 38.5
+                if ccy not in _EMPLOY_IS_PCT:
+                    if employ_change is not None and abs(employ_change) > 1000:
+                        employ_change /= 1000.0
+                    if employ_prev is not None and abs(employ_prev) > 1000:
+                        employ_prev /= 1000.0
     except Exception:
         employ_change = None
     # Static fallback for all currencies — ensures VALUE+PREV never both show "—"
@@ -930,7 +938,11 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
             retail = retail_fred
 
     s_unemp  = _score(unemp, N_u - 1.5, N_u - 0.5, N_u + 0.5, N_u + 1.5, invert=True)
-    s_employ = _score(employ_change, -50.0, -10.0, 10.0, 50.0)
+    # EUR/NZD/CHF report employment change as %; other currencies in K persons
+    if ccy in _EMPLOY_IS_PCT:
+        s_employ = _score(employ_change, -1.0, -0.2, 0.2, 1.0)
+    else:
+        s_employ = _score(employ_change, -50.0, -10.0, 10.0, 50.0)
     s_trade  = _score(trade, t0, t1, t2, t3)
     s_retail = _score(retail, -0.3, 0.0, 0.5, 1.0)
     d3 = _mean(s_unemp, s_employ, s_trade, s_retail)
@@ -996,16 +1008,69 @@ def _d4_surprises(ccy: str, ff_df: pd.DataFrame):
         src = "FRED"
 
     else:
-        # ── Non-USD: FF calendar with published consensus forecast ─────────────
-        patterns   = _FF_PATTERNS.get(ccy, [])
-        cpi_pat    = patterns[0] if len(patterns) > 0 else "CPI"
-        gdp_pat    = patterns[3] if len(patterns) > 3 else "GDP"
-        employ_pat = patterns[2] if len(patterns) > 2 else "Employment"
+        # ── Non-USD: same two-consecutive-releases approach as USD ────────────
+        # Tier 1: FRED/ECB — compare current release vs prior release as baseline
+        # Tier 2: FF beat/miss (when FRED unavailable)
+        # Tier 3: static fallback comparison
+        _CPI_FRED = {
+            "GBP": "CPALTT01GBM659N", "JPY": "CPALTT01JPM659N",
+            "AUD": "CPALTT01AUM659N", "NZD": "CPALTT01NZM659N",
+            "CAD": "CPALTT01CAM659N", "CHF": "CPALTT01CHM659N",
+        }
+        _GDP_FRED = {
+            "EUR": "NAEXKP01EZQ652S", "GBP": "NAEXKP01GBQ652S",
+            "JPY": "NAEXKP01JPQ652S", "AUD": "NAEXKP01AUQ652S",
+            "NZD": "NAEXKP01NZQ652S", "CAD": "NAEXKP01CAQ652S",
+            "CHF": "NAEXKP01CHQ652S",
+        }
 
-        cpi_act, cpi_fore, s_cpi = _ff_beat_miss(ff_df, ccy, cpi_pat)
-        gdp_act, gdp_fore, s_gdp = _ff_beat_miss(ff_df, ccy, gdp_pat)
-        emp_act, emp_fore, s_emp = _ff_beat_miss(ff_df, ccy, employ_pat)
-        src = "ForexFactory"
+        # ── CPI: current YoY vs prior month YoY ──────────────────────────────
+        if ccy == "EUR":
+            cpi_act, cpi_fore = fetch_ecb_series_with_prev("ICP", "M.U2.N.000000.4.ANR")
+        else:
+            cpi_act, cpi_fore = _fred_latest_with_prev(_CPI_FRED[ccy], 10)
+        s_cpi = _score_surprise(cpi_act, cpi_fore)
+
+        # ── GDP: current QoQ vs prior quarter QoQ ────────────────────────────
+        _gdp_s  = _GDP_FRED.get(ccy)
+        _gdata  = fetch_fred_series(_gdp_s, 5) if _gdp_s else []
+        gdp_act  = _gdata[-1][1] if _gdata else None
+        gdp_fore = _gdata[-2][1] if len(_gdata) >= 2 else None
+        s_gdp   = _score_surprise(gdp_act, gdp_fore)
+
+        # ── Employment: last two actual releases via FF ───────────────────────
+        emp_act, emp_fore = _ff_latest_two(ff_df, ccy, "Employment Change")
+        # Normalise K-unit currencies (EUR/NZD/CHF report % so skip)
+        if ccy not in _EMPLOY_IS_PCT:
+            if emp_act  is not None and abs(emp_act)  > 1000: emp_act  /= 1000.0
+            if emp_fore is not None and abs(emp_fore) > 1000: emp_fore /= 1000.0
+        s_emp = _score_surprise(emp_act, emp_fore)
+
+        # ── Tier 2: FF beat/miss when FRED/ECB unavailable ───────────────────
+        if s_cpi is None:
+            _cp = _FF_PATTERNS.get(ccy, ["CPI"])[0]
+            cpi_act, cpi_fore, s_cpi = _ff_beat_miss(ff_df, ccy, _cp)
+        if s_gdp is None:
+            _gpats = _FF_PATTERNS.get(ccy, [])
+            _gp = _gpats[3] if len(_gpats) > 3 else "GDP"
+            gdp_act, gdp_fore, s_gdp = _ff_beat_miss(ff_df, ccy, _gp)
+        if s_emp is None:
+            _epats = _FF_PATTERNS.get(ccy, [])
+            _ep = _epats[2] if len(_epats) > 2 else "Employment"
+            emp_act, emp_fore, s_emp = _ff_beat_miss(ff_df, ccy, _ep)
+
+        # ── Tier 3: static fallback — always produces a score ────────────────
+        if s_cpi is None:
+            cpi_act = _FB_CPI.get(ccy);  cpi_fore = _FB_PREV_CPI.get(ccy)
+            s_cpi = _score_surprise(cpi_act, cpi_fore)
+        if s_gdp is None:
+            gdp_act = _FB_GDP.get(ccy);  gdp_fore = _FB_PREV_GDP.get(ccy)
+            s_gdp = _score_surprise(gdp_act, gdp_fore)
+        if s_emp is None:
+            emp_act = _FB_EMPLOY.get(ccy); emp_fore = _FB_PREV_EMPLOY.get(ccy)
+            s_emp = _score_surprise(emp_act, emp_fore)
+
+        src = "FRED/ECB"
 
     # Only average non-None scores — None means "no data", not "neutral (0.0)"
     _subs = [s for s in (s_cpi, s_gdp, s_emp) if s is not None]
@@ -1169,36 +1234,46 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         rate, rate_prev_raw = _fred_latest_with_prev("BOERUKM156N", 5)
         rate = rate or _FB_RATES["GBP"]
         rate_prev_raw = rate_prev_raw or _FB_PREV_RATES["GBP"]
-        cpi  = _fred_latest("CPALTT01GBM659N", 5) or _FB_CPI["GBP"]
-        cpi_prev  = _FB_PREV_CPI["GBP"]
+        cpi      = _fred_latest("CPALTT01GBM659N", 5) or _FB_CPI["GBP"]
+        cpi_prev = _FB_PREV_CPI["GBP"]
         real_rate      = rate - cpi
         real_rate_prev = rate_prev_raw - cpi_prev
         N_gbp = _NEUTRAL_RATE["GBP"]
-        pmi, pmi_prev = _FB_PMI["GBP"], None
+
+        # Services PMI — _ff_latest_two for reliable prev
+        # UK is a services-led economy; Services PMI ≠ Manufacturing PMI (D2 already has Mfg)
+        # Static fallback: 50.5 (Services historically runs above Manufacturing in UK)
+        svc_pmi, svc_pmi_prev = 50.5, None
         try:
             if not ff_df.empty:
-                sub = ff_df[(ff_df["currency"] == "GBP") &
-                            ff_df["title"].str.contains("Services PMI", case=False, na=False)]
-                sub_s = sub.sort_values("date")
-                if not sub_s.empty and sub_s.iloc[-1]["actual"] is not None:
-                    pmi      = float(sub_s.iloc[-1]["actual"])
-                    pmi_prev = sub_s.iloc[-1]["previous"]
+                svc_live, svc_pmi_prev = _ff_latest_two(ff_df, "GBP", "Services PMI")
+                if svc_live is not None:
+                    svc_pmi = svc_live
         except Exception:
             pass
-        if pmi_prev is None:
-            pmi_prev = _FB_PREV_PMI.get("GBP")
-        s1 = _score(pmi, 47.0, 49.0, 51.0, 53.0)
+        if svc_pmi_prev is None:
+            svc_pmi_prev = 50.0  # Services PMI prior period fallback
+
+        # FTSE 100 — UK equity market as economic health / risk proxy
+        # Replaces the duplicate CPI YoY % (already shown in D2)
+        ftse, ftse_prev = fetch_yf_price_with_prev("^FTSE", 20)
+        if ftse is None:
+            ftse = 7800.0
+        if ftse_prev is None:
+            ftse_prev = 7600.0
+
+        s1 = _score(svc_pmi, 47.0, 49.0, 51.0, 53.0)
         s2 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s3 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
         s4 = _score(rate - N_gbp, -1.0, -0.5, 0.5, 1.0)
-        s5 = _score(cpi, 1.0, 1.5, 2.5, 3.5)
+        s5 = _score(ftse, 7000.0, 7500.0, 8000.0, 8500.0)
         scores = [s1, s2, s3, s4, s5]
         rows = [
-            ("UK Services PMI",      pmi,                          pmi_prev,                          None, None, s1, "ForexFactory"),
-            ("GBP COT Index",        cot,                          None,                              None, None, s2, "CFTC"),
-            ("Real Rate (rate-CPI)", real_rate,                    real_rate_prev,                    None, None, s3, "FRED"),
-            ("Rate vs Neutral",      rate - N_gbp,                 rate_prev_raw - N_gbp,             None, None, s4, "FRED"),
-            ("CPI YoY %",            cpi,                          cpi_prev,                          None, None, s5, "FRED"),
+            ("UK Services PMI",      svc_pmi,          svc_pmi_prev,      None, None, s1, "ForexFactory"),
+            ("GBP COT Index",        cot,               None,              None, None, s2, "CFTC"),
+            ("Real Rate (rate-CPI)", real_rate,         real_rate_prev,    None, None, s3, "FRED"),
+            ("Rate vs Neutral",      rate - N_gbp,      rate_prev_raw - N_gbp, None, None, s4, "FRED"),
+            ("FTSE 100",             ftse,              ftse_prev,         None, None, s5, "yfinance"),
         ]
 
     elif ccy == "JPY":
@@ -1323,18 +1398,25 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         except Exception:
             pass
 
+        # TSX Composite — Canadian equity market as economic / commodity health proxy
+        # Replaces duplicate "Oil Price (2nd proxy)" row (WTI already shown as row 1)
+        tsx, tsx_prev = fetch_yf_price_with_prev("^GSPTSE", 20)
+        if tsx is None:
+            tsx = 22000.0
+        if tsx_prev is None:
+            tsx_prev = 21000.0
         s1 = _score(crude, 55.0, 65.0, 80.0, 95.0)
         s2 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s3 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
         s4 = _score(usdcad, 1.28, 1.32, 1.38, 1.42, invert=True)
-        s5 = _score(crude, 55.0, 65.0, 80.0, 95.0)  # oil again as proxy for oil/gas ratio
+        s5 = _score(tsx, 18000.0, 20000.0, 22000.0, 24000.0)
         scores = [s1, s2, s3, s4, s5]
         rows = [
             ("WTI Crude",                crude,     crude_prev,     None, None, s1, "yfinance"),
             ("CAD COT Index",            cot,       None,           None, None, s2, "CFTC"),
             ("Real Rate (BOC-CPI)",      real_rate, real_rate_prev, None, None, s3, "FRED"),
             ("USD/CAD Level (inverted)", usdcad,    usdcad_prev,    None, None, s4, "yfinance"),
-            ("Oil Price (2nd proxy)",    crude,     crude_prev,     None, None, s5, "yfinance"),
+            ("TSX Composite",            tsx,       tsx_prev,       None, None, s5, "yfinance"),
         ]
 
     elif ccy == "CHF":
