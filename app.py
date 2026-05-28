@@ -25,6 +25,7 @@ MODULES = [
         "icon":     "📈",
         "desc":     "Decode recurring price patterns across 25 years — custom windows, win rates, and a seasonality scanner that surfaces the strongest upcoming setups.",
         "active":   True,
+        "pro":      True,
         "page":     "pages/1_Seasonality.py",
     },
     {
@@ -152,12 +153,19 @@ def main():
       }}
       /* Overlay button is on top (z-index 10) so .ret-module-active never gets :hover.
          Detect hover on the overlay container instead and reach back to the card. */
-      div[data-testid="stElementContainer"]:has(.ret-module-active):has(+ div[data-testid="stElementContainer"]:hover) .ret-module-active {{
+      div[data-testid="stElementContainer"]:has(.ret-module-active):has(+ div[data-testid="stElementContainer"]:hover) .ret-module-active:not(.ret-module-pro) {{
           box-shadow:
               0 0 0 1px rgba(79,142,247,0.4),
               0 0 16px rgba(79,142,247,0.18),
               0 0 36px rgba(79,142,247,0.07) !important;
           border-color: rgba(79,142,247,0.6) !important;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-module-active):has(+ div[data-testid="stElementContainer"]:hover) .ret-module-active.ret-module-pro {{
+          box-shadow:
+              0 0 0 1px rgba(240,180,41,0.45),
+              0 0 16px rgba(240,180,41,0.22),
+              0 0 36px rgba(240,180,41,0.08) !important;
+          border-color: rgba(240,180,41,0.85) !important;
       }}
       /* Pull the invisible nav-button container up over the card */
       div[data-testid="stElementContainer"]:has(.ret-module-active) {{
@@ -619,6 +627,8 @@ def _render_module_card(col, mod: dict):
 
     is_clickable  = active and not teaser
     card_class    = "ret-module-active" if is_clickable else ""
+    if is_clickable and pro:
+        card_class += " ret-module-pro"
     card_sizing   = "height:160px;overflow:hidden;" if is_clickable else "min-height:140px;margin-bottom:16px;"
 
     with col:
