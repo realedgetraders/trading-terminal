@@ -239,6 +239,16 @@ def _fred_latest(series_id: str, limit: int = 36):
     return data[-1][1]
 
 
+def _fred_latest_with_prev(series_id: str, limit: int = 10):
+    """Return (current_value, previous_value) — both may be None."""
+    data = fetch_fred_series(series_id, limit)
+    if not data:
+        return None, None
+    if len(data) == 1:
+        return data[-1][1], None
+    return data[-1][1], data[-2][1]
+
+
 def _fred_yoy(series_id: str):
     """Calculate YoY % change from level series."""
     data = fetch_fred_series(series_id, 15)
@@ -252,9 +262,9 @@ def _fred_yoy(series_id: str):
         return None
 
 
-def _fred_mom_change(series_id: str):
+def _fred_mom_change(series_id: str, limit: int = 10):
     """Calculate MoM change (level diff) from series."""
-    data = fetch_fred_series(series_id, 5)
+    data = fetch_fred_series(series_id, limit)
     if len(data) < 2:
         return None
     try:
@@ -263,9 +273,9 @@ def _fred_mom_change(series_id: str):
         return None
 
 
-def _fred_mom_pct(series_id: str):
+def _fred_mom_pct(series_id: str, limit: int = 10):
     """Calculate MoM % change from level series."""
-    data = fetch_fred_series(series_id, 5)
+    data = fetch_fred_series(series_id, limit)
     if len(data) < 2:
         return None
     try:
@@ -310,14 +320,17 @@ def fetch_yf_price(ticker: str):
     """Fetch latest close price from yfinance."""
     try:
         import yfinance as yf
-        df = yf.download(ticker, period="5d", progress=False, auto_adjust=True)
+        df = yf.download(ticker, period="10d", progress=False, auto_adjust=True)
         if df.empty:
             return None
         close = df["Close"]
-        if hasattr(close, "iloc"):
-            val = close.dropna().iloc[-1]
-            return float(val)
-        return None
+        # Handle MultiIndex columns returned by newer yfinance versions
+        if isinstance(close, pd.DataFrame):
+            close = close.iloc[:, 0]
+        vals = close.dropna()
+        if vals.empty:
+            return None
+        return float(vals.iloc[-1])
     except Exception:
         return None
 
@@ -350,7 +363,7 @@ def fetch_ff_calendar():
                 continue
             for ev in r.json():
                 try:
-                    ccy = str(ev.get("country", "")).upper()
+                    ccy = str(ev.get("currency") or ev.get("country") or "").upper()
                     title = str(ev.get("title", ""))
                     date_str = str(ev.get("date", ""))
                     impact = str(ev.get("impact", "")).lower()
@@ -511,25 +524,38 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
 
     # Rate level
     rate = None
+    prev_rate = None
     if ccy == "USD":
-        rate = _fred_latest("FEDFUNDS", 5)
+        rate, prev_rate = _fred_latest_with_prev("FEDFUNDS", 10)
     elif ccy == "GBP":
-        rate = _fred_latest("BOERUKM156N", 5)
+        rate, prev_rate = _fred_latest_with_prev("BOERUKM156N", 10)
     elif ccy == "EUR":
         rate = fetch_ecb_series("FM", "M.U2.EUR.RT0.DFR.R.1.Z5.I.A")
     if rate is None:
         rate = _FB_RATES.get(ccy)
 
-    # Rate delta (last change in bps) — use diff between last 2 observations
+    # Rate delta (last change in bps) — derive from the values we already have
     rate_delta = 0.0
     if ccy == "USD":
-        data = fetch_fred_series("FEDFUNDS", 5)
-        if len(data) >= 2:
-            rate_delta = (data[-1][1] - data[-2][1]) * 100.0
+        if rate is not None and prev_rate is not None:
+            rate_delta = (rate - prev_rate) * 100.0
     elif ccy == "GBP":
-        data = fetch_fred_series("BOERUKM156N", 5)
-        if len(data) >= 2:
-            rate_delta = (data[-1][1] - data[-2][1]) * 100.0
+        if rate is not None and prev_rate is not None:
+            rate_delta = (rate - prev_rate) * 100.0
+    else:
+        # Other CCYs: try to derive from FRED if available
+        _rate_series_map = {
+            "JPY": None,   # BOJ rate not reliably on FRED
+            "AUD": None,
+            "NZD": None,
+            "CAD": None,
+            "CHF": None,
+        }
+        _rsid = _rate_series_map.get(ccy)
+        if _rsid:
+            _rv, _rp = _fred_latest_with_prev(_rsid, 10)
+            if _rv is not None and _rp is not None:
+                rate_delta = (_rv - _rp) * 100.0
 
     # Expected next move: use FF calendar for rate decision events
     next_move_diff = 0.0
@@ -556,7 +582,7 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
     s_next  = _score(next_move_diff, -0.30, -0.10, 0.10, 0.30)
     d1 = _mean(s_level, s_delta, s_next)
     rows = [
-        ("Policy Rate", rate, _FB_RATES.get(ccy), None, None, s_level, "FRED/ECB"),
+        ("Policy Rate", rate, prev_rate, None, None, s_level, "FRED/ECB"),
         ("Rate Delta (bps)", rate_delta, None, None, None, s_delta, "FRED/ECB"),
         ("Next Move Forecast", next_move_diff, None, None, None, s_next, "ForexFactory"),
     ]
@@ -635,10 +661,10 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
     s_pmi  = _score(pmi, 47.0, 49.0, 51.0, 53.0)
     d2 = _mean(s_cpi, s_ccpi, s_gdp, s_pmi)
     rows = [
-        ("CPI YoY %", cpi, _FB_CPI.get(ccy), None, None, s_cpi, "FRED/ECB"),
-        ("Core CPI YoY %", core_cpi, _FB_CCPI.get(ccy), None, None, s_ccpi, "FRED/ECB"),
-        ("GDP QoQ %", gdp, _FB_GDP.get(ccy), None, None, s_gdp, "FRED"),
-        ("Manufacturing PMI", pmi, _FB_PMI.get(ccy), None, None, s_pmi, "ForexFactory"),
+        ("CPI YoY %", cpi, None, None, None, s_cpi, "FRED/ECB"),
+        ("Core CPI YoY %", core_cpi, None, None, None, s_ccpi, "FRED/ECB"),
+        ("GDP QoQ %", gdp, None, None, None, s_gdp, "FRED"),
+        ("Manufacturing PMI", pmi, None, None, None, s_pmi, "ForexFactory"),
     ]
     return d2, rows
 
@@ -664,9 +690,10 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
         "CHF": "LRHUTTTTCHM156S",
         "NZD": "LRUNTTTTNUM156S",
     }
+    prev_unemp = None
     fred_key = fred_unemp_map.get(ccy)
     if fred_key:
-        unemp = _fred_latest(fred_key, 5)
+        unemp, prev_unemp = _fred_latest_with_prev(fred_key, 10)
     if unemp is None:
         unemp = _FB_UNEMP.get(ccy)
 
@@ -729,10 +756,10 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
     s_retail = _score(retail, -0.3, 0.0, 0.5, 1.0)
     d3 = _mean(s_unemp, s_employ, s_trade, s_retail)
     rows = [
-        ("Unemployment %", unemp, _FB_UNEMP.get(ccy), None, None, s_unemp, "FRED/ECB"),
+        ("Unemployment %", unemp, prev_unemp, None, None, s_unemp, "FRED/ECB"),
         ("Employment Change", employ_change, None, None, None, s_employ, "FRED/FF"),
-        ("Trade Balance", trade, _FB_TRADE.get(ccy), None, None, s_trade, "ForexFactory"),
-        ("Retail Sales MoM %", retail, _FB_RETAIL.get(ccy), None, None, s_retail, "FRED/FF"),
+        ("Trade Balance", trade, None, None, None, s_trade, "ForexFactory"),
+        ("Retail Sales MoM %", retail, None, None, None, s_retail, "FRED/FF"),
     ]
     return d3, rows
 
@@ -777,12 +804,12 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
     scores = []
 
     if ccy == "USD":
-        dgs10 = _fred_latest("DGS10", 5)
-        dgs2  = _fred_latest("DGS2", 5)
+        dgs10 = _fred_latest("DGS10", 20)   # daily series — needs extra headroom for holidays/weekends
+        dgs2  = _fred_latest("DGS2", 20)
         dxy   = fetch_yf_price("DX-Y.NYB")
-        rate  = _fred_latest("FEDFUNDS", 5) or _FB_RATES["USD"]
+        rate  = _fred_latest("FEDFUNDS", 10) or _FB_RATES["USD"]
         N     = _NEUTRAL_RATE["USD"]
-        conf  = _fred_latest("UMCSENT", 5)
+        conf  = _fred_latest("UMCSENT", 10)
         spread = None
         if dgs10 is not None and dgs2 is not None:
             spread = dgs10 - dgs2
@@ -880,7 +907,7 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         ]
 
     elif ccy == "AUD":
-        iron  = fetch_yf_price("TIO=F")
+        iron  = fetch_yf_price("BHP")   # BHP Group — major iron ore proxy (TIO=F unavailable)
         crude = fetch_yf_price("CL=F")
         rate  = _FB_RATES["AUD"]
         cpi   = _fred_latest("CPALTT01AUM659N", 5) or _FB_CPI["AUD"]
@@ -902,14 +929,14 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         except Exception:
             pass
 
-        s1 = _score(iron, 80.0, 90.0, 110.0, 130.0)
+        s1 = _score(iron, 35.0, 42.0, 52.0, 62.0)   # BHP NYSE price (~$40–60 range)
         s2 = _score(crude, 55.0, 65.0, 80.0, 95.0)
         s3 = _score(caixin, 47.0, 49.0, 51.0, 53.0)
         s4 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s5 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
         scores = [s1, s2, s3, s4, s5]
         rows = [
-            ("Iron Ore Price", iron, None, None, None, s1, "yfinance"),
+            ("Iron Ore (BHP proxy)", iron, None, None, None, s1, "yfinance"),
             ("WTI Crude", crude, None, None, None, s2, "yfinance"),
             ("Caixin PMI (China)", caixin, None, None, None, s3, "ForexFactory"),
             ("AUD COT Index", cot, None, None, None, s4, "CFTC"),
@@ -917,7 +944,7 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         ]
 
     elif ccy == "NZD":
-        iron  = fetch_yf_price("TIO=F")
+        bhp   = fetch_yf_price("BHP")   # BHP — commodity / iron ore proxy
         gold  = fetch_yf_price("GC=F")
         rate  = _FB_RATES["NZD"]
         cpi   = _fred_latest("CPALTT01NZM659N", 5) or _FB_CPI["NZD"]
@@ -931,14 +958,14 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         except Exception:
             pass
 
-        s1 = _score(iron, 80.0, 90.0, 110.0, 130.0)
+        s1 = _score(bhp, 35.0, 42.0, 52.0, 62.0)    # BHP NYSE price as commodity proxy
         s2 = _score(caixin, 47.0, 49.0, 51.0, 53.0)
         s3 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s4 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
         s5 = _score(gold, 1800.0, 1950.0, 2300.0, 2500.0)
         scores = [s1, s2, s3, s4, s5]
         rows = [
-            ("Iron Ore (dairy proxy)", iron, None, None, None, s1, "yfinance"),
+            ("Commodity (BHP proxy)", bhp, None, None, None, s1, "yfinance"),
             ("Caixin PMI (China)", caixin, None, None, None, s2, "ForexFactory"),
             ("NZD COT Index", cot, None, None, None, s3, "CFTC"),
             ("Real Rate (RBNZ-CPI)", real_rate, None, None, None, s4, "FRED"),
