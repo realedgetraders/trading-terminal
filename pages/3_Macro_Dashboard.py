@@ -70,6 +70,18 @@ _FB_TRADE  = {"USD": -70.0,"EUR": 30.0, "GBP": -5.0, "JPY": 0.5,
 _FB_RETAIL = {"USD": 0.1,  "EUR": 0.1,  "GBP": 0.0,  "JPY": -1.1,
               "AUD": 0.3,  "NZD": -0.1, "CAD": -0.4, "CHF": 0.0}
 
+# Previous-period fallbacks — used when live API is unavailable so PREV column never shows "—"
+_FB_PREV_RATES = {"USD": 5.33, "EUR": 3.90, "GBP": 5.00, "JPY": 0.25,
+                  "AUD": 4.35, "NZD": 3.75, "CAD": 3.00, "CHF": 0.50}
+_FB_PREV_CPI   = {"USD": 2.6,  "EUR": 2.3,  "GBP": 2.8,  "JPY": 2.8,
+                  "AUD": 3.4,  "NZD": 2.2,  "CAD": 1.9,  "CHF": 0.3}
+_FB_PREV_CCPI  = {"USD": 3.0,  "EUR": 2.8,  "GBP": 3.6,  "JPY": 2.4,
+                  "AUD": 3.3,  "NZD": 2.8,  "CAD": 2.5,  "CHF": 1.1}
+_FB_PREV_GDP   = {"USD": 2.4,  "EUR": 0.4,  "GBP": 0.6,  "JPY": 0.1,
+                  "AUD": 0.4,  "NZD": -0.1, "CAD": 1.1,  "CHF": 0.2}
+_FB_PREV_UNEMP = {"USD": 4.1,  "EUR": 6.3,  "GBP": 4.4,  "JPY": 2.5,
+                  "AUD": 4.1,  "NZD": 5.0,  "CAD": 6.8,  "CHF": 2.8}
+
 _NEUTRAL_RATE  = {"USD": 2.5, "EUR": 2.0, "GBP": 2.5, "JPY": 0.25,
                   "AUD": 3.0, "NZD": 3.0, "CAD": 2.5, "CHF": 0.5}
 _NEUTRAL_UNEMP = {"USD": 4.5, "EUR": 7.5, "GBP": 4.5, "JPY": 3.0,
@@ -265,7 +277,7 @@ def _fred_yoy(series_id: str):
 
 def _fred_yoy_with_prev(series_id: str):
     """Return (current YoY %, previous month's YoY %) from monthly level series."""
-    data = fetch_fred_series(series_id, 16)
+    data = fetch_fred_series(series_id, 20)   # 20 obs — buffer for "." gaps in FRED
     curr = None
     prev = None
     if len(data) >= 13:
@@ -370,6 +382,7 @@ def fetch_ff_calendar():
     }
     endpoints = [
         "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+        "https://nfs.faireconomy.media/ff_calendar_lastweek.json",
         "https://nfs.faireconomy.media/ff_calendar_nextweek.json",
         "https://nfs.faireconomy.media/ff_calendar_month.json",
     ]
@@ -506,8 +519,8 @@ def _cot_index(ccy: str):
 # ╚══════════════════════════════════════════════════════════════════════════════
 
 _FF_PATTERNS = {
-    "USD": ["CPI m/m", "Core CPI m/m", "Nonfarm Payrolls", "Advance GDP q/q", "ISM Manufacturing PMI"],
-    "EUR": ["CPI y/y", "Core CPI y/y", "Employment Change q/q", "Flash GDP q/q", "Manufacturing PMI"],
+    "USD": ["CPI m/m", "Core CPI m/m", "Nonfarm Payrolls", "GDP q/q", "ISM Manufacturing PMI"],
+    "EUR": ["CPI y/y", "Core CPI y/y", "Employment Change q/q", "GDP q/q", "Manufacturing PMI"],
     "GBP": ["CPI y/y", "Core CPI y/y", "Employment Change", "GDP m/m", "Manufacturing PMI"],
     "JPY": ["National Core CPI y/y", "GDP q/q", "Employment Change", "Unemployment Rate", "Manufacturing PMI"],
     "AUD": ["CPI q/q", "Trimmed Mean CPI q/q", "Employment Change", "GDP q/q", "Manufacturing PMI"],
@@ -603,6 +616,9 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
     except Exception:
         pass
 
+    if prev_rate is None:
+        prev_rate = _FB_PREV_RATES.get(ccy)
+
     s_level = _score(rate, N - 1.0, N - 0.5, N + 0.5, N + 1.0)
     s_delta = _score(rate_delta, -50.0, -25.0, 25.0, 50.0)
     s_next  = _score(next_move_diff, -0.30, -0.10, 0.10, 0.30)
@@ -668,13 +684,20 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
         gdp      = gdp_data[-1][1] if gdp_data else None
         prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
 
-    # Fallback
+    # Fallback — current values
     if cpi is None:
         cpi = _FB_CPI.get(ccy)
     if core_cpi is None:
         core_cpi = _FB_CCPI.get(ccy)
     if gdp is None:
         gdp = _FB_GDP.get(ccy)
+    # Fallback — previous period values (used when FRED is unavailable)
+    if prev_cpi is None:
+        prev_cpi = _FB_PREV_CPI.get(ccy)
+    if prev_core_cpi is None:
+        prev_core_cpi = _FB_PREV_CCPI.get(ccy)
+    if prev_gdp is None:
+        prev_gdp = _FB_PREV_GDP.get(ccy)
 
     # PMI from FF calendar — extract prev + forecast for table display
     pmi_prev = None
@@ -742,6 +765,8 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
         unemp, prev_unemp = _fred_latest_with_prev(fred_key, 10)
     if unemp is None:
         unemp = _FB_UNEMP.get(ccy)
+    if prev_unemp is None:
+        prev_unemp = _FB_PREV_UNEMP.get(ccy)
 
     # Employment change — USD uses FRED PAYEMS directly (limit=15 to absorb "." gaps);
     # non-USD uses FF calendar newest-first search for actual value
@@ -1704,11 +1729,13 @@ def main():
         except Exception as _e:
             st.error(f"FEDFUNDS error: {_e}")
 
-        # CPI YoY
-        st.markdown("**CPIAUCSL — CPI YoY %**")
+        # CPI YoY + prev
+        st.markdown("**CPIAUCSL — CPI YoY % (current + prev)**")
         try:
-            _cpi_raw = fetch_fred_series("CPIAUCSL", 15)
-            st.write({"yoy": _fred_yoy("CPIAUCSL"), "raw_tail": _cpi_raw[-4:] if _cpi_raw else []})
+            _cpi_raw = fetch_fred_series("CPIAUCSL", 20)
+            _cpi_curr, _cpi_prev = _fred_yoy_with_prev("CPIAUCSL")
+            st.write({"yoy_curr": _cpi_curr, "yoy_prev": _cpi_prev,
+                      "raw_count": len(_cpi_raw), "raw_tail": _cpi_raw[-4:] if _cpi_raw else []})
         except Exception as _e:
             st.error(f"CPIAUCSL error: {_e}")
 
@@ -1798,6 +1825,24 @@ def main():
                 st.write({"status": _test.status_code, "first_event": _test.json()[0] if _test.ok else _test.text[:200]})
             except Exception as _e2:
                 st.error(f"Raw FF fetch error: {_e2}")
+
+        # D4 Surprise matching — test _ff_beat_miss for all USD patterns
+        st.markdown("**D4 Surprise — USD pattern matching results**")
+        if not ff_df.empty:
+            _usd_patterns = _FF_PATTERNS.get("USD", [])
+            for _pi, _pat in enumerate(_usd_patterns):
+                _act, _fore, _sc = _ff_beat_miss(ff_df, "USD", _pat)
+                _usd_events = ff_df[
+                    (ff_df["currency"] == "USD") &
+                    ff_df["title"].str.contains(_pat, case=False, na=False)
+                ][["title", "date", "actual", "forecast"]].sort_values("date", ascending=False).head(3)
+                st.write({
+                    "pattern": _pat,
+                    "result": {"actual": _act, "forecast": _fore, "score": _sc},
+                    "matching_events": _usd_events.to_dict(orient="records"),
+                })
+        else:
+            st.warning("FF calendar empty — cannot test D4 matching")
 
     # ── Compute scores ────────────────────────────────────────────────────────
     cache_key = f"macro_scores_{ccy}"
