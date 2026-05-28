@@ -1,35 +1,38 @@
 """
 Trading Analytics Terminal — Module 6: Edge Journal
-Personal trade journal with performance analytics — coming soon.
+Password-gated PRO module preview. Full build coming soon.
 """
 
 import streamlit as st
 
-# ── Colour palette — amber/gold accent instead of teal ───────────────────────
+# ── Colour palette — amber/gold accent ──────────────────────────────────────
 C = {
     "bg":     "#0d0d0d",
     "card":   "#141414",
     "border": "#252525",
+    "panel":  "#111111",
     "dim":    "#171717",
     "text":   "#e8e8e8",
     "muted":  "#666666",
-    "amber":  "#f0b429",   # primary accent
-    "gold":   "#ffd166",   # highlight
+    "amber":  "#f0b429",
+    "gold":   "#ffd166",
     "teal":   "#f0b429",   # amber — Back button (journal accent)
 }
 
+_PASSWORD = "12345"
+
 _FEATURES = [
-    "Trade logging with setup tagging",
-    "Win rate · expectancy · profit factor",
-    "Setup & session performance breakdown",
-    "Equity curve and drawdown tracker",
-    "Personal edge score over time",
+    ("📝", "Trade Log",          "Enter and save every trade — symbol, direction, entry, exit, size, and personal notes."),
+    ("📊", "Performance Stats",  "Full analytics: win rate, expectancy, profit factor, setup breakdown, and CSV export for AI analysis."),
+    ("📈", "Equity Curve",       "Visual drawdown tracker and equity curve over time — see exactly when your edge is working."),
+    ("🏷️", "Setup Tagging",      "Tag each trade by setup type and session to find where your edge actually lives."),
+    ("👤", "Trader Profile",     "Personal edge score over time, strengths, weaknesses — your trading identity in data."),
 ]
 
 
 def main():
     st.set_page_config(
-        page_title="Edge Journal · Trading Terminal",
+        page_title="Edge Journal — EdgeLab",
         page_icon="📓",
         layout="wide",
         initial_sidebar_state="collapsed",
@@ -57,9 +60,52 @@ def main():
           border-color:{C['amber']}70 !important; color:{C['amber']} !important;
           box-shadow:0 0 12px rgba(240,180,41,0.14) !important;
       }}
+      [data-testid="stTextInput"] input {{
+          background:{C['card']} !important;
+          border:1px solid {C['border']} !important;
+          color:{C['text']} !important;
+          font-family:monospace !important;
+          border-radius:8px !important;
+      }}
+      [data-testid="stTextInput"] input::placeholder {{
+          color:{C['muted']} !important;
+      }}
       p, span, label {{ color:{C['text']}; }}
     </style>
     """, unsafe_allow_html=True)
+
+    # ── Password gate ──────────────────────────────────────────────────────────
+    if not st.session_state.get("journal_auth"):
+        st.markdown("<div style='height:12vh;'></div>", unsafe_allow_html=True)
+        _, col_c, _ = st.columns([3, 2, 3])
+        with col_c:
+            st.markdown(
+                f"<div style='text-align:center;margin-bottom:22px;'>"
+                f"<span style='background:{C['amber']};color:#0a0c10;font-size:9px;"
+                f"font-weight:800;font-family:monospace;letter-spacing:2px;"
+                f"padding:3px 12px;border-radius:12px;'>PRO ACCESS</span>"
+                f"<div style='font-size:22px;font-weight:800;color:{C['text']};"
+                f"font-family:monospace;letter-spacing:-0.5px;margin-top:14px;'>"
+                f"Edge Journal</div>"
+                f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
+                f"margin-top:5px;'>Enter password to continue</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            pw = st.text_input(
+                "Password",
+                type="password",
+                placeholder="Enter password…",
+                label_visibility="collapsed",
+                key="journal_pw",
+            )
+            if st.button("Unlock →", use_container_width=True, key="journal_unlock"):
+                if pw == _PASSWORD:
+                    st.session_state["journal_auth"] = True
+                    st.rerun()
+                else:
+                    st.error("Incorrect password.")
+        return
 
     # ── Title row ──────────────────────────────────────────────────────────────
     col_back, col_title, _ = st.columns([2, 6, 2])
@@ -81,66 +127,74 @@ def main():
             unsafe_allow_html=True,
         )
 
-    st.markdown("<div style='height:40px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:32px;'></div>", unsafe_allow_html=True)
 
-    # ── Coming Soon card ───────────────────────────────────────────────────────
-    _, col_c, _ = st.columns([1, 2, 1])
+    # ── Feature cards ──────────────────────────────────────────────────────────
+    _, col_c, _ = st.columns([1, 3, 1])
     with col_c:
-        feature_rows = "".join([
-            f"<div style='display:flex;align-items:center;gap:12px;"
-            f"padding:9px 0;border-bottom:1px solid {C['border']};'>"
-            f"<span style='color:{C['amber']};font-family:monospace;font-size:13px;'>→</span>"
-            f"<span style='font-size:12px;color:{C['muted']};font-family:monospace;'>{f}</span>"
-            f"</div>"
-            for f in _FEATURES
-        ])
+        # Status banner
+        st.markdown(
+            f"<div style='text-align:center;margin-bottom:28px;'>"
+            f"<span style='background:rgba(240,180,41,0.08);border:1px solid rgba(240,180,41,0.25);"
+            f"border-radius:8px;padding:8px 20px;"
+            f"font-size:11px;font-family:monospace;color:#888888;letter-spacing:1px;'>"
+            f"🔒 &nbsp; Authentication required &nbsp;·&nbsp; "
+            f"<span style='color:{C[\"amber\"]};font-weight:700;'>In Development</span>"
+            f"</span></div>",
+            unsafe_allow_html=True,
+        )
+
+        # Feature list rows
+        feature_rows = ""
+        for icon, title, desc in _FEATURES:
+            feature_rows += f"""
+<div style='display:flex;align-items:flex-start;gap:16px;
+            padding:16px 0;border-bottom:1px solid {C['border']};'>
+  <span style='font-size:22px;margin-top:2px;flex-shrink:0;'>{icon}</span>
+  <div>
+    <div style='font-size:13px;font-weight:700;color:{C['text']};
+                font-family:monospace;letter-spacing:0.5px;margin-bottom:4px;'>{title}</div>
+    <div style='font-size:11px;color:{C['muted']};font-family:sans-serif;
+                line-height:1.6;'>{desc}</div>
+  </div>
+</div>"""
 
         st.markdown(
             f"""
-            <div style="background:{C['card']};border:1px solid {C['amber']}38;
-                        border-radius:16px;padding:44px 44px 36px;text-align:center;
-                        box-shadow:0 0 40px {C['amber']}08;">
+<div style="background:{C['card']};border:1px solid {C['amber']}30;
+            border-radius:16px;padding:40px 44px 36px;
+            box-shadow:0 0 40px {C['amber']}06;">
 
-              <!-- PRO badge -->
-              <div style="margin-bottom:28px;">
-                <span style="background:{C['amber']};color:#0a0c10;
-                             font-size:10px;font-family:monospace;font-weight:800;
-                             letter-spacing:2.5px;padding:5px 16px;border-radius:20px;
-                             text-transform:uppercase;">PRO</span>
-              </div>
+  <!-- PRO badge + icon -->
+  <div style="text-align:center;margin-bottom:32px;">
+    <span style="background:{C['amber']};color:#0a0c10;
+                 font-size:10px;font-family:monospace;font-weight:800;
+                 letter-spacing:2.5px;padding:5px 16px;border-radius:20px;
+                 text-transform:uppercase;">PRO</span>
+    <div style="font-size:48px;margin-top:18px;line-height:1;">📓</div>
+    <div style="font-size:13px;color:{C['muted']};font-family:sans-serif;
+                line-height:1.8;max-width:420px;margin:16px auto 0;">
+      A structured journal is being built here — log every trade,
+      track your edge over time, and let the data show you where you
+      actually make money.
+    </div>
+  </div>
 
-              <!-- Icon -->
-              <div style="font-size:52px;margin-bottom:18px;line-height:1;">📓</div>
+  <!-- Feature list -->
+  <div style="max-width:460px;margin:0 auto;">
+    {feature_rows}
+  </div>
 
-              <!-- Title -->
-              <div style="font-size:22px;font-weight:800;color:{C['text']};
-                          font-family:monospace;letter-spacing:-0.5px;margin-bottom:12px;">
-                Trade Journal
-              </div>
+  <!-- Status footer -->
+  <div style="text-align:center;font-size:10px;color:{C['muted']};
+              font-family:monospace;letter-spacing:1.5px;
+              border-top:1px solid {C['border']};
+              padding-top:20px;margin-top:8px;text-transform:uppercase;">
+    Status &nbsp;·&nbsp;
+    <span style="color:{C['amber']};font-weight:700;">In Development</span>
+  </div>
 
-              <!-- Description -->
-              <div style="font-size:13px;color:{C['muted']};font-family:sans-serif;
-                          line-height:1.8;max-width:400px;margin:0 auto 32px;">
-                A structured journal is being built here — log every trade,
-                track your edge over time, and let the data show you where you
-                actually make money. Requires account authentication.
-              </div>
-
-              <!-- Feature list -->
-              <div style="max-width:320px;margin:0 auto 36px;text-align:left;">
-                {feature_rows}
-              </div>
-
-              <!-- Status footer -->
-              <div style="font-size:10px;color:{C['muted']};font-family:monospace;
-                          letter-spacing:1.5px;border-top:1px solid {C['border']};
-                          padding-top:20px;text-transform:uppercase;">
-                Status &nbsp;·&nbsp;
-                <span style="color:{C['amber']};font-weight:700;">In Development</span>
-                &nbsp;&nbsp;·&nbsp;&nbsp; Authentication Required
-              </div>
-
-            </div>
+</div>
             """,
             unsafe_allow_html=True,
         )
@@ -156,5 +210,4 @@ def main():
     )
 
 
-if __name__ == "__main__":
-    main()
+main()

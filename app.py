@@ -452,8 +452,7 @@ def _render_landing():
 </div>
         """, unsafe_allow_html=True)
         if st.button(" ", key="land_journal", use_container_width=True):
-            st.session_state.section = "journal"
-            st.rerun()
+            st.switch_page("pages/6_Journal.py")
 
 
 def _render_analysis():
