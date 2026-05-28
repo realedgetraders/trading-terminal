@@ -356,6 +356,40 @@ def fetch_ecb_series(flow: str, key: str):
     except Exception:
         return None
 
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_ecb_series_with_prev(flow: str, key: str):
+    """Fetch ECB SDW series, return (latest, prev) from last 3 observations.
+    Both may be None if the API is unavailable."""
+    try:
+        url = (
+            f"https://data-api.ecb.europa.eu/service/data/{flow}/{key}"
+            f"?format=jsondata&lastNObservations=3"
+        )
+        r = requests.get(url, timeout=12)
+        if r.status_code != 200:
+            return None, None
+        data = r.json()
+        series_dict = data["dataSets"][0]["series"]
+        first_key = list(series_dict.keys())[0]
+        obs = series_dict[first_key]["observations"]
+        # obs keys are integer time-series indices; sort descending → newest first
+        sorted_keys = sorted(obs.keys(), key=lambda x: int(x), reverse=True)
+        vals = []
+        for k in sorted_keys:
+            v = obs[k][0]
+            if v is not None:
+                try:
+                    vals.append(float(v))
+                except (TypeError, ValueError):
+                    pass
+            if len(vals) >= 2:
+                break
+        return (vals[0] if vals else None,
+                vals[1] if len(vals) >= 2 else None)
+    except Exception:
+        return None, None
+
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  YFINANCE FETCH  (ttl=900)
 # ╚══════════════════════════════════════════════════════════════════════════════
@@ -594,6 +628,28 @@ def _ff_beat_miss(ff_df: pd.DataFrame, ccy: str, pattern: str):
     except Exception:
         return None, None, None
 
+
+def _ff_latest_two(ff_df: pd.DataFrame, ccy: str, pattern: str):
+    """Return (current_val, prev_val) by scanning the last two actual releases.
+    This is the canonical PREV source for FF-backed indicators — it finds two
+    real released values rather than relying on the unreliable 'previous' field
+    which ForexFactory often leaves null."""
+    try:
+        sub = ff_df[
+            (ff_df["currency"] == ccy) &
+            ff_df["title"].str.contains(pattern, case=False, na=False)
+        ].sort_values("date", ascending=False)
+        vals = []
+        for _, row in sub.iterrows():
+            if row["actual"] is not None:
+                vals.append(float(row["actual"]))
+            if len(vals) >= 2:
+                break
+        return (vals[0] if vals else None,
+                vals[1] if len(vals) >= 2 else None)
+    except Exception:
+        return None, None
+
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  DIMENSION CALCULATORS
 # ╚══════════════════════════════════════════════════════════════════════════════
@@ -614,28 +670,25 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
     if rate is None:
         rate = _FB_RATES.get(ccy)
 
-    # Rate delta (last change in bps) — derive from the values we already have
-    rate_delta = 0.0
-    if ccy == "USD":
-        if rate is not None and prev_rate is not None:
-            rate_delta = (rate - prev_rate) * 100.0
-    elif ccy == "GBP":
-        if rate is not None and prev_rate is not None:
-            rate_delta = (rate - prev_rate) * 100.0
-    else:
-        # Other CCYs: try to derive from FRED if available
-        _rate_series_map = {
-            "JPY": None,   # BOJ rate not reliably on FRED
-            "AUD": None,
-            "NZD": None,
-            "CAD": None,
-            "CHF": None,
-        }
-        _rsid = _rate_series_map.get(ccy)
-        if _rsid:
-            _rv, _rp = _fred_latest_with_prev(_rsid, 10)
-            if _rv is not None and _rp is not None:
-                rate_delta = (_rv - _rp) * 100.0
+    # Rate delta (last change in bps) — current delta AND prior delta (for PREV column).
+    # Requires 3 sequential rate observations: r2 (newest), r1, r0.
+    # current_delta = (r2 - r1) * 100   |   prev_delta = (r1 - r0) * 100
+    rate_delta      = 0.0
+    prev_rate_delta = 0.0   # default: no change in prior period either
+    if ccy in ("USD", "GBP"):
+        _series = "FEDFUNDS" if ccy == "USD" else "BOERUKM156N"
+        _r_data = fetch_fred_series(_series, 15)
+        if len(_r_data) >= 2:
+            rate_delta = (_r_data[-1][1] - _r_data[-2][1]) * 100.0
+        if len(_r_data) >= 3:
+            prev_rate_delta = (_r_data[-2][1] - _r_data[-3][1]) * 100.0
+    elif ccy == "EUR":
+        # ECB deposit rate — use fetch_ecb_series_with_prev and compare to fallback prev
+        _ecb_rate, _ecb_prev = fetch_ecb_series_with_prev("FM", "M.U2.EUR.RT0.DFR.R.1.Z5.I.A")
+        if _ecb_rate is not None and _ecb_prev is not None:
+            rate_delta = (_ecb_rate - _ecb_prev) * 100.0
+    # Non-USD/GBP/EUR: no reliable FRED rate series — leave delta=0.0 (central banks
+    # rarely move in consecutive meetings; 0 is the correct default assumption)
 
     # Expected next move: use FF calendar for rate decision events
     next_move_diff = 0.0
@@ -665,9 +718,9 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
     s_next  = _score(next_move_diff, -0.30, -0.10, 0.10, 0.30)
     d1 = _mean(s_level, s_delta, s_next)
     rows = [
-        ("Policy Rate", rate, prev_rate, None, None, s_level, "FRED/ECB"),
-        ("Rate Delta (bps)", rate_delta, None, None, None, s_delta, "FRED/ECB"),
-        ("Next Move Forecast", next_move_diff, None, None, None, s_next, "ForexFactory"),
+        ("Policy Rate",        rate,           prev_rate,        None, None, s_level, "FRED/ECB"),
+        ("Rate Delta (bps)",   rate_delta,     prev_rate_delta,  None, None, s_delta, "FRED/ECB"),
+        ("Next Move Forecast", next_move_diff, None,             None, None, s_next,  "ForexFactory"),
     ]
     return d1, rows
 
@@ -689,8 +742,9 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
         gdp      = gdp_data[-1][1] if gdp_data else None
         prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
     elif ccy == "EUR":
-        cpi      = fetch_ecb_series("ICP", "M.U2.N.000000.4.ANR")
-        core_cpi = fetch_ecb_series("ICP", "M.U2.N.XEF000.4.ANR")
+        # ECB API returns multiple obs — get current + prev in one call
+        cpi,      prev_cpi      = fetch_ecb_series_with_prev("ICP", "M.U2.N.000000.4.ANR")
+        core_cpi, prev_core_cpi = fetch_ecb_series_with_prev("ICP", "M.U2.N.XEF000.4.ANR")
         gdp_data = fetch_fred_series("NAEXKP01EZQ652S", 5)
         gdp      = gdp_data[-1][1] if gdp_data else None
         prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
@@ -740,7 +794,7 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
     if prev_gdp is None:
         prev_gdp = _FB_PREV_GDP.get(ccy)
 
-    # PMI from FF calendar — extract prev + forecast for table display
+    # PMI from FF calendar — PREV via _ff_latest_two (last two actual releases)
     pmi_prev = None
     pmi_fcst = None
     pmi_bm   = None
@@ -751,14 +805,17 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
                        "AUD": "Manufacturing PMI", "NZD": "Manufacturing PMI",
                        "CAD": "Ivey PMI", "CHF": "Manufacturing PMI"}
             pat = pat_map.get(ccy, "Manufacturing PMI")
+            # Get current + prev from last two actual releases (reliable)
+            pmi_live, pmi_prev = _ff_latest_two(ff_df, ccy, pat)
+            if pmi_live is not None:
+                pmi = pmi_live
+            # Fetch forecast from the most recent event (for beat/miss label)
             sub_p = ff_df[
                 (ff_df["currency"] == ccy) &
                 ff_df["title"].str.contains(pat, case=False, na=False)
             ].sort_values("date", ascending=False)
             for _, r in sub_p.iterrows():
                 if r["actual"] is not None:
-                    pmi      = float(r["actual"])
-                    pmi_prev = r["previous"]
                     pmi_fcst = r["forecast"]
                     pmi_bm   = _beat_miss_label(_score_surprise(pmi, pmi_fcst))
                     break
@@ -811,8 +868,9 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
     if prev_unemp is None:
         prev_unemp = _FB_PREV_UNEMP.get(ccy)
 
-    # Employment change — USD uses FRED PAYEMS directly (limit=15 to absorb "." gaps);
-    # non-USD uses FF calendar newest-first search for actual value
+    # Employment change — USD uses FRED PAYEMS (last two obs = current + prev MoM diff);
+    # non-USD uses _ff_latest_two (last two actual releases, not row["previous"]).
+    # All paths fall back to static dicts when live sources are unavailable.
     employ_prev = None
     try:
         if ccy == "USD":
@@ -820,74 +878,46 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
             if len(payems) >= 2:
                 employ_change = payems[-1][1] - payems[-2][1]
                 employ_prev   = payems[-2][1] - payems[-3][1] if len(payems) >= 3 else None
-            # FF fallback: "Nonfarm Payrolls" event if FRED returned nothing
+            # FF fallback: _ff_latest_two for last two Nonfarm Payrolls actual releases
             if employ_change is None and not ff_df.empty:
-                sub_e = ff_df[
-                    (ff_df["currency"] == "USD") &
-                    ff_df["title"].str.contains("Nonfarm Payrolls", case=False, na=False)
-                ].sort_values("date", ascending=False)
-                for _, r in sub_e.iterrows():
-                    if r["actual"] is not None:
-                        employ_change = float(r["actual"])
-                        employ_prev   = r["previous"]
-                        # FF stores NFP as "177K" → _parse_num gives 177000 (absolute).
-                        # FRED PAYEMS MoM diff is in thousands (e.g. 177 for 177K jobs).
-                        # Normalise: if absolute value > 1000, it's in persons → ÷ 1000
-                        if abs(employ_change) > 1000:
-                            employ_change /= 1000.0
-                        if employ_prev is not None and abs(employ_prev) > 1000:
-                            employ_prev /= 1000.0
-                        break
-            # Static fallback — ensures cell never shows "—" when both APIs fail
-            if employ_change is None:
-                employ_change = _FB_EMPLOY.get(ccy)
-            if employ_prev is None:
-                employ_prev = _FB_PREV_EMPLOY.get(ccy)
+                employ_change, employ_prev = _ff_latest_two(ff_df, "USD", "Nonfarm Payrolls")
+                # FF stores NFP as "177K" → _parse_num gives 177000 (absolute).
+                # FRED PAYEMS MoM diff is in thousands (177 for 177K jobs). Normalise.
+                if employ_change is not None and abs(employ_change) > 1000:
+                    employ_change /= 1000.0
+                if employ_prev is not None and abs(employ_prev) > 1000:
+                    employ_prev /= 1000.0
         else:
+            # Non-USD: _ff_latest_two returns last two actual Employment Change releases
             if not ff_df.empty:
-                sub_e = ff_df[
-                    (ff_df["currency"] == ccy) &
-                    ff_df["title"].str.contains("Employment Change", case=False, na=False)
-                ].sort_values("date", ascending=False)
-                for _, r in sub_e.iterrows():
-                    if r["actual"] is not None:
-                        employ_change = float(r["actual"])
-                        employ_prev   = r["previous"]
-                        break
+                employ_change, employ_prev = _ff_latest_two(ff_df, ccy, "Employment Change")
     except Exception:
         employ_change = None
+    # Static fallback for all currencies — ensures VALUE+PREV never both show "—"
+    if employ_change is None:
+        employ_change = _FB_EMPLOY.get(ccy)
+    if employ_prev is None:
+        employ_prev = _FB_PREV_EMPLOY.get(ccy)
 
-    # Trade balance from FF — newest-first, store prev
+    # Trade balance — _ff_latest_two: last two actual releases (not row["previous"])
     trade_prev = None
     try:
         if not ff_df.empty:
-            sub_tb = ff_df[
-                (ff_df["currency"] == ccy) &
-                ff_df["title"].str.contains("Trade Balance", case=False, na=False)
-            ].sort_values("date", ascending=False)
-            for _, r in sub_tb.iterrows():
-                if r["actual"] is not None:
-                    trade      = float(r["actual"])
-                    trade_prev = r["previous"]
-                    break
+            trade_live, trade_prev = _ff_latest_two(ff_df, ccy, "Trade Balance")
+            if trade_live is not None:
+                trade = trade_live
     except Exception:
         pass
     if trade_prev is None:
         trade_prev = _FB_PREV_TRADE.get(ccy)
 
-    # Retail sales from FF — newest-first, store prev
+    # Retail sales — _ff_latest_two: last two actual releases (not row["previous"])
     retail_prev = None
     try:
         if not ff_df.empty:
-            sub_rs = ff_df[
-                (ff_df["currency"] == ccy) &
-                ff_df["title"].str.contains("Retail Sales", case=False, na=False)
-            ].sort_values("date", ascending=False)
-            for _, r in sub_rs.iterrows():
-                if r["actual"] is not None:
-                    retail      = float(r["actual"])
-                    retail_prev = r["previous"]
-                    break
+            retail_live, retail_prev = _ff_latest_two(ff_df, ccy, "Retail Sales")
+            if retail_live is not None:
+                retail = retail_live
     except Exception:
         pass
     if retail_prev is None:
@@ -1220,16 +1250,17 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
                     pmi = float(sub_s.iloc[-1]["actual"])
         except Exception:
             pass
-        caixin = _FB_PMI["AUD"]
+        # Caixin PMI — _ff_latest_two returns last two CNY actual releases
+        caixin, caixin_prev = _FB_PMI["AUD"], None
         try:
             if not ff_df.empty:
-                sub = ff_df[(ff_df["currency"] == "CNY") &
-                            ff_df["title"].str.contains("Caixin", case=False, na=False)]
-                sub_s = sub.sort_values("date")
-                if not sub_s.empty and sub_s.iloc[-1]["actual"] is not None:
-                    caixin = float(sub_s.iloc[-1]["actual"])
+                caixin_live, caixin_prev = _ff_latest_two(ff_df, "CNY", "Caixin")
+                if caixin_live is not None:
+                    caixin = caixin_live
         except Exception:
             pass
+        if caixin_prev is None:
+            caixin_prev = _FB_PREV_PMI.get("AUD")
 
         s1 = _score(iron, 35.0, 42.0, 52.0, 62.0)   # BHP NYSE price (~$40–60 range)
         s2 = _score(crude, 55.0, 65.0, 80.0, 95.0)
@@ -1240,7 +1271,7 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         rows = [
             ("Iron Ore (BHP proxy)",  iron,      iron_prev,      None, None, s1, "yfinance"),
             ("WTI Crude",             crude,     crude_prev,     None, None, s2, "yfinance"),
-            ("Caixin PMI (China)",    caixin,    None,           None, None, s3, "ForexFactory"),
+            ("Caixin PMI (China)",    caixin,    caixin_prev,    None, None, s3, "ForexFactory"),
             ("AUD COT Index",         cot,       None,           None, None, s4, "CFTC"),
             ("Real Rate (RBA-CPI)",   real_rate, real_rate_prev, None, None, s5, "FRED"),
         ]
@@ -1253,16 +1284,17 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         cpi_prev = _FB_PREV_CPI["NZD"]
         real_rate      = rate - cpi
         real_rate_prev = rate - cpi_prev
-        caixin = _FB_PMI["AUD"]
+        # Caixin PMI — _ff_latest_two returns last two CNY actual releases
+        caixin, caixin_prev = _FB_PMI["AUD"], None
         try:
             if not ff_df.empty:
-                sub = ff_df[(ff_df["currency"] == "CNY") &
-                            ff_df["title"].str.contains("Caixin", case=False, na=False)]
-                sub_s = sub.sort_values("date")
-                if not sub_s.empty and sub_s.iloc[-1]["actual"] is not None:
-                    caixin = float(sub_s.iloc[-1]["actual"])
+                caixin_live, caixin_prev = _ff_latest_two(ff_df, "CNY", "Caixin")
+                if caixin_live is not None:
+                    caixin = caixin_live
         except Exception:
             pass
+        if caixin_prev is None:
+            caixin_prev = _FB_PREV_PMI.get("AUD")
 
         s1 = _score(bhp, 35.0, 42.0, 52.0, 62.0)
         s2 = _score(caixin, 47.0, 49.0, 51.0, 53.0)
@@ -1271,11 +1303,11 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         s5 = _score(gold, 1800.0, 1950.0, 2300.0, 2500.0)
         scores = [s1, s2, s3, s4, s5]
         rows = [
-            ("Commodity (BHP proxy)", bhp,      bhp_prev,       None, None, s1, "yfinance"),
-            ("Caixin PMI (China)",    caixin,   None,           None, None, s2, "ForexFactory"),
-            ("NZD COT Index",         cot,      None,           None, None, s3, "CFTC"),
-            ("Real Rate (RBNZ-CPI)",  real_rate,real_rate_prev, None, None, s4, "FRED"),
-            ("Gold (risk proxy)",     gold,     gold_prev,      None, None, s5, "yfinance"),
+            ("Commodity (BHP proxy)", bhp,       bhp_prev,       None, None, s1, "yfinance"),
+            ("Caixin PMI (China)",    caixin,    caixin_prev,    None, None, s2, "ForexFactory"),
+            ("NZD COT Index",         cot,       None,           None, None, s3, "CFTC"),
+            ("Real Rate (RBNZ-CPI)",  real_rate, real_rate_prev, None, None, s4, "FRED"),
+            ("Gold (risk proxy)",     gold,      gold_prev,      None, None, s5, "yfinance"),
         ]
 
     elif ccy == "CAD":
@@ -1373,6 +1405,7 @@ def _compute_currency_scores(ccy: str, ff_df: pd.DataFrame):
 _CACHE_FUNS = [
     fetch_fred_series,
     fetch_ecb_series,
+    fetch_ecb_series_with_prev,
     fetch_yf_price,
     fetch_yf_price_with_prev,
     fetch_ff_calendar,
