@@ -606,7 +606,7 @@ def _render_module_card(col, mod: dict):
         desc_color   = C["muted"]
         badge_bg     = C["yellow"]
         badge_color  = C["bg"]
-        badge_text   = "PRO"
+        badge_text   = "PRO ACCESS ONLY"
         border_style = "solid"
     elif active:
         border       = "rgba(79,142,247,0.3)"
@@ -614,7 +614,7 @@ def _render_module_card(col, mod: dict):
         desc_color   = C["muted"]
         badge_bg     = "rgba(79,142,247,0.12)"
         badge_color  = C["teal"]
-        badge_text   = "Live"
+        badge_text   = "FREE ACCESS"
         border_style = "solid"
     else:
         border       = C["border"]
