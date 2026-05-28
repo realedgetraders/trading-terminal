@@ -38,6 +38,13 @@ streamlit run app.py
 - Änderungen müssen chirurgisch und gezielt sein
 - Keine anderen Module oder Logik anfassen als explizit gefragt
 
+### _shared.py Sync-Regel (IMMER einhalten)
+- `_shared.py` ist die **single source of truth** für alle Daten-Funktionen, die Module 7 (Pair Intelligence) nutzt
+- Betroffene Funktionen: `fetch_cot_raw`, `get_cot_metrics`, `fetch_pair_history`, `calc_seasonal_curve`, `seasonal_month_stats`, `fetch_calendar`
+- **Wenn Fetch-Logik in einem Hauptmodul (1/2/4) geändert wird → `_shared.py` entsprechend aktualisieren**
+- Module 7 importiert direkt aus `_shared.py` und übernimmt Änderungen automatisch
+- Design-System C-Dict in `_shared.py` muss immer mit den Haupt-Modulen synchron bleiben
+
 ### Kommunikation
 - Vor jedem größeren Schritt: kurz ankündigen was gemacht wird
 - Nach Abschluss: was wurde gemacht, was ist offen
@@ -49,13 +56,15 @@ streamlit run app.py
 ```
 trading-terminal/
 ├── app.py                    → Hub/landing page (EdgeLab branding)
+├── _shared.py               → SHARED UTILITIES — single source of truth for COT/seasonality/calendar
 ├── pages/
 │   ├── 1_Seasonality.py     → MODULE 1: COMPLETE ✓
 │   ├── 2_COT_Analysis.py    → MODULE 2: COMPLETE ✓
 │   ├── 3_Macro_Dashboard.py → MODULE 3: COMPLETE ✓  (also called Economic Bias Engine)
 │   ├── 4_Geopolitics.py     → MODULE 4: COMPLETE ✓
 │   ├── 5_Market_Regime.py   → MODULE 5: COMPLETE ✓  (Market Phase Scanner)
-│   └── 6_Journal.py         → Coming Soon placeholder (Edge Journal, amber/gold accent)
+│   ├── 6_Journal.py         → Coming Soon placeholder (Edge Journal, amber/gold accent)
+│   └── 7_Pair_Intelligence.py → MODULE 7: COMPLETE ✓  (PRO, password-gated)
 ├── requirements.txt
 └── CLAUDE.md
 ```
@@ -67,6 +76,7 @@ trading-terminal/
 - Module 4 (Geopolitics & News): COMPLETE ✓ — DO NOT MODIFY unless explicitly asked
 - Module 5 (Market Phase Scanner): COMPLETE ✓ — DO NOT MODIFY unless explicitly asked
 - Module 6 (Edge Journal): Coming Soon placeholder — amber/gold accent
+- Module 7 (Pair Intelligence): COMPLETE ✓ — PRO-gated, password "12345", imports data layer from `_shared.py`
 
 ---
 
@@ -316,6 +326,38 @@ pages/6_Journal.py
 - Amber/gold accent: `C["teal"]` = `#f0b429`, `C["amber"]` = `#f0b429`
 - Back button hover glows amber: `rgba(240,180,41,0.14)`
 - PRO badge, 📓 icon, "Coming Soon" / "In Development" status
+
+---
+
+## Module 7 — Pair Intelligence (COMPLETE)
+pages/7_Pair_Intelligence.py — DO NOT MODIFY unless explicitly asked
+
+### Overview
+PRO-gated (password `12345`) cross-signal aggregator for any selected forex pair.
+Combines COT + Seasonality + Economic Bias + Calendar into one view.
+
+### Password Gate
+- `_PASSWORD = "12345"`, session key `"pair_intel_auth"`
+- Centered PRO ACCESS badge + password input on lock screen
+
+### Data Architecture — imports from `_shared.py`
+- **All fetch/compute functions imported from `_shared.py`** (project root)
+- Economic Bias: reads `macro_scores_{CCY}` from `st.session_state` (set by Module 3)
+- `_filter_calendar()` — pair-specific 14-day window filter, defined locally
+
+### Sections
+1. **COT Positioning** — Commercials COT Index bar + net positions + 4-week trend
+   - USD pairs show only the non-USD leg; cross pairs show both if CFTC data available
+2. **Seasonal Pattern** — 10Y Seasonax curve, current-month band highlight, month stats
+3. **Economic Bias** — base/quote bias cards + derived pair bias (base score − quote score)
+   - Shows info message if Module 3 hasn't been visited yet (session state empty)
+4. **Upcoming Events** — FF calendar, next 14 days, base + quote currencies
+
+### Pairs
+28 major forex pairs: 7 majors + 21 crosses. Custom pair text input overrides dropdown.
+
+### _shared.py Sync
+When `_shared.py` is updated, Module 7 picks up changes automatically on next Streamlit run.
 
 ---
 
