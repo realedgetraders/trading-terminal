@@ -240,12 +240,13 @@ def _fred_latest(series_id: str, limit: int = 36):
 
 
 def _fred_latest_with_prev(series_id: str, limit: int = 10):
-    """Return (current_value, previous_value) — both may be None."""
-    data = fetch_fred_series(series_id, limit)
+    """Return (current_value, previous_value) sorted ascending — both may be None."""
+    data = fetch_fred_series(series_id, limit)   # fetch_fred_series already sorts asc
     if not data:
         return None, None
     if len(data) == 1:
-        return data[-1][1], None
+        return data[0][1], None
+    # data is sorted ascending: data[-1] = most recent, data[-2] = one before
     return data[-1][1], data[-2][1]
 
 
@@ -804,12 +805,15 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
     scores = []
 
     if ccy == "USD":
-        dgs10 = _fred_latest("DGS10", 20)   # daily series — needs extra headroom for holidays/weekends
-        dgs2  = _fred_latest("DGS2", 20)
+        dgs10 = _fred_latest("DGS10", 30)   # daily series — 30 obs covers ~6 weeks incl. holidays
+        dgs2  = _fred_latest("DGS2", 30)
         dxy   = fetch_yf_price("DX-Y.NYB")
         rate  = _fred_latest("FEDFUNDS", 10) or _FB_RATES["USD"]
         N     = _NEUTRAL_RATE["USD"]
-        conf  = _fred_latest("UMCSENT", 10)
+        conf  = _fred_latest("UMCSENT", 12)
+        # Explicit None-guards: daily series may still return None if FRED key missing
+        if dgs10 is None or dgs2 is None:
+            pass  # scores will use _score(None, ...) → 0.0; debug expander shows why
         spread = None
         if dgs10 is not None and dgs2 is not None:
             spread = dgs10 - dgs2
@@ -1543,6 +1547,118 @@ def main():
     # ── Fetch calendar (shared across dimensions) ─────────────────────────────
     with st.spinner("Loading data…"):
         ff_df = fetch_ff_calendar()
+
+    # ── 🔧 DEBUG EXPANDER (temporary — remove once fetches confirmed working) ──
+    with st.expander("🔧 Debug: Fetch Status (USD)", expanded=False):
+        import traceback as _tb
+
+        # FRED API key
+        st.markdown("**FRED API Key**")
+        st.write({"key_present": bool(FRED_API_KEY), "key_length": len(FRED_API_KEY)})
+
+        # Policy rate + prev
+        st.markdown("**FEDFUNDS — Policy Rate (current, prev)**")
+        try:
+            _r, _rp = _fred_latest_with_prev("FEDFUNDS", 10)
+            _raw_ff = fetch_fred_series("FEDFUNDS", 10)
+            st.write({"current": _r, "previous": _rp, "raw_tail": _raw_ff[-5:] if _raw_ff else []})
+        except Exception as _e:
+            st.error(f"FEDFUNDS error: {_e}")
+
+        # CPI YoY
+        st.markdown("**CPIAUCSL — CPI YoY %**")
+        try:
+            _cpi_raw = fetch_fred_series("CPIAUCSL", 15)
+            st.write({"yoy": _fred_yoy("CPIAUCSL"), "raw_tail": _cpi_raw[-4:] if _cpi_raw else []})
+        except Exception as _e:
+            st.error(f"CPIAUCSL error: {_e}")
+
+        # GDP
+        st.markdown("**A191RL1Q225SBEA — GDP QoQ %**")
+        try:
+            _gdp_raw = fetch_fred_series("A191RL1Q225SBEA", 5)
+            st.write({"series": _gdp_raw})
+        except Exception as _e:
+            st.error(f"GDP error: {_e}")
+
+        # Unemployment + prev
+        st.markdown("**UNRATE — Unemployment (current, prev)**")
+        try:
+            _u, _up = _fred_latest_with_prev("UNRATE", 10)
+            _uraw = fetch_fred_series("UNRATE", 10)
+            st.write({"current": _u, "previous": _up, "raw_tail": _uraw[-5:] if _uraw else []})
+        except Exception as _e:
+            st.error(f"UNRATE error: {_e}")
+
+        # PAYEMS employment change
+        st.markdown("**PAYEMS — Employment Change MoM**")
+        try:
+            _pay_raw = fetch_fred_series("PAYEMS", 10)
+            st.write({"mom_change": _fred_mom_change("PAYEMS"), "raw_tail": _pay_raw[-4:] if _pay_raw else []})
+        except Exception as _e:
+            st.error(f"PAYEMS error: {_e}")
+
+        # DGS10
+        st.markdown("**DGS10 — 10Y Treasury Yield (limit=30)**")
+        try:
+            _d10 = fetch_fred_series("DGS10", 30)
+            st.write({"count": len(_d10), "latest": _d10[-1] if _d10 else None, "tail": _d10[-5:] if _d10 else []})
+        except Exception as _e:
+            st.error(f"DGS10 error: {_e}")
+
+        # DGS2
+        st.markdown("**DGS2 — 2Y Treasury Yield (limit=30)**")
+        try:
+            _d2 = fetch_fred_series("DGS2", 30)
+            st.write({"count": len(_d2), "latest": _d2[-1] if _d2 else None})
+        except Exception as _e:
+            st.error(f"DGS2 error: {_e}")
+
+        # UMCSENT
+        st.markdown("**UMCSENT — Consumer Sentiment (limit=12)**")
+        try:
+            _ums = fetch_fred_series("UMCSENT", 12)
+            st.write({"count": len(_ums), "all": _ums})
+        except Exception as _e:
+            st.error(f"UMCSENT error: {_e}")
+
+        # yfinance DXY
+        st.markdown("**yfinance DX-Y.NYB — DXY**")
+        try:
+            _dxy_dbg = fetch_yf_price("DX-Y.NYB")
+            st.write({"value": _dxy_dbg})
+        except Exception as _e:
+            st.error(f"DXY error: {_e}")
+
+        # yfinance BHP
+        st.markdown("**yfinance BHP — Iron Ore proxy**")
+        try:
+            _bhp_dbg = fetch_yf_price("BHP")
+            st.write({"value": _bhp_dbg})
+        except Exception as _e:
+            st.error(f"BHP error: {_e}")
+
+        # FF Calendar — raw first 10 events (Step 3: verify field names & currency format)
+        st.markdown("**ForexFactory Calendar — raw first 10 events**")
+        if not ff_df.empty:
+            st.write(ff_df.head(10).to_dict(orient="records"))
+            _currencies_found = sorted(ff_df["currency"].unique().tolist())
+            _usd_count = int((ff_df["currency"] == "USD").sum())
+            st.write({"total_events": len(ff_df), "usd_events": _usd_count,
+                      "all_currencies": _currencies_found})
+        else:
+            st.warning("⚠️ FF calendar returned EMPTY DataFrame — all endpoints failed")
+            # Attempt one raw fetch to expose the error
+            try:
+                import requests as _req
+                _test = _req.get(
+                    "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+                    headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.forexfactory.com/"},
+                    timeout=10,
+                )
+                st.write({"status": _test.status_code, "first_event": _test.json()[0] if _test.ok else _test.text[:200]})
+            except Exception as _e2:
+                st.error(f"Raw FF fetch error: {_e2}")
 
     # ── Compute scores ────────────────────────────────────────────────────────
     cache_key = f"macro_scores_{ccy}"
