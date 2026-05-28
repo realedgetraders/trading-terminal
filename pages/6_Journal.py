@@ -133,13 +133,14 @@ def main():
     _, col_c, _ = st.columns([1, 3, 1])
     with col_c:
         # Status banner
+        _amber = C["amber"]
         st.markdown(
             f"<div style='text-align:center;margin-bottom:28px;'>"
             f"<span style='background:rgba(240,180,41,0.08);border:1px solid rgba(240,180,41,0.25);"
             f"border-radius:8px;padding:8px 20px;"
             f"font-size:11px;font-family:monospace;color:#888888;letter-spacing:1px;'>"
             f"🔒 &nbsp; Authentication required &nbsp;·&nbsp; "
-            f"<span style='color:{C[\"amber\"]};font-weight:700;'>In Development</span>"
+            f"<span style='color:{_amber};font-weight:700;'>In Development</span>"
             f"</span></div>",
             unsafe_allow_html=True,
         )
