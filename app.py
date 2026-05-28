@@ -56,12 +56,12 @@ MODULES = [
         "page":     "pages/5_Market_Regime.py",
     },
     {
-        "title":    "???",
-        "icon":     "🔒",
-        "desc":     "Something is being built here. Details classified — check back soon.",
-        "active":   False,
-        "teaser":   True,
-        "page":     None,
+        "title":    "Pair Intelligence",
+        "icon":     "🔬",
+        "desc":     "PRO aggregator for any forex pair — COT positioning, seasonal pattern, macro bias, and upcoming events in one unified view.",
+        "active":   True,
+        "pro":      True,
+        "page":     "pages/7_Pair_Intelligence.py",
     },
     {
         "title":    "Correlation",
@@ -410,11 +410,11 @@ def _render_landing():
   </div>
   <div style="font-size:9px;color:{_BLUE};font-family:monospace;
               letter-spacing:3px;text-transform:uppercase;margin-bottom:22px;">
-    5 Live Modules
+    6 Live Modules
   </div>
   <div style="font-size:12px;color:#888888;line-height:2.2;font-family:sans-serif;">
     Seasonality &nbsp;·&nbsp; COT Analysis &nbsp;·&nbsp; Macro Bias
-    <br>Geopolitics &nbsp;·&nbsp; Market Phase Scanner
+    <br>Geopolitics &nbsp;·&nbsp; Market Phase Scanner &nbsp;·&nbsp; Pair Intelligence
   </div>
 </div>
         """, unsafe_allow_html=True)
