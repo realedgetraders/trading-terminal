@@ -123,14 +123,14 @@ def _score(v, t0, t1, t2, t3, invert=False):
 
 
 def _score_surprise(actual, forecast):
-    """Beat/miss score."""
+    """Beat/miss score. Returns None (not 0.0) when data is missing so _mean skips it."""
     if actual is None or forecast is None:
-        return 0.0
+        return None
     try:
         actual = float(actual)
         forecast = float(forecast)
     except (TypeError, ValueError):
-        return 0.0
+        return None
     diff = actual - forecast
     ref = abs(forecast) if abs(forecast) > 0.1 else 1.0
     pct = diff / ref * 100.0
@@ -776,13 +776,18 @@ def _d4_surprises(ccy: str, ff_df: pd.DataFrame):
     gdp_act, gdp_fore, s_gdp = _ff_beat_miss(ff_df, ccy, gdp_pat)
     emp_act, emp_fore, s_emp = _ff_beat_miss(ff_df, ccy, employ_pat)
 
-    momentum = _mean(s_cpi, s_gdp, s_emp)
-    d4 = _mean(s_cpi, s_gdp, s_emp, momentum)
+    # Only average non-None scores — None means "no data", not "neutral (0.0)"
+    _subs = [s for s in (s_cpi, s_gdp, s_emp) if s is not None]
+    momentum = (sum(_subs) / len(_subs)) if _subs else None
+    _all  = [s for s in (s_cpi, s_gdp, s_emp, momentum) if s is not None]
+    d4 = (sum(_all) / len(_all)) if _all else 0.0
+
+    # _beat_miss_label(None) already returns "—"; score=None renders as "—" in table
     rows = [
         (f"CPI Surprise ({cpi_pat[:20]})", cpi_act, None, cpi_fore, _beat_miss_label(s_cpi), s_cpi, "ForexFactory"),
         (f"GDP Surprise ({gdp_pat[:20]})", gdp_act, None, gdp_fore, _beat_miss_label(s_gdp), s_gdp, "ForexFactory"),
-        (f"Employment Surprise", emp_act, None, emp_fore, _beat_miss_label(s_emp), s_emp, "ForexFactory"),
-        ("Surprise Momentum", momentum, None, None, None, momentum, "Composite"),
+        ("Employment Surprise",            emp_act, None, emp_fore, _beat_miss_label(s_emp), s_emp, "ForexFactory"),
+        ("Surprise Momentum",              momentum, None, None, None, momentum, "Composite"),
     ]
     return d4, rows
 
@@ -806,14 +811,18 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
 
     if ccy == "USD":
         dgs10 = _fred_latest("DGS10", 30)   # daily series — 30 obs covers ~6 weeks incl. holidays
-        dgs2  = _fred_latest("DGS2", 30)
-        dxy   = fetch_yf_price("DX-Y.NYB")
-        rate  = _fred_latest("FEDFUNDS", 10) or _FB_RATES["USD"]
-        N     = _NEUTRAL_RATE["USD"]
-        conf  = _fred_latest("UMCSENT", 12)
-        # Explicit None-guards: daily series may still return None if FRED key missing
-        if dgs10 is None or dgs2 is None:
-            pass  # scores will use _score(None, ...) → 0.0; debug expander shows why
+        if dgs10 is None:
+            _tnx = fetch_yf_price("^TNX")   # yfinance ^TNX = 10Y Treasury yield (same % units)
+            if _tnx is not None:
+                dgs10 = _tnx
+        dgs2 = _fred_latest("DGS2", 30)
+        # No reliable yfinance 2Y fallback; spread is None if DGS2 unavailable — that's OK
+        dxy  = fetch_yf_price("DX-Y.NYB")
+        if dxy is None:
+            dxy = fetch_yf_price("DX=F")    # alternative DXY futures ticker
+        rate = _fred_latest("FEDFUNDS", 10) or _FB_RATES["USD"]
+        N    = _NEUTRAL_RATE["USD"]
+        conf = _fred_latest("UMCSENT", 12)
         spread = None
         if dgs10 is not None and dgs2 is not None:
             spread = dgs10 - dgs2
@@ -1465,6 +1474,7 @@ def _render_header():
             st.session_state["last_refresh_ts"] = time.time()
             for ccy in CURRENCIES:
                 st.session_state.pop(f"macro_scores_{ccy}", None)
+                st.session_state.pop(f"macro_rows_{ccy}",   None)
             st.rerun()
 
 
@@ -1526,6 +1536,9 @@ def main():
         for fn in _CACHE_FUNS:
             fn.clear()
         st.session_state["last_refresh_ts"] = now
+        for _ccy in CURRENCIES:
+            st.session_state.pop(f"macro_scores_{_ccy}", None)
+            st.session_state.pop(f"macro_rows_{_ccy}",   None)
 
     # ── Header ────────────────────────────────────────────────────────────────
     _render_header()
@@ -1664,22 +1677,24 @@ def main():
     cache_key = f"macro_scores_{ccy}"
     rows_key  = f"macro_rows_{ccy}"
 
-    if cache_key not in st.session_state:
+    # Recompute if either scores OR rows are missing (rows were discarded in older sessions)
+    if cache_key not in st.session_state or rows_key not in st.session_state:
         with st.spinner(f"Scoring {ccy}…"):
             scores_dict, indicator_rows = _compute_currency_scores(ccy, ff_df)
             st.session_state[cache_key] = scores_dict
             st.session_state[rows_key]  = indicator_rows
-            # also pre-compute others in background silently for Pair Intelligence
+            # Pre-compute all other currencies for Pair Intelligence — store BOTH scores AND rows
             for other_ccy in CURRENCIES:
                 if other_ccy != ccy and f"macro_scores_{other_ccy}" not in st.session_state:
                     try:
-                        od, _ = _compute_currency_scores(other_ccy, ff_df)
+                        od, o_rows = _compute_currency_scores(other_ccy, ff_df)
                         st.session_state[f"macro_scores_{other_ccy}"] = od
+                        st.session_state[f"macro_rows_{other_ccy}"]   = o_rows
                     except Exception:
                         pass
     else:
         scores_dict    = st.session_state[cache_key]
-        indicator_rows = st.session_state.get(rows_key, [])
+        indicator_rows = st.session_state[rows_key]
 
     total = scores_dict["total"]
     level = scores_dict["level"]
