@@ -1433,40 +1433,40 @@ def _render_password_gate():
         unsafe_allow_html=True,
     )
 
-    st.markdown("<div style='height:8vh;'></div>", unsafe_allow_html=True)
-    _, col, _ = st.columns([1.5, 1, 1.5])
+    st.markdown("<div style='height:7vh;'></div>", unsafe_allow_html=True)
+    _, col, _ = st.columns([2, 3, 2])
     with col:
         # Card
         st.markdown(
             f"<div style='background:{_card};"
             f"border:1px solid rgba(79,142,247,0.22);"
-            f"border-radius:14px;"
-            f"padding:36px 32px 28px;"
+            f"border-radius:16px;"
+            f"padding:48px 48px 40px;"
             f"text-align:center;"
-            f"box-shadow:0 0 40px rgba(79,142,247,0.07),0 4px 24px rgba(0,0,0,0.3);'>"
-            f"<div style='margin-bottom:20px;'>"
+            f"box-shadow:0 0 48px rgba(79,142,247,0.08),0 6px 32px rgba(0,0,0,0.35);'>"
+            f"<div style='margin-bottom:24px;'>"
             f"<span style='background:#f0b429;color:#0a0c10;"
-            f"font-size:9px;font-family:monospace;font-weight:800;"
-            f"letter-spacing:3px;padding:3px 12px;border-radius:20px;"
+            f"font-size:10px;font-family:monospace;font-weight:800;"
+            f"letter-spacing:3px;padding:4px 16px;border-radius:20px;"
             f"text-transform:uppercase;'>PRO</span>"
             f"</div>"
-            f"<div style='font-size:30px;line-height:1;margin-bottom:18px;'>🔒</div>"
-            f"<div style='font-size:19px;font-weight:800;color:{_text};"
-            f"font-family:monospace;letter-spacing:-0.5px;margin-bottom:6px;'>"
+            f"<div style='font-size:40px;line-height:1;margin-bottom:22px;'>🔒</div>"
+            f"<div style='font-size:24px;font-weight:800;color:{_text};"
+            f"font-family:monospace;letter-spacing:-0.5px;margin-bottom:8px;'>"
             f"Economic Bias Engine</div>"
-            f"<div style='font-size:9px;color:#4f8ef7;font-family:monospace;"
-            f"letter-spacing:2px;text-transform:uppercase;margin-bottom:14px;'>"
+            f"<div style='font-size:10px;color:#4f8ef7;font-family:monospace;"
+            f"letter-spacing:2px;text-transform:uppercase;margin-bottom:16px;'>"
             f"Module 3 &nbsp;·&nbsp; Real Edge Terminal</div>"
-            f"<div style='font-size:11px;color:{_muted};"
+            f"<div style='font-size:12px;color:{_muted};"
             f"font-family:monospace;line-height:1.7;'>"
             f"5-dimension macro scoring &nbsp;·&nbsp; 8 major currencies</div>"
             f"</div>",
             unsafe_allow_html=True,
         )
-        st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
         pwd = st.text_input("", type="password", placeholder="Enter access code ···",
                             label_visibility="collapsed", key="m3_pwd_input")
-        st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
         if st.button("UNLOCK", use_container_width=True, key="m3_unlock_btn"):
             if pwd == "12345":
                 st.session_state["m3_auth"] = True
