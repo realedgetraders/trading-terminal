@@ -263,6 +263,24 @@ def _fred_yoy(series_id: str):
         return None
 
 
+def _fred_yoy_with_prev(series_id: str):
+    """Return (current YoY %, previous month's YoY %) from monthly level series."""
+    data = fetch_fred_series(series_id, 16)
+    curr = None
+    prev = None
+    if len(data) >= 13:
+        try:
+            curr = (data[-1][1] / data[-13][1] - 1.0) * 100.0
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+    if len(data) >= 14:
+        try:
+            prev = (data[-2][1] / data[-14][1] - 1.0) * 100.0
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+    return curr, prev
+
+
 def _fred_mom_change(series_id: str, limit: int = 10):
     """Calculate MoM change (level diff) from series."""
     data = fetch_fred_series(series_id, limit)
@@ -488,7 +506,7 @@ def _cot_index(ccy: str):
 # ╚══════════════════════════════════════════════════════════════════════════════
 
 _FF_PATTERNS = {
-    "USD": ["CPI m/m", "Core CPI m/m", "Non-Farm Employment Change", "Advance GDP q/q", "ISM Manufacturing PMI"],
+    "USD": ["CPI m/m", "Core CPI m/m", "Nonfarm Payrolls", "Advance GDP q/q", "ISM Manufacturing PMI"],
     "EUR": ["CPI y/y", "Core CPI y/y", "Employment Change q/q", "Flash GDP q/q", "Manufacturing PMI"],
     "GBP": ["CPI y/y", "Core CPI y/y", "Employment Change", "GDP m/m", "Manufacturing PMI"],
     "JPY": ["National Core CPI y/y", "GDP q/q", "Employment Change", "Unemployment Rate", "Manufacturing PMI"],
@@ -500,20 +518,27 @@ _FF_PATTERNS = {
 
 
 def _ff_beat_miss(ff_df: pd.DataFrame, ccy: str, pattern: str):
-    """Find latest FF event matching pattern for currency. Returns (actual, forecast, surprise_score)."""
+    """Find latest FF event matching pattern that has both actual+forecast populated.
+    Iterates newest-first so a future event (actual=None) doesn't shadow a past release.
+    Returns (actual, forecast, surprise_score) — score is None when data is missing."""
     try:
         sub = ff_df[
             (ff_df["currency"] == ccy) &
             (ff_df["title"].str.contains(pattern, case=False, na=False))
-        ].sort_values("date")
+        ].sort_values("date", ascending=False)   # newest first
         if sub.empty:
-            return None, None, 0.0
-        row = sub.iloc[-1]
-        actual = row["actual"]
-        forecast = row["forecast"]
-        return actual, forecast, _score_surprise(actual, forecast)
+            return None, None, None
+        # Best: most recent event where both actual AND forecast are present
+        for _, row in sub.iterrows():
+            if row["actual"] is not None and row["forecast"] is not None:
+                return row["actual"], row["forecast"], _score_surprise(row["actual"], row["forecast"])
+        # Fallback: most recent event with at least an actual value
+        for _, row in sub.iterrows():
+            if row["actual"] is not None:
+                return row["actual"], row["forecast"], _score_surprise(row["actual"], row["forecast"])
+        return None, None, None
     except Exception:
-        return None, None, 0.0
+        return None, None, None
 
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  DIMENSION CALCULATORS
@@ -596,41 +621,52 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
     core_cpi = None
     gdp = None
     pmi = _FB_PMI.get(ccy)
+    prev_cpi = None
+    prev_core_cpi = None
+    prev_gdp = None
 
     if ccy == "USD":
-        cpi = _fred_yoy("CPIAUCSL")
-        core_cpi = _fred_yoy("CPILFESL")
+        cpi, prev_cpi           = _fred_yoy_with_prev("CPIAUCSL")
+        core_cpi, prev_core_cpi = _fred_yoy_with_prev("CPILFESL")
         gdp_data = fetch_fred_series("A191RL1Q225SBEA", 5)
-        gdp = gdp_data[-1][1] if gdp_data else None
+        gdp      = gdp_data[-1][1] if gdp_data else None
+        prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
     elif ccy == "EUR":
-        cpi = fetch_ecb_series("ICP", "M.U2.N.000000.4.ANR")
+        cpi      = fetch_ecb_series("ICP", "M.U2.N.000000.4.ANR")
         core_cpi = fetch_ecb_series("ICP", "M.U2.N.XEF000.4.ANR")
         gdp_data = fetch_fred_series("NAEXKP01EZQ652S", 5)
-        gdp = gdp_data[-1][1] if gdp_data else None
+        gdp      = gdp_data[-1][1] if gdp_data else None
+        prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
     elif ccy == "GBP":
-        cpi = _fred_latest("CPALTT01GBM659N", 5)
+        cpi, prev_cpi = _fred_latest_with_prev("CPALTT01GBM659N", 10)
         gdp_data = fetch_fred_series("NAEXKP01GBQ652S", 5)
-        gdp = gdp_data[-1][1] if gdp_data else None
+        gdp      = gdp_data[-1][1] if gdp_data else None
+        prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
     elif ccy == "JPY":
-        cpi = _fred_latest("CPALTT01JPM659N", 5)
+        cpi, prev_cpi = _fred_latest_with_prev("CPALTT01JPM659N", 10)
         gdp_data = fetch_fred_series("NAEXKP01JPQ652S", 5)
-        gdp = gdp_data[-1][1] if gdp_data else None
+        gdp      = gdp_data[-1][1] if gdp_data else None
+        prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
     elif ccy == "AUD":
-        cpi = _fred_latest("CPALTT01AUM659N", 5)
+        cpi, prev_cpi = _fred_latest_with_prev("CPALTT01AUM659N", 10)
         gdp_data = fetch_fred_series("NAEXKP01AUQ652S", 5)
-        gdp = gdp_data[-1][1] if gdp_data else None
+        gdp      = gdp_data[-1][1] if gdp_data else None
+        prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
     elif ccy == "NZD":
-        cpi = _fred_latest("CPALTT01NZM659N", 5)
+        cpi, prev_cpi = _fred_latest_with_prev("CPALTT01NZM659N", 10)
         gdp_data = fetch_fred_series("NAEXKP01NZQ652S", 5)
-        gdp = gdp_data[-1][1] if gdp_data else None
+        gdp      = gdp_data[-1][1] if gdp_data else None
+        prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
     elif ccy == "CAD":
-        cpi = _fred_latest("CPALTT01CAM659N", 5)
+        cpi, prev_cpi = _fred_latest_with_prev("CPALTT01CAM659N", 10)
         gdp_data = fetch_fred_series("NAEXKP01CAQ652S", 5)
-        gdp = gdp_data[-1][1] if gdp_data else None
+        gdp      = gdp_data[-1][1] if gdp_data else None
+        prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
     elif ccy == "CHF":
-        cpi = _fred_latest("CPALTT01CHM659N", 5)
+        cpi, prev_cpi = _fred_latest_with_prev("CPALTT01CHM659N", 10)
         gdp_data = fetch_fred_series("NAEXKP01CHQ652S", 5)
-        gdp = gdp_data[-1][1] if gdp_data else None
+        gdp      = gdp_data[-1][1] if gdp_data else None
+        prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
 
     # Fallback
     if cpi is None:
@@ -640,7 +676,10 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
     if gdp is None:
         gdp = _FB_GDP.get(ccy)
 
-    # PMI from FF calendar
+    # PMI from FF calendar — extract prev + forecast for table display
+    pmi_prev = None
+    pmi_fcst = None
+    pmi_bm   = None
     try:
         if not ff_df.empty:
             pat_map = {"USD": "ISM Manufacturing", "EUR": "Manufacturing PMI",
@@ -648,11 +687,17 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
                        "AUD": "Manufacturing PMI", "NZD": "Manufacturing PMI",
                        "CAD": "Ivey PMI", "CHF": "Manufacturing PMI"}
             pat = pat_map.get(ccy, "Manufacturing PMI")
-            sub = ff_df[(ff_df["currency"] == ccy) & ff_df["title"].str.contains(pat, case=False, na=False)]
-            if not sub.empty:
-                row = sub.sort_values("date").iloc[-1]
-                if row["actual"] is not None:
-                    pmi = float(row["actual"])
+            sub_p = ff_df[
+                (ff_df["currency"] == ccy) &
+                ff_df["title"].str.contains(pat, case=False, na=False)
+            ].sort_values("date", ascending=False)
+            for _, r in sub_p.iterrows():
+                if r["actual"] is not None:
+                    pmi      = float(r["actual"])
+                    pmi_prev = r["previous"]
+                    pmi_fcst = r["forecast"]
+                    pmi_bm   = _beat_miss_label(_score_surprise(pmi, pmi_fcst))
+                    break
     except Exception:
         pass
 
@@ -662,10 +707,10 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
     s_pmi  = _score(pmi, 47.0, 49.0, 51.0, 53.0)
     d2 = _mean(s_cpi, s_ccpi, s_gdp, s_pmi)
     rows = [
-        ("CPI YoY %", cpi, None, None, None, s_cpi, "FRED/ECB"),
-        ("Core CPI YoY %", core_cpi, None, None, None, s_ccpi, "FRED/ECB"),
-        ("GDP QoQ %", gdp, None, None, None, s_gdp, "FRED"),
-        ("Manufacturing PMI", pmi, None, None, None, s_pmi, "ForexFactory"),
+        ("CPI YoY %",         cpi,      prev_cpi,      None,     None,   s_cpi,  "FRED/ECB"),
+        ("Core CPI YoY %",    core_cpi, prev_core_cpi, None,     None,   s_ccpi, "FRED/ECB"),
+        ("GDP QoQ %",         gdp,      prev_gdp,      None,     None,   s_gdp,  "FRED"),
+        ("Manufacturing PMI", pmi,      pmi_prev,      pmi_fcst, pmi_bm, s_pmi,  "ForexFactory"),
     ]
     return d2, rows
 
@@ -698,54 +743,73 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
     if unemp is None:
         unemp = _FB_UNEMP.get(ccy)
 
-    # Employment change
+    # Employment change — USD uses FRED PAYEMS directly (limit=15 to absorb "." gaps);
+    # non-USD uses FF calendar newest-first search for actual value
+    employ_prev = None
     try:
         if ccy == "USD":
-            employ_change = _fred_mom_change("PAYEMS")
-            if employ_change is not None:
-                employ_change = employ_change  # already in thousands
+            payems = fetch_fred_series("PAYEMS", 15)
+            if len(payems) >= 2:
+                employ_change = payems[-1][1] - payems[-2][1]
+                employ_prev   = payems[-2][1] - payems[-3][1] if len(payems) >= 3 else None
+            # FF fallback: "Nonfarm Payrolls" event if FRED returned nothing
+            if employ_change is None and not ff_df.empty:
+                sub_e = ff_df[
+                    (ff_df["currency"] == "USD") &
+                    ff_df["title"].str.contains("Nonfarm Payrolls", case=False, na=False)
+                ].sort_values("date", ascending=False)
+                for _, r in sub_e.iterrows():
+                    if r["actual"] is not None:
+                        employ_change = float(r["actual"])
+                        employ_prev   = r["previous"]
+                        break
         else:
             if not ff_df.empty:
-                sub = ff_df[
+                sub_e = ff_df[
                     (ff_df["currency"] == ccy) &
                     ff_df["title"].str.contains("Employment Change", case=False, na=False)
-                ].sort_values("date")
-                if not sub.empty:
-                    row = sub.iloc[-1]
-                    if row["actual"] is not None:
-                        employ_change = float(row["actual"])
+                ].sort_values("date", ascending=False)
+                for _, r in sub_e.iterrows():
+                    if r["actual"] is not None:
+                        employ_change = float(r["actual"])
+                        employ_prev   = r["previous"]
+                        break
     except Exception:
         employ_change = None
 
-    # Trade balance from FF
+    # Trade balance from FF — newest-first, store prev
+    trade_prev = None
     try:
         if not ff_df.empty:
-            sub = ff_df[
+            sub_tb = ff_df[
                 (ff_df["currency"] == ccy) &
                 ff_df["title"].str.contains("Trade Balance", case=False, na=False)
-            ].sort_values("date")
-            if not sub.empty:
-                row = sub.iloc[-1]
-                if row["actual"] is not None:
-                    trade = float(row["actual"])
+            ].sort_values("date", ascending=False)
+            for _, r in sub_tb.iterrows():
+                if r["actual"] is not None:
+                    trade      = float(r["actual"])
+                    trade_prev = r["previous"]
+                    break
     except Exception:
         pass
 
-    # Retail sales from FF
+    # Retail sales from FF — newest-first, store prev
+    retail_prev = None
     try:
         if not ff_df.empty:
-            sub = ff_df[
+            sub_rs = ff_df[
                 (ff_df["currency"] == ccy) &
                 ff_df["title"].str.contains("Retail Sales", case=False, na=False)
-            ].sort_values("date")
-            if not sub.empty:
-                row = sub.iloc[-1]
-                if row["actual"] is not None:
-                    retail = float(row["actual"])
+            ].sort_values("date", ascending=False)
+            for _, r in sub_rs.iterrows():
+                if r["actual"] is not None:
+                    retail      = float(r["actual"])
+                    retail_prev = r["previous"]
+                    break
     except Exception:
         pass
 
-    # USD retail from FRED
+    # USD retail from FRED (overrides FF if we still have the fallback value)
     if ccy == "USD" and retail == _FB_RETAIL.get(ccy):
         retail_fred = _fred_mom_pct("RSXFS")
         if retail_fred is not None:
@@ -757,10 +821,10 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
     s_retail = _score(retail, -0.3, 0.0, 0.5, 1.0)
     d3 = _mean(s_unemp, s_employ, s_trade, s_retail)
     rows = [
-        ("Unemployment %", unemp, prev_unemp, None, None, s_unemp, "FRED/ECB"),
-        ("Employment Change", employ_change, None, None, None, s_employ, "FRED/FF"),
-        ("Trade Balance", trade, None, None, None, s_trade, "ForexFactory"),
-        ("Retail Sales MoM %", retail, None, None, None, s_retail, "FRED/FF"),
+        ("Unemployment %",     unemp,         prev_unemp,  None, None, s_unemp,  "FRED/ECB"),
+        ("Employment Change",  employ_change, employ_prev, None, None, s_employ, "FRED/FF"),
+        ("Trade Balance",      trade,         trade_prev,  None, None, s_trade,  "ForexFactory"),
+        ("Retail Sales MoM %", retail,        retail_prev, None, None, s_retail, "FRED/FF"),
     ]
     return d3, rows
 
@@ -810,19 +874,34 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
     scores = []
 
     if ccy == "USD":
-        dgs10 = _fred_latest("DGS10", 30)   # daily series — 30 obs covers ~6 weeks incl. holidays
+        dgs10 = _fred_latest("DGS10", 60)   # daily — 60 obs covers ~3 months incl. holidays
         if dgs10 is None:
             _tnx = fetch_yf_price("^TNX")   # yfinance ^TNX = 10Y Treasury yield (same % units)
             if _tnx is not None:
                 dgs10 = _tnx
-        dgs2 = _fred_latest("DGS2", 30)
-        # No reliable yfinance 2Y fallback; spread is None if DGS2 unavailable — that's OK
+        dgs2 = _fred_latest("DGS2", 60)     # daily — higher limit absorbs holiday/weekend gaps
+        if dgs2 is None:
+            dgs2 = fetch_yf_price("^IRX")   # 13-week T-Bill as front-end curve proxy
         dxy  = fetch_yf_price("DX-Y.NYB")
         if dxy is None:
             dxy = fetch_yf_price("DX=F")    # alternative DXY futures ticker
         rate = _fred_latest("FEDFUNDS", 10) or _FB_RATES["USD"]
         N    = _NEUTRAL_RATE["USD"]
-        conf = _fred_latest("UMCSENT", 12)
+        conf = _fred_latest("UMCSENT", 24)  # doubled limit — preliminary months may be "."
+        if conf is None:
+            # FF fallback: look for Consumer Sentiment release in calendar
+            try:
+                if not ff_df.empty:
+                    sub_cs = ff_df[
+                        (ff_df["currency"] == "USD") &
+                        ff_df["title"].str.contains("Consumer Sentiment", case=False, na=False)
+                    ].sort_values("date", ascending=False)
+                    for _, r in sub_cs.iterrows():
+                        if r["actual"] is not None:
+                            conf = float(r["actual"])
+                            break
+            except Exception:
+                pass
         spread = None
         if dgs10 is not None and dgs2 is not None:
             spread = dgs10 - dgs2
