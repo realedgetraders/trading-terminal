@@ -30,6 +30,11 @@ _FEATURES = [
 def _inject_css():
     st.markdown(
         f"<style>"
+        f"@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');"
+        f"*{{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}}"
+        f"[style*='font-family:monospace'],[style*='font-family: monospace']{{font-family:'JetBrains Mono',monospace !important;}}"
+        f"[style*='font-family:sans-serif'],[style*='font-family: sans-serif']{{font-family:'Inter',sans-serif !important;}}"
+        f"button{{font-family:'JetBrains Mono',monospace !important;}}"
         f"html,body,[data-testid='stAppViewContainer'],"
         f"[data-testid='stHeader'],[data-testid='stToolbar'],"
         f"[data-testid='stDecoration']{{background-color:{C['bg']} !important;}}"
