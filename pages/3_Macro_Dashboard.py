@@ -1087,15 +1087,27 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
     if pmi_prev is None:
         pmi_prev = _FB_PREV_PMI.get(ccy)
 
-    # CPI: direction of change drives score.
-    # Falling CPI = bullish for all non-JPY (cooling inflation → rate cuts possible).
-    # EXCEPT JPY: rising CPI = bullish (forces BoJ hikes = JPY supportive).
-    _cpi_inv = (ccy != "JPY")
-    cpi_delta  = (cpi      - prev_cpi)      if (cpi      is not None and prev_cpi      is not None) else None
-    ccpi_delta = (core_cpi - prev_core_cpi) if (core_cpi is not None and prev_core_cpi is not None) else None
-    s_cpi  = _score(cpi_delta,  -0.3, -0.1, 0.1, 0.3, invert=_cpi_inv) if cpi_delta  is not None else 0.0
-    s_ccpi = _score(ccpi_delta, -0.3, -0.1, 0.1, 0.3, invert=_cpi_inv) if ccpi_delta is not None else 0.0
-    s_gdp  = _score(gdp, 0.0, 0.2, 0.8, 1.2)
+    # CPI: score by movement toward the 2% CB target.
+    # Non-JPY — improvement = distance reduction from 2.0% vs previous period.
+    #   Cooling from 3% toward 2% = bullish. Heating above 3% = bearish.
+    #   Rising toward 2% from below 2% = bullish. Falling below 1% further = bearish.
+    # JPY exception: any rising CPI = bullish (BoJ hiking trigger).
+    _CPI_TGT = 2.0
+    if ccy == "JPY":
+        cpi_d  = (cpi      - prev_cpi)      if (cpi      is not None and prev_cpi      is not None) else None
+        ccpi_d = (core_cpi - prev_core_cpi) if (core_cpi is not None and prev_core_cpi is not None) else None
+        s_cpi  = _score(cpi_d,  -0.2, -0.05, 0.05, 0.2) if cpi_d  is not None else 0.0
+        s_ccpi = _score(ccpi_d, -0.2, -0.05, 0.05, 0.2) if ccpi_d is not None else 0.0
+    else:
+        # improvement > 0 means CPI moved closer to the 2% target this period
+        cpi_impr  = (abs(prev_cpi      - _CPI_TGT) - abs(cpi      - _CPI_TGT)) \
+                    if (cpi      is not None and prev_cpi      is not None) else None
+        ccpi_impr = (abs(prev_core_cpi - _CPI_TGT) - abs(core_cpi - _CPI_TGT)) \
+                    if (core_cpi is not None and prev_core_cpi is not None) else None
+        s_cpi  = _score(cpi_impr,  -0.3, -0.05, 0.05, 0.3) if cpi_impr  is not None else 0.0
+        s_ccpi = _score(ccpi_impr, -0.3, -0.05, 0.05, 0.3) if ccpi_impr is not None else 0.0
+    # GDP: USD series is annualized QoQ %; all others are raw QoQ % (different scales)
+    s_gdp = _score(gdp, -0.5, 0.5, 1.5, 2.5) if ccy == "USD" else _score(gdp, -0.2, 0.0, 0.3, 0.6)
     s_pmi  = _score(pmi, 47.0, 49.0, 51.0, 53.0)
     d2 = _mean(s_cpi, s_ccpi, s_gdp, s_pmi)
     rows = [
@@ -1212,7 +1224,12 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
         if retail_fred is not None:
             retail = retail_fred
 
-    s_unemp  = _score(unemp, N_u - 1.5, N_u - 0.5, N_u + 0.5, N_u + 1.5, invert=True)
+    # Unemployment: score direction of change — rising = bearish, falling = bullish
+    if prev_unemp is not None:
+        s_unemp = _score(unemp - prev_unemp, -0.5, -0.1, 0.1, 0.5, invert=True)
+    else:
+        # No previous: fall back to absolute level vs natural rate
+        s_unemp = _score(unemp, N_u - 1.5, N_u - 0.5, N_u + 0.5, N_u + 1.5, invert=True)
     # Employment Change: score the direction vs previous period.
     # Fewer jobs than last month = bearish regardless of absolute level.
     if employ_prev is not None:
@@ -1227,7 +1244,11 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
             s_employ = _score(employ_change, -1.0, -0.2, 0.2, 1.0)
         else:
             s_employ = _score(employ_change, -50.0, -10.0, 10.0, 50.0)
-    s_trade  = _score(trade, t0, t1, t2, t3)
+    # Trade Balance: score improvement vs previous — less negative / more positive = bullish
+    if trade_prev is not None:
+        s_trade = _score(trade - trade_prev, -2.0, -0.5, 0.5, 2.0)
+    else:
+        s_trade = _score(trade, t0, t1, t2, t3)
     s_retail = _score(retail, -0.3, 0.0, 0.5, 1.0)
     d3 = _mean(s_unemp, s_employ, s_trade, s_retail)
     rows = [
