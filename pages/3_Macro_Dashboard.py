@@ -422,7 +422,7 @@ def fetch_yf_price_with_prev(ticker: str, lookback: int = 20):
     Returns (current, prev) — prev is approx 1 calendar month ago."""
     try:
         import yfinance as yf
-        df = yf.download(ticker, period="60d", progress=False, auto_adjust=True)
+        df = yf.download(ticker, period="60d", progress=False, auto_adjust=False)
         if df.empty:
             return None, None
         close = df["Close"]
@@ -1197,6 +1197,12 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
 
     elif ccy == "EUR":
         eurchf, eurchf_prev = fetch_yf_price_with_prev("EURCHF=X", 20)
+        # EUR/USD level — independent from D1 policy rate (no duplicate)
+        eurusd, eurusd_prev = fetch_yf_price_with_prev("EURUSD=X", 20)
+        if eurusd is None:
+            eurusd = 1.08
+        if eurusd_prev is None:
+            eurusd_prev = 1.06
         cpi  = fetch_ecb_series("ICP", "M.U2.N.000000.4.ANR") or _FB_CPI["EUR"]
         rate = fetch_ecb_series("FM", "M.U2.EUR.RT0.DFR.R.1.Z5.I.A") or _FB_RATES["EUR"]
         rate_prev = _FB_PREV_RATES["EUR"]
@@ -1220,14 +1226,14 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         s2 = _score(pmi, 47.0, 49.0, 51.0, 53.0)
         s3 = _score(eurchf, 0.93, 0.95, 0.97, 0.99)
         s4 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
-        s5 = _score(rate, 3.5, 4.0, 5.0, 5.5, invert=True)
+        s5 = _score(eurusd, 1.00, 1.04, 1.08, 1.12)  # higher EUR/USD = stronger EUR
         scores = [s1, s2, s3, s4, s5]
         rows = [
-            ("EUR COT Index",           cot,       None,           None, None, s1, "CFTC"),
-            ("Mfg PMI",                 pmi,       pmi_prev,       None, None, s2, "ForexFactory"),
-            ("EURCHF Level",            eurchf,    eurchf_prev,    None, None, s3, "yfinance"),
-            ("Real Rate (rate-CPI)",    real_rate, real_rate_prev, None, None, s4, "FRED/ECB"),
-            ("Deposit Rate (inverted)", rate,      rate_prev,      None, None, s5, "ECB"),
+            ("EUR COT Index",        cot,       None,           None, None, s1, "CFTC"),
+            ("Mfg PMI",              pmi,       pmi_prev,       None, None, s2, "ForexFactory"),
+            ("EURCHF Level",         eurchf,    eurchf_prev,    None, None, s3, "yfinance"),
+            ("Real Rate (rate-CPI)", real_rate, real_rate_prev, None, None, s4, "FRED/ECB"),
+            ("EUR/USD Level",        eurusd,    eurusd_prev,    None, None, s5, "yfinance"),
         ]
 
     elif ccy == "GBP":
@@ -1278,9 +1284,10 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
 
     elif ccy == "JPY":
         jpy_rate     = _FB_RATES["JPY"]
-        usd_rate, _  = _fred_latest_with_prev("FEDFUNDS", 5)
+        # Capture both current AND prev FEDFUNDS so carry_prev reflects actual prior rate
+        usd_rate, usd_rate_prev_live = _fred_latest_with_prev("FEDFUNDS", 10)
         usd_rate     = usd_rate or _FB_RATES["USD"]
-        usd_rate_prev = _FB_PREV_RATES["USD"]
+        usd_rate_prev = usd_rate_prev_live if usd_rate_prev_live is not None else _FB_PREV_RATES["USD"]
         jpy_cpi      = _fred_latest("CPALTT01JPM659N", 5) or _FB_CPI["JPY"]
         jpy_cpi_prev = _FB_PREV_CPI["JPY"]
         carry        = usd_rate - jpy_rate
@@ -1352,8 +1359,18 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         ]
 
     elif ccy == "NZD":
-        bhp,  bhp_prev  = fetch_yf_price_with_prev("BHP",  20)   # BHP — commodity proxy
-        gold, gold_prev = fetch_yf_price_with_prev("GC=F", 20)
+        # Dairy proxy — Fonterra Cooperative Group (FCG.NZ) on NZX; dairy drives ~25% of NZ exports
+        dairy, dairy_prev = fetch_yf_price_with_prev("FCG.NZ", 20)
+        if dairy is None:
+            dairy = 4.5   # static fallback: FCG.NZ ~NZD 4-5 range
+        if dairy_prev is None:
+            dairy_prev = 4.3
+        # Gold — use spot XAUUSD=X (no futures roll distortion)
+        gold, gold_prev = fetch_yf_price_with_prev("XAUUSD=X", 20)
+        if gold is None:
+            gold = 3300.0
+        if gold_prev is None:
+            gold_prev = 3100.0
         rate     = _FB_RATES["NZD"]
         cpi      = _fred_latest("CPALTT01NZM659N", 5) or _FB_CPI["NZD"]
         cpi_prev = _FB_PREV_CPI["NZD"]
@@ -1371,18 +1388,18 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         if caixin_prev is None:
             caixin_prev = _FB_PREV_PMI.get("AUD")
 
-        s1 = _score(bhp, 35.0, 42.0, 52.0, 62.0)
+        s1 = _score(dairy, 3.0, 3.5, 4.5, 5.5)          # FCG.NZ NZD share price
         s2 = _score(caixin, 47.0, 49.0, 51.0, 53.0)
         s3 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s4 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
-        s5 = _score(gold, 1800.0, 1950.0, 2300.0, 2500.0)
+        s5 = _score(gold, 2500.0, 2800.0, 3200.0, 3600.0)  # updated for current gold range
         scores = [s1, s2, s3, s4, s5]
         rows = [
-            ("Commodity (BHP proxy)", bhp,       bhp_prev,       None, None, s1, "yfinance"),
-            ("Caixin PMI (China)",    caixin,    caixin_prev,    None, None, s2, "ForexFactory"),
-            ("NZD COT Index",         cot,       None,           None, None, s3, "CFTC"),
-            ("Real Rate (RBNZ-CPI)",  real_rate, real_rate_prev, None, None, s4, "FRED"),
-            ("Gold (risk proxy)",     gold,      gold_prev,      None, None, s5, "yfinance"),
+            ("Dairy (Fonterra FCG.NZ)", dairy,     dairy_prev,     None, None, s1, "yfinance"),
+            ("Caixin PMI (China)",      caixin,    caixin_prev,    None, None, s2, "ForexFactory"),
+            ("NZD COT Index",           cot,       None,           None, None, s3, "CFTC"),
+            ("Real Rate (RBNZ-CPI)",    real_rate, real_rate_prev, None, None, s4, "FRED"),
+            ("Gold (risk proxy)",       gold,      gold_prev,      None, None, s5, "yfinance"),
         ]
 
     elif ccy == "CAD":
@@ -1420,7 +1437,12 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         ]
 
     elif ccy == "CHF":
-        gold,   gold_prev   = fetch_yf_price_with_prev("GC=F",    20)
+        # Gold — use spot XAUUSD=X (no futures roll distortion)
+        gold,   gold_prev   = fetch_yf_price_with_prev("XAUUSD=X", 20)
+        if gold is None:
+            gold = 3300.0
+        if gold_prev is None:
+            gold_prev = 3100.0
         eurchf, eurchf_prev = fetch_yf_price_with_prev("EURCHF=X", 20)
         vix,    vix_prev    = fetch_yf_price_with_prev("^VIX",    20)
         rate     = _FB_RATES["CHF"]
@@ -1429,7 +1451,7 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         real_rate      = rate - cpi
         real_rate_prev = rate - cpi_prev
 
-        s1 = _score(gold, 1800.0, 1950.0, 2300.0, 2500.0)
+        s1 = _score(gold, 2500.0, 2800.0, 3200.0, 3600.0)  # updated for current gold range
         s2 = _score(eurchf, 0.92, 0.94, 0.96, 0.98)
         s3 = _score(vix, 30.0, 22.0, 15.0, 12.0, invert=True)
         s4 = _score(cot, 30.0, 40.0, 60.0, 70.0)
