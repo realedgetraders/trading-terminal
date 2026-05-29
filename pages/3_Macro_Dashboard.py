@@ -53,8 +53,8 @@ CURRENCY_FLAG = {
 # ╚══════════════════════════════════════════════════════════════════════════════
 _FB_DATE  = "2026-05-28"
 
-_FB_RATES  = {"USD": 5.33, "EUR": 3.65, "GBP": 4.75, "JPY": 0.50,
-              "AUD": 4.10, "NZD": 3.50, "CAD": 2.75, "CHF": 0.25}
+_FB_RATES  = {"USD": 4.50, "EUR": 2.40, "GBP": 4.25, "JPY": 0.50,
+              "AUD": 4.10, "NZD": 3.25, "CAD": 2.75, "CHF": 0.25}
 _FB_CPI    = {"USD": 2.4,  "EUR": 2.2,  "GBP": 2.6,  "JPY": 2.2,
               "AUD": 3.2,  "NZD": 2.5,  "CAD": 1.7,  "CHF": 0.0}
 _FB_CCPI   = {"USD": 2.8,  "EUR": 2.7,  "GBP": 3.4,  "JPY": 2.2,
@@ -71,8 +71,8 @@ _FB_RETAIL = {"USD": 0.1,  "EUR": 0.1,  "GBP": 0.0,  "JPY": -1.1,
               "AUD": 0.3,  "NZD": -0.1, "CAD": -0.4, "CHF": 0.0}
 
 # Previous-period fallbacks — used when live API is unavailable so PREV column never shows "—"
-_FB_PREV_RATES = {"USD": 5.33, "EUR": 3.90, "GBP": 5.00, "JPY": 0.25,
-                  "AUD": 4.35, "NZD": 3.75, "CAD": 3.00, "CHF": 0.50}
+_FB_PREV_RATES = {"USD": 4.75, "EUR": 2.65, "GBP": 4.50, "JPY": 0.25,
+                  "AUD": 4.35, "NZD": 3.50, "CAD": 3.00, "CHF": 0.50}
 _FB_PREV_CPI   = {"USD": 2.6,  "EUR": 2.3,  "GBP": 2.8,  "JPY": 2.8,
                   "AUD": 3.4,  "NZD": 2.2,  "CAD": 1.9,  "CHF": 0.3}
 _FB_PREV_CCPI  = {"USD": 3.0,  "EUR": 2.8,  "GBP": 3.6,  "JPY": 2.4,
@@ -468,6 +468,30 @@ def fetch_yf_price_with_prev(ticker: str, lookback: int = 20):
     except Exception:
         return None, None
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_boc_rate(limit: int = 60):
+    """Bank of Canada target overnight rate via BoC Valet API.
+    Returns [(date_str, value)] sorted ascending, or [] on failure."""
+    try:
+        url = "https://www.bankofcanada.ca/valet/observations/V122530/json?recent=60"
+        r = requests.get(url, timeout=10)
+        if r.status_code != 200:
+            return []
+        obs = r.json().get("observations", [])
+        rows = []
+        for ob in obs:
+            try:
+                date_str = ob["d"]
+                val = float(ob["V122530"]["v"])
+                rows.append((date_str, val))
+            except Exception:
+                continue
+        rows.sort(key=lambda x: x[0])
+        return rows[-limit:] if len(rows) > limit else rows
+    except Exception:
+        return []
+
+
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  FOREXFACTORY CALENDAR  (ttl=1800)
 # ╚══════════════════════════════════════════════════════════════════════════════
@@ -682,54 +706,109 @@ def _ff_latest_two(ff_df: pd.DataFrame, ccy: str, pattern: str):
 # ║  DIMENSION CALCULATORS
 # ╚══════════════════════════════════════════════════════════════════════════════
 
+def _last_rate_changes(series_data):
+    """Extract the two most recent actual rate-change events from a step-function series.
+
+    Works for both daily (step-function) and monthly FRED/Valet series.
+    Consecutive identical values between meetings are skipped.
+
+    Returns (current_rate, prev_rate, rate_delta_bps, prev_delta_bps):
+      current_rate     — latest observed rate
+      prev_rate        — rate in effect before the most recent change
+      rate_delta_bps   — size of most recent change in bps (0 if no change found)
+      prev_delta_bps   — size of the change before that (0 if only one change found)
+    """
+    if not series_data:
+        return None, None, 0.0, 0.0
+
+    current_rate = series_data[-1][1]
+
+    # Walk backwards, collecting distinct rate levels
+    levels = [current_rate]
+    for i in range(len(series_data) - 2, -1, -1):
+        val = series_data[i][1]
+        if abs(val - levels[-1]) > 0.001:
+            levels.append(val)
+            if len(levels) >= 3:
+                break
+
+    if len(levels) == 1:
+        # Rate has been constant throughout the available window
+        return current_rate, current_rate, 0.0, 0.0
+
+    prev_rate      = levels[1]
+    rate_delta_bps = (current_rate - prev_rate) * 100.0
+
+    prev_delta_bps = 0.0
+    if len(levels) >= 3:
+        prev_delta_bps = (levels[1] - levels[2]) * 100.0
+
+    return current_rate, prev_rate, rate_delta_bps, prev_delta_bps
+
+
 def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
     """D1: Monetary Policy — rate level vs neutral, delta, next move expectation."""
     N = _NEUTRAL_RATE[ccy]
 
-    # FRED central bank policy rate series (OECD key rates via FRED)
-    # EUR uses ECB SDW directly — all others use these FRED series
-    _CB_FRED = {
-        "USD": "FEDFUNDS",
-        "GBP": "BOERUKM156N",
+    # ── Policy rate — tiered by source freshness ────────────────────────────
+    # Daily FRED series (zero reporting lag):
+    #   USD → DFEDTARU  (Fed Funds Target Range Upper, daily)
+    #   EUR → ECBDFR    (ECB Deposit Facility Rate, daily)
+    #   GBP → BOEBR     (Bank of England Base Rate, daily)
+    # Daily BoC Valet API with FRED monthly fallback:
+    #   CAD → V122530 / IRSTCB01CAM156N
+    # OECD monthly FRED (adequate for less-frequently-changed CBs):
+    #   JPY → IRSTCB01JPM156N
+    #   AUD → IRSTCB01AUM156N
+    #   NZD → IRSTCB01NZM156N
+    #   CHF → IRSTCB01CHM156N
+    #
+    # For daily step-function series we fetch 500 observations to ensure
+    # the previous rate level is always visible in the window.
+    _CB_DAILY_FRED = {
+        "USD": "DFEDTARU",
+        "EUR": "ECBDFR",
+        "GBP": "BOEBR",
+    }
+    _CB_MONTHLY_FRED = {
         "JPY": "IRSTCB01JPM156N",
         "AUD": "IRSTCB01AUM156N",
         "NZD": "IRSTCB01NZM156N",
-        "CAD": "IRSTCB01CAM156N",
         "CHF": "IRSTCB01CHM156N",
     }
 
-    # Rate level — fetch via FRED or ECB; freshness threshold 60 days (monthly updates)
-    rate = None
-    prev_rate = None
-    _r_data = []
-    if ccy == "EUR":
-        rate, prev_rate = fetch_ecb_series_with_prev("FM", "M.U2.EUR.RT0.DFR.R.1.Z5.I.A")
-    elif ccy in _CB_FRED:
-        _r_data = fetch_fred_series(_CB_FRED[ccy], 15)
+    rate            = None
+    prev_rate       = None
+    rate_delta      = 0.0
+    prev_rate_delta = 0.0
+    _r_data         = []
+
+    if ccy in _CB_DAILY_FRED:
+        # 500 daily obs ≈ 2 years — enough to find the previous rate level
+        _r_data = fetch_fred_series(_CB_DAILY_FRED[ccy], 500)
         if _r_data:
-            rate = _r_data[-1][1]
-            prev_rate = _r_data[-2][1] if len(_r_data) >= 2 else None
+            _check_freshness(f"PolicyRate/{ccy}", _r_data[-1][0], 5)
+            rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
+    elif ccy == "CAD":
+        # BoC Valet API — daily; fallback to OECD monthly
+        _r_data = fetch_boc_rate(60)
+        if _r_data:
+            _check_freshness("PolicyRate/CAD", _r_data[-1][0], 5)
+            rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
+        else:
+            _r_data = fetch_fred_series("IRSTCB01CAM156N", 15)
+            if _r_data:
+                _check_freshness("PolicyRate/CAD", _r_data[-1][0], 60)
+                rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
+    elif ccy in _CB_MONTHLY_FRED:
+        _r_data = fetch_fred_series(_CB_MONTHLY_FRED[ccy], 15)
+        if _r_data:
             _check_freshness(f"PolicyRate/{ccy}", _r_data[-1][0], 60)
+            rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
+
     if rate is None:
         rate = _FB_RATES.get(ccy)
-
-    # Rate delta (last change in bps) — current delta AND prior delta (for PREV column).
-    # Requires 3 sequential rate observations: r2 (newest), r1, r0.
-    # current_delta = (r2 - r1) * 100   |   prev_delta = (r1 - r0) * 100
-    rate_delta      = 0.0
-    prev_rate_delta = 0.0   # default: no change in prior period either
-    if ccy in _CB_FRED and _r_data:
-        if len(_r_data) >= 2:
-            rate_delta = (_r_data[-1][1] - _r_data[-2][1]) * 100.0
-        if len(_r_data) >= 3:
-            prev_rate_delta = (_r_data[-2][1] - _r_data[-3][1]) * 100.0
-    elif ccy == "EUR":
-        # ECB deposit rate — derive delta from the two obs already fetched
-        _ecb_r2, _ecb_r1 = fetch_ecb_series_with_prev("FM", "M.U2.EUR.RT0.DFR.R.1.Z5.I.A")
-        if _ecb_r2 is not None and _ecb_r1 is not None:
-            rate_delta = (_ecb_r2 - _ecb_r1) * 100.0
-    # For currencies where FRED returned no data: rate_delta stays 0.0 (correct default —
-    # CB decisions are infrequent; assume no change until live data confirms otherwise)
+    # prev_rate is resolved later — after the next-move block
 
     # Expected next move: use FF calendar for rate decision events
     next_move_diff = 0.0
@@ -1591,6 +1670,7 @@ _CACHE_FUNS = [
     fetch_ecb_series_with_prev,
     fetch_yf_price,
     fetch_yf_price_with_prev,
+    fetch_boc_rate,
     fetch_ff_calendar,
     fetch_cot_data,
 ]
