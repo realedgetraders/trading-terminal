@@ -941,8 +941,9 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
 
     # Rate Delta: tighten neutral band so ±25 bps registers as directional
     if ccy == "JPY":
-        # Any hike = bullish for BoJ (still exiting NIRP era)
-        s_delta = _score(rate_delta, -25.0, -10.0, 0.0, 10.0)
+        # Hike = bullish for BoJ; hold (0 bps) must be neutral, not bullish
+        # Neutral band [-5, +5] ensures exactly 0 bps scores 0.0
+        s_delta = _score(rate_delta, -25.0, -5.0, 5.0, 15.0)
     else:
         s_delta = _score(rate_delta, -50.0, -10.0, 10.0, 50.0)
 
@@ -1533,7 +1534,8 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         s2 = _score(pmi, 47.0, 49.0, 51.0, 53.0)
         s3 = _score(eurchf, 0.93, 0.95, 0.97, 0.99)
         s4 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
-        s5 = _score(eurusd, 1.00, 1.04, 1.08, 1.12)  # higher EUR/USD = stronger EUR
+        # EUR/USD: score direction vs previous — rising = bullish, flat = neutral
+        s5 = _score(eurusd - eurusd_prev, -0.02, -0.005, 0.005, 0.02)
         scores = [s1, s2, s3, s4, s5]
         rows = [
             ("EUR COT Index",        cot,       None,           None, None, s1, "CFTC"),
@@ -1609,9 +1611,10 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         real_rate_prev = jpy_rate - jpy_cpi_prev  # BOJ rate unchanged; prior CPI
 
         s1 = _score(carry, 3.0, 4.0, 5.5, 6.5, invert=True)
-        # VIX: higher = more fear = more safe-haven demand = bullish for JPY
-        # Use ascending thresholds (no invert) so higher VIX → higher score
-        s2 = _score(vix, 12.0, 15.0, 22.0, 30.0)
+        # VIX: score direction — rising VIX = more fear = safe-haven demand = bullish JPY
+        # falling VIX = risk-on = bearish JPY
+        s2 = _score(vix - vix_prev, -5.0, -1.0, 1.0, 5.0) if vix_prev is not None \
+             else _score(vix, 12.0, 15.0, 22.0, 30.0)
         s3 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s4 = _score(nk_sp, 0.20, 0.22, 0.27, 0.30, invert=True)
         s5 = _score(real_rate, -3.0, -1.5, -0.5, 0.5)
@@ -1655,7 +1658,9 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
             caixin_prev = _FB_PREV_PMI.get("AUD")
 
         s1 = _score(iron, 35.0, 42.0, 52.0, 62.0)   # BHP NYSE price (~$40–60 range)
-        s2 = _score(crude, 55.0, 65.0, 80.0, 95.0)
+        # WTI: score direction vs previous — falling oil = bearish for AUD
+        s2 = _score(crude - crude_prev, -10.0, -2.0, 2.0, 10.0) if crude_prev is not None \
+             else _score(crude, 55.0, 65.0, 80.0, 95.0)
         s3 = _score(caixin, 47.0, 49.0, 51.0, 53.0)
         s4 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s5 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
@@ -1733,10 +1738,14 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
             tsx = 22000.0
         if tsx_prev is None:
             tsx_prev = 21000.0
-        s1 = _score(crude, 55.0, 65.0, 80.0, 95.0)
+        # WTI: score direction vs previous — falling oil = bearish for CAD
+        s1 = _score(crude - crude_prev, -10.0, -2.0, 2.0, 10.0) if crude_prev is not None \
+             else _score(crude, 55.0, 65.0, 80.0, 95.0)
         s2 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s3 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
-        s4 = _score(usdcad, 1.28, 1.32, 1.38, 1.42, invert=True)
+        # USD/CAD: score direction — rising USD/CAD = CAD weakening = bearish
+        s4 = _score(usdcad - usdcad_prev, -0.03, -0.01, 0.01, 0.03, invert=True) \
+             if usdcad_prev is not None else _score(usdcad, 1.28, 1.32, 1.38, 1.42, invert=True)
         s5 = _score(tsx, 18000.0, 20000.0, 22000.0, 24000.0)
         scores = [s1, s2, s3, s4, s5]
         rows = [
@@ -1766,9 +1775,10 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         s1 = _score(gold, 2500.0, 2800.0, 3200.0, 3600.0)
         # EUR/CHF: higher = EUR stronger = CHF weaker = bearish for CHF
         s2 = _score(eurchf, 0.92, 0.94, 0.96, 0.98, invert=True)
-        # VIX: higher = more fear = safe-haven demand = bullish for CHF
-        # Ascending thresholds (no invert) so higher VIX → higher score
-        s3 = _score(vix, 12.0, 15.0, 22.0, 30.0)
+        # VIX: score direction — rising VIX = fear = safe-haven demand = bullish CHF
+        # falling VIX = risk-on = bearish CHF
+        s3 = _score(vix - vix_prev, -5.0, -1.0, 1.0, 5.0) if vix_prev is not None \
+             else _score(vix, 12.0, 15.0, 22.0, 30.0)
         s4 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s5 = _score(real_rate, -2.0, -1.0, 0.0, 1.0)
         scores = [s1, s2, s3, s4, s5]
