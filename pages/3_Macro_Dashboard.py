@@ -98,8 +98,8 @@ _FB_PREV_RETAIL= {"USD": 0.2, "EUR": 0.2, "GBP": 0.1, "JPY": -1.0,
 # Consumer confidence fallback (USD = UMich UMCSENT scale 0-100)
 _FB_CONF_USD   = 67.0
 
-_NEUTRAL_RATE  = {"USD": 2.5, "EUR": 2.0, "GBP": 2.5, "JPY": 0.25,
-                  "AUD": 3.0, "NZD": 3.0, "CAD": 2.5, "CHF": 0.5}
+_NEUTRAL_RATE  = {"USD": 2.5, "EUR": 2.0, "GBP": 2.5, "JPY": 0.5,
+                  "AUD": 3.0, "NZD": 2.5, "CAD": 2.5, "CHF": 0.0}
 _NEUTRAL_UNEMP = {"USD": 4.5, "EUR": 7.5, "GBP": 4.5, "JPY": 3.0,
                   "AUD": 5.0, "NZD": 5.0, "CAD": 6.0, "CHF": 3.0}
 
@@ -929,8 +929,23 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
     if prev_rate is None:
         prev_rate = _FB_PREV_RATES.get(ccy)
 
-    s_level = _score(rate, N - 1.0, N - 0.5, N + 0.5, N + 1.0)
-    s_delta = _score(rate_delta, -50.0, -25.0, 25.0, 50.0)
+    # Per-currency policy rate level thresholds
+    if ccy == "JPY":
+        # Asymmetric: near-zero neutral, >0.5% is genuinely restrictive/bullish
+        s_level = _score(rate, -0.25, 0.0, 0.5, 1.0)
+    elif ccy == "CHF":
+        # SNB: positive rates mildly bullish, negative rates bearish
+        s_level = _score(rate, -0.75, -0.25, 0.0, 0.5)
+    else:
+        s_level = _score(rate, N - 1.0, N - 0.5, N + 0.5, N + 1.0)
+
+    # Rate Delta: tighten neutral band so ±25 bps registers as directional
+    if ccy == "JPY":
+        # Any hike = bullish for BoJ (still exiting NIRP era)
+        s_delta = _score(rate_delta, -25.0, -10.0, 0.0, 10.0)
+    else:
+        s_delta = _score(rate_delta, -50.0, -10.0, 10.0, 50.0)
+
     s_next  = _score(next_move_diff, -0.30, -0.10, 0.10, 0.30)
     d1 = _mean(s_level, s_delta, s_next)
     rows = [
