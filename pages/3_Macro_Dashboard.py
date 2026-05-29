@@ -113,6 +113,28 @@ _TRADE_THRESH = {
     "CAD": (  -5,  -2,   2,   6),
     "CHF": (   2,   4,   8,  12),
 }
+# Per-currency trade balance delta thresholds (month-over-month change, same units as _TRADE_THRESH)
+_TRADE_DELTA_THRESH = {
+    "USD": (-10.0, -2.0,  2.0, 10.0),
+    "EUR": ( -5.0, -1.0,  1.0,  5.0),
+    "GBP": ( -2.0, -0.5,  0.5,  2.0),
+    "JPY": ( -1.0, -0.3,  0.3,  1.0),
+    "AUD": ( -2.0, -0.5,  0.5,  2.0),
+    "NZD": ( -0.5, -0.1,  0.1,  0.5),
+    "CAD": ( -2.0, -0.5,  0.5,  2.0),
+    "CHF": ( -2.0, -0.5,  0.5,  2.0),
+}
+# Per-currency employment change delta thresholds (change vs previous print, same units as employment)
+_EMPLOY_DELTA_THRESH = {
+    "USD": (-50.0, -10.0, 10.0, 50.0),
+    "EUR": ( -0.5,  -0.1,  0.1,  0.5),   # QoQ % (pct)
+    "GBP": (-20.0,  -3.0,  3.0, 20.0),   # K persons
+    "JPY": (-20.0,  -3.0,  3.0, 20.0),   # K persons
+    "AUD": (-20.0,  -3.0,  3.0, 20.0),   # K persons
+    "NZD": ( -0.5,  -0.1,  0.1,  0.5),   # QoQ % (pct)
+    "CAD": (-20.0,  -3.0,  3.0, 20.0),   # K persons
+    "CHF": ( -0.5,  -0.1,  0.1,  0.5),   # QoQ % (pct)
+}
 
 _CFTC_MAP = {
     "EUR": "EURO FX - CHICAGO MERCANTILE EXCHANGE",
@@ -934,8 +956,9 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
         # Asymmetric: near-zero neutral, >0.5% is genuinely restrictive/bullish
         s_level = _score(rate, -0.25, 0.0, 0.5, 1.0)
     elif ccy == "CHF":
-        # SNB: positive rates mildly bullish, negative rates bearish
-        s_level = _score(rate, -0.75, -0.25, 0.0, 0.5)
+        # SNB: neutral rate is 0.0; positive rates bullish, negative rates bearish
+        # t2=0.25 ensures 0.00 falls in the neutral band (0.0 < 0.25)
+        s_level = _score(rate, -0.75, -0.25, 0.25, 0.75)
     else:
         s_level = _score(rate, N - 1.0, N - 0.5, N + 0.5, N + 1.0)
 
@@ -1100,11 +1123,16 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
         s_cpi  = _score(cpi_d,  -0.2, -0.05, 0.05, 0.2) if cpi_d  is not None else 0.0
         s_ccpi = _score(ccpi_d, -0.2, -0.05, 0.05, 0.2) if ccpi_d is not None else 0.0
     else:
-        # improvement > 0 means CPI moved closer to the 2% target this period
-        cpi_impr  = (abs(prev_cpi      - _CPI_TGT) - abs(cpi      - _CPI_TGT)) \
-                    if (cpi      is not None and prev_cpi      is not None) else None
-        ccpi_impr = (abs(prev_core_cpi - _CPI_TGT) - abs(core_cpi - _CPI_TGT)) \
-                    if (core_cpi is not None and prev_core_cpi is not None) else None
+        # Directional improvement toward the 2% CB target.
+        # If prev was above target: cooling (curr < prev) = bullish → impr = prev - curr
+        # If prev was below target: rising (curr > prev) = bullish → impr = curr - prev
+        # This correctly handles the crossover case (e.g. 2.10→1.90: impr = 2.10-1.90 = +0.20).
+        def _cpi_impr(curr, prev):
+            if curr is None or prev is None:
+                return None
+            return (prev - curr) if prev > _CPI_TGT else (curr - prev)
+        cpi_impr  = _cpi_impr(cpi,      prev_cpi)
+        ccpi_impr = _cpi_impr(core_cpi, prev_core_cpi)
         s_cpi  = _score(cpi_impr,  -0.3, -0.05, 0.05, 0.3) if cpi_impr  is not None else 0.0
         s_ccpi = _score(ccpi_impr, -0.3, -0.05, 0.05, 0.3) if ccpi_impr is not None else 0.0
     # GDP: USD series is annualized QoQ %; all others are raw QoQ % (different scales)
@@ -1226,19 +1254,19 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
             retail = retail_fred
 
     # Unemployment: score direction of change — rising = bearish, falling = bullish
+    # Tightened neutral band so a 0.10pp move registers (+0.10 >= 0.05 → -0.5 bearish)
     if prev_unemp is not None:
-        s_unemp = _score(unemp - prev_unemp, -0.5, -0.1, 0.1, 0.5, invert=True)
+        s_unemp = _score(unemp - prev_unemp, -0.3, -0.05, 0.05, 0.3, invert=True)
     else:
         # No previous: fall back to absolute level vs natural rate
         s_unemp = _score(unemp, N_u - 1.5, N_u - 0.5, N_u + 0.5, N_u + 1.5, invert=True)
     # Employment Change: score the direction vs previous period.
     # Fewer jobs than last month = bearish regardless of absolute level.
+    # Per-currency delta thresholds account for each economy's typical swing size.
+    ed = _EMPLOY_DELTA_THRESH[ccy]
     if employ_prev is not None:
         employ_delta = employ_change - employ_prev
-        if ccy in _EMPLOY_IS_PCT:
-            s_employ = _score(employ_delta, -1.0, -0.2, 0.2, 1.0)
-        else:
-            s_employ = _score(employ_delta, -30.0, -5.0, 5.0, 30.0)
+        s_employ = _score(employ_delta, ed[0], ed[1], ed[2], ed[3])
     else:
         # No previous: fall back to absolute level as crude signal
         if ccy in _EMPLOY_IS_PCT:
@@ -1246,8 +1274,10 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
         else:
             s_employ = _score(employ_change, -50.0, -10.0, 10.0, 50.0)
     # Trade Balance: score improvement vs previous — less negative / more positive = bullish
+    # Per-currency delta thresholds account for each economy's typical swing size.
+    td = _TRADE_DELTA_THRESH[ccy]
     if trade_prev is not None:
-        s_trade = _score(trade - trade_prev, -2.0, -0.5, 0.5, 2.0)
+        s_trade = _score(trade - trade_prev, td[0], td[1], td[2], td[3])
     else:
         s_trade = _score(trade, t0, t1, t2, t3)
     s_retail = _score(retail, -0.3, 0.0, 0.5, 1.0)
