@@ -1790,12 +1790,12 @@ def _render_indicators_table(rows: list):
         "overflow:hidden;margin-top:12px;'>"
         "<table style='width:100%;border-collapse:collapse;'>"
         "<thead><tr>"
-        f"<th style='{hdr_style}'>INDICATOR</th>"
-        f"<th style='{hdr_style};text-align:right;'>VALUE</th>"
-        f"<th style='{hdr_style};text-align:right;'>PREV</th>"
-        f"<th style='{hdr_style};text-align:right;'>FCST</th>"
-        f"<th style='{hdr_style};text-align:right;'>BEAT/MISS</th>"
-        f"<th style='{hdr_style};text-align:right;'>SCORE</th>"
+        f"<th style='{hdr_style}'>Indicator</th>"
+        f"<th style='{hdr_style};text-align:right;'>Value</th>"
+        f"<th style='{hdr_style};text-align:right;'>Previous</th>"
+        f"<th style='{hdr_style};text-align:right;'>Forecast</th>"
+        f"<th style='{hdr_style};text-align:right;'>Beat / Miss</th>"
+        f"<th style='{hdr_style};text-align:right;'>Score</th>"
         "</tr></thead><tbody>"
     )
     for row in rows:
