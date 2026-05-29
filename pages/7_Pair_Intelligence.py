@@ -434,7 +434,11 @@ def main() -> None:
 
     # ── Password gate ──────────────────────────────────────────────────────────
     if not st.session_state.get("pair_intel_auth"):
-        st.markdown("<div style='height:12vh;'></div>", unsafe_allow_html=True)
+        _p7_back_col, _ = st.columns([1, 6])
+        with _p7_back_col:
+            if st.button("← Back to Hub", key="pair_intel_back"):
+                st.switch_page("app.py")
+        st.markdown("<div style='height:8vh;'></div>", unsafe_allow_html=True)
         _, col_c, _ = st.columns([3, 2, 3])
         with col_c:
             st.markdown(

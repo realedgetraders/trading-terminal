@@ -957,7 +957,11 @@ def _render_password_gate():
         unsafe_allow_html=True,
     )
 
-    st.markdown("<div style='height:7vh;'></div>", unsafe_allow_html=True)
+    _s1_back_col, _ = st.columns([1, 6])
+    with _s1_back_col:
+        if st.button("← Back to Hub", key="s1_back_btn"):
+            st.switch_page("app.py")
+    st.markdown("<div style='height:5vh;'></div>", unsafe_allow_html=True)
     _, col, _ = st.columns([2, 3, 2])
     with col:
         st.markdown(
