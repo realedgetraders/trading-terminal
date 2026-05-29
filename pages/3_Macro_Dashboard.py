@@ -228,6 +228,32 @@ def _parse_num(s):
         return None
 
 # ╔══════════════════════════════════════════════════════════════════════════════
+# ║  FRESHNESS UTILITIES
+# ╚══════════════════════════════════════════════════════════════════════════════
+
+def _check_freshness(name: str, date_str: str, max_days: int) -> None:
+    """Print console warning if the latest data point is older than max_days."""
+    try:
+        d = datetime.strptime(str(date_str)[:10], "%Y-%m-%d")
+        age = (datetime.now() - d).days
+        if age > max_days:
+            print(
+                f"[MACRO FRESHNESS] {name}: last obs {date_str[:10]} "
+                f"is {age}d old (threshold {max_days}d)"
+            )
+    except Exception:
+        pass
+
+
+def _fred_fresh(series_id: str, name: str, max_days: int, limit: int = 10):
+    """Fetch FRED series, run freshness check, return (current, prev)."""
+    data = fetch_fred_series(series_id, limit)
+    if data:
+        _check_freshness(name, data[-1][0], max_days)
+        return (data[-1][1], data[-2][1] if len(data) >= 2 else None)
+    return None, None
+
+# ╔══════════════════════════════════════════════════════════════════════════════
 # ║  FRED FETCH  (ttl=3600)
 # ╚══════════════════════════════════════════════════════════════════════════════
 
@@ -660,15 +686,30 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
     """D1: Monetary Policy — rate level vs neutral, delta, next move expectation."""
     N = _NEUTRAL_RATE[ccy]
 
-    # Rate level
+    # FRED central bank policy rate series (OECD key rates via FRED)
+    # EUR uses ECB SDW directly — all others use these FRED series
+    _CB_FRED = {
+        "USD": "FEDFUNDS",
+        "GBP": "BOERUKM156N",
+        "JPY": "IRSTCB01JPM156N",
+        "AUD": "IRSTCB01AUM156N",
+        "NZD": "IRSTCB01NZM156N",
+        "CAD": "IRSTCB01CAM156N",
+        "CHF": "IRSTCB01CHM156N",
+    }
+
+    # Rate level — fetch via FRED or ECB; freshness threshold 60 days (monthly updates)
     rate = None
     prev_rate = None
-    if ccy == "USD":
-        rate, prev_rate = _fred_latest_with_prev("FEDFUNDS", 10)
-    elif ccy == "GBP":
-        rate, prev_rate = _fred_latest_with_prev("BOERUKM156N", 10)
-    elif ccy == "EUR":
-        rate = fetch_ecb_series("FM", "M.U2.EUR.RT0.DFR.R.1.Z5.I.A")
+    _r_data = []
+    if ccy == "EUR":
+        rate, prev_rate = fetch_ecb_series_with_prev("FM", "M.U2.EUR.RT0.DFR.R.1.Z5.I.A")
+    elif ccy in _CB_FRED:
+        _r_data = fetch_fred_series(_CB_FRED[ccy], 15)
+        if _r_data:
+            rate = _r_data[-1][1]
+            prev_rate = _r_data[-2][1] if len(_r_data) >= 2 else None
+            _check_freshness(f"PolicyRate/{ccy}", _r_data[-1][0], 60)
     if rate is None:
         rate = _FB_RATES.get(ccy)
 
@@ -677,20 +718,18 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
     # current_delta = (r2 - r1) * 100   |   prev_delta = (r1 - r0) * 100
     rate_delta      = 0.0
     prev_rate_delta = 0.0   # default: no change in prior period either
-    if ccy in ("USD", "GBP"):
-        _series = "FEDFUNDS" if ccy == "USD" else "BOERUKM156N"
-        _r_data = fetch_fred_series(_series, 15)
+    if ccy in _CB_FRED and _r_data:
         if len(_r_data) >= 2:
             rate_delta = (_r_data[-1][1] - _r_data[-2][1]) * 100.0
         if len(_r_data) >= 3:
             prev_rate_delta = (_r_data[-2][1] - _r_data[-3][1]) * 100.0
     elif ccy == "EUR":
-        # ECB deposit rate — use fetch_ecb_series_with_prev and compare to fallback prev
-        _ecb_rate, _ecb_prev = fetch_ecb_series_with_prev("FM", "M.U2.EUR.RT0.DFR.R.1.Z5.I.A")
-        if _ecb_rate is not None and _ecb_prev is not None:
-            rate_delta = (_ecb_rate - _ecb_prev) * 100.0
-    # Non-USD/GBP/EUR: no reliable FRED rate series — leave delta=0.0 (central banks
-    # rarely move in consecutive meetings; 0 is the correct default assumption)
+        # ECB deposit rate — derive delta from the two obs already fetched
+        _ecb_r2, _ecb_r1 = fetch_ecb_series_with_prev("FM", "M.U2.EUR.RT0.DFR.R.1.Z5.I.A")
+        if _ecb_r2 is not None and _ecb_r1 is not None:
+            rate_delta = (_ecb_r2 - _ecb_r1) * 100.0
+    # For currencies where FRED returned no data: rate_delta stays 0.0 (correct default —
+    # CB decisions are infrequent; assume no change until live data confirms otherwise)
 
     # Expected next move: use FF calendar for rate decision events
     next_move_diff = 0.0
@@ -743,43 +782,75 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
         gdp_data = fetch_fred_series("A191RL1Q225SBEA", 5)
         gdp      = gdp_data[-1][1] if gdp_data else None
         prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
+        if gdp_data:
+            _check_freshness("GDP/USD", gdp_data[-1][0], 120)
     elif ccy == "EUR":
-        # ECB API returns multiple obs — get current + prev in one call
         cpi,      prev_cpi      = fetch_ecb_series_with_prev("ICP", "M.U2.N.000000.4.ANR")
         core_cpi, prev_core_cpi = fetch_ecb_series_with_prev("ICP", "M.U2.N.XEF000.4.ANR")
         gdp_data = fetch_fred_series("NAEXKP01EZQ652S", 5)
         gdp      = gdp_data[-1][1] if gdp_data else None
         prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
+        if gdp_data:
+            _check_freshness("GDP/EUR", gdp_data[-1][0], 120)
     elif ccy == "GBP":
-        cpi, prev_cpi = _fred_latest_with_prev("CPALTT01GBM659N", 10)
+        cpi, prev_cpi = _fred_fresh("CPALTT01GBM659N", "CPI/GBP", 45, 10)
         gdp_data = fetch_fred_series("NAEXKP01GBQ652S", 5)
         gdp      = gdp_data[-1][1] if gdp_data else None
         prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
+        if gdp_data:
+            _check_freshness("GDP/GBP", gdp_data[-1][0], 120)
     elif ccy == "JPY":
-        cpi, prev_cpi = _fred_latest_with_prev("CPALTT01JPM659N", 10)
+        cpi, prev_cpi = _fred_fresh("CPALTT01JPM659N", "CPI/JPY", 45, 10)
         gdp_data = fetch_fred_series("NAEXKP01JPQ652S", 5)
         gdp      = gdp_data[-1][1] if gdp_data else None
         prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
+        if gdp_data:
+            _check_freshness("GDP/JPY", gdp_data[-1][0], 120)
     elif ccy == "AUD":
-        cpi, prev_cpi = _fred_latest_with_prev("CPALTT01AUM659N", 10)
+        cpi, prev_cpi = _fred_fresh("CPALTT01AUM659N", "CPI/AUD", 60, 10)
         gdp_data = fetch_fred_series("NAEXKP01AUQ652S", 5)
         gdp      = gdp_data[-1][1] if gdp_data else None
         prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
+        if gdp_data:
+            _check_freshness("GDP/AUD", gdp_data[-1][0], 120)
     elif ccy == "NZD":
-        cpi, prev_cpi = _fred_latest_with_prev("CPALTT01NZM659N", 10)
+        cpi, prev_cpi = _fred_fresh("CPALTT01NZM659N", "CPI/NZD", 60, 10)
         gdp_data = fetch_fred_series("NAEXKP01NZQ652S", 5)
         gdp      = gdp_data[-1][1] if gdp_data else None
         prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
+        if gdp_data:
+            _check_freshness("GDP/NZD", gdp_data[-1][0], 120)
     elif ccy == "CAD":
-        cpi, prev_cpi = _fred_latest_with_prev("CPALTT01CAM659N", 10)
+        cpi, prev_cpi = _fred_fresh("CPALTT01CAM659N", "CPI/CAD", 45, 10)
         gdp_data = fetch_fred_series("NAEXKP01CAQ652S", 5)
         gdp      = gdp_data[-1][1] if gdp_data else None
         prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
+        if gdp_data:
+            _check_freshness("GDP/CAD", gdp_data[-1][0], 120)
     elif ccy == "CHF":
-        cpi, prev_cpi = _fred_latest_with_prev("CPALTT01CHM659N", 10)
+        cpi, prev_cpi = _fred_fresh("CPALTT01CHM659N", "CPI/CHF", 45, 10)
         gdp_data = fetch_fred_series("NAEXKP01CHQ652S", 5)
         gdp      = gdp_data[-1][1] if gdp_data else None
         prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
+        if gdp_data:
+            _check_freshness("GDP/CHF", gdp_data[-1][0], 120)
+
+    # Core CPI live fetch for non-USD/EUR currencies (FRED OECD ex-food-energy series).
+    # These are monthly YoY % values; threshold 45 days for monthly series, 60 for quarterly.
+    _CORE_CPI_FRED = {
+        "GBP": "CPGRLE01GBM659N",
+        "JPY": "CPGRLE01JPM659N",
+        "AUD": "CPGRLE01AUM659N",
+        "NZD": "CPGRLE01NZM659N",
+        "CAD": "CPGRLE01CAM659N",
+        "CHF": "CPGRLE01CHM659N",
+    }
+    if core_cpi is None and ccy in _CORE_CPI_FRED:
+        _cc_data = fetch_fred_series(_CORE_CPI_FRED[ccy], 10)
+        if _cc_data:
+            core_cpi = _cc_data[-1][1]
+            prev_core_cpi = _cc_data[-2][1] if len(_cc_data) >= 2 else None
+            _check_freshness(f"CoreCPI/{ccy}", _cc_data[-1][0], 60)
 
     # Fallback — current values
     if cpi is None:
@@ -864,7 +935,7 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
     prev_unemp = None
     fred_key = fred_unemp_map.get(ccy)
     if fred_key:
-        unemp, prev_unemp = _fred_latest_with_prev(fred_key, 10)
+        unemp, prev_unemp = _fred_fresh(fred_key, f"Unemployment/{ccy}", 45, 10)
     if unemp is None:
         unemp = _FB_UNEMP.get(ccy)
     if prev_unemp is None:
@@ -907,15 +978,23 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
     if employ_prev is None:
         employ_prev = _FB_PREV_EMPLOY.get(ccy)
 
-    # Trade balance — _ff_latest_two: last two actual releases (not row["previous"])
+    # Trade balance — USD: FRED BOPGSTB (monthly, USD millions → billions, ~45d lag)
+    # Others: ForexFactory last two actual releases
     trade_prev = None
-    try:
-        if not ff_df.empty:
-            trade_live, trade_prev = _ff_latest_two(ff_df, ccy, "Trade Balance")
-            if trade_live is not None:
-                trade = trade_live
-    except Exception:
-        pass
+    if ccy == "USD":
+        _tb_data = fetch_fred_series("BOPGSTB", 5)
+        if _tb_data:
+            trade = _tb_data[-1][1] / 1000.0          # millions → billions
+            trade_prev = (_tb_data[-2][1] / 1000.0) if len(_tb_data) >= 2 else None
+            _check_freshness("TradeBalance/USD", _tb_data[-1][0], 45)
+    if trade == _FB_TRADE.get(ccy) or trade is None:
+        try:
+            if not ff_df.empty:
+                trade_live, trade_prev = _ff_latest_two(ff_df, ccy, "Trade Balance")
+                if trade_live is not None:
+                    trade = trade_live
+        except Exception:
+            pass
     if trade_prev is None:
         trade_prev = _FB_PREV_TRADE.get(ccy)
 
@@ -1717,11 +1796,10 @@ def _render_indicators_table(rows: list):
         f"<th style='{hdr_style};text-align:right;'>FCST</th>"
         f"<th style='{hdr_style};text-align:right;'>BEAT/MISS</th>"
         f"<th style='{hdr_style};text-align:right;'>SCORE</th>"
-        f"<th style='{hdr_style};text-align:right;'>SOURCE</th>"
         "</tr></thead><tbody>"
     )
     for row in rows:
-        indicator, value, prev, forecast, beat_miss, score, source = row
+        indicator, value, prev, forecast, beat_miss, score, source = row  # source kept in tuple, not rendered
         score_col = _score_color(score)
         score_val = f"{score:+.2f}" if isinstance(score, float) else "—"
         bm_str = beat_miss if beat_miss else "—"
@@ -1733,7 +1811,6 @@ def _render_indicators_table(rows: list):
             f"<td style='{cell_style};text-align:right;color:{_muted};'>{_fmt_val(forecast)}</td>"
             f"<td style='{cell_style};text-align:right;color:{_muted};'>{bm_str}</td>"
             f"<td style='{cell_style};text-align:right;font-weight:700;color:{score_col};'>{score_val}</td>"
-            f"<td style='{cell_style};text-align:right;color:{_muted};font-size:9px;'>{source}</td>"
             "</tr>"
         )
     html += "</tbody></table></div>"
@@ -2042,157 +2119,6 @@ def main():
     # ── Fetch calendar (shared across dimensions) ─────────────────────────────
     with st.spinner("Loading data…"):
         ff_df = fetch_ff_calendar()
-
-    # ── 🔧 DEBUG EXPANDER (temporary — remove once fetches confirmed working) ──
-    with st.expander("🔧 Debug: Fetch Status (USD)", expanded=False):
-        import traceback as _tb
-
-        # FRED API key
-        st.markdown("**FRED API Key**")
-        st.write({"key_present": bool(FRED_API_KEY), "key_length": len(FRED_API_KEY)})
-
-        # Policy rate + prev
-        st.markdown("**FEDFUNDS — Policy Rate (current, prev)**")
-        try:
-            _r, _rp = _fred_latest_with_prev("FEDFUNDS", 10)
-            _raw_ff = fetch_fred_series("FEDFUNDS", 10)
-            st.write({"current": _r, "previous": _rp, "raw_tail": _raw_ff[-5:] if _raw_ff else []})
-        except Exception as _e:
-            st.error(f"FEDFUNDS error: {_e}")
-
-        # CPI YoY + prev
-        st.markdown("**CPIAUCSL — CPI YoY % (current + prev)**")
-        try:
-            _cpi_raw = fetch_fred_series("CPIAUCSL", 20)
-            _cpi_curr, _cpi_prev = _fred_yoy_with_prev("CPIAUCSL")
-            st.write({"yoy_curr": _cpi_curr, "yoy_prev": _cpi_prev,
-                      "raw_count": len(_cpi_raw), "raw_tail": _cpi_raw[-4:] if _cpi_raw else []})
-        except Exception as _e:
-            st.error(f"CPIAUCSL error: {_e}")
-
-        # GDP
-        st.markdown("**A191RL1Q225SBEA — GDP QoQ %**")
-        try:
-            _gdp_raw = fetch_fred_series("A191RL1Q225SBEA", 5)
-            st.write({"series": _gdp_raw})
-        except Exception as _e:
-            st.error(f"GDP error: {_e}")
-
-        # Unemployment + prev
-        st.markdown("**UNRATE — Unemployment (current, prev)**")
-        try:
-            _u, _up = _fred_latest_with_prev("UNRATE", 10)
-            _uraw = fetch_fred_series("UNRATE", 10)
-            st.write({"current": _u, "previous": _up, "raw_tail": _uraw[-5:] if _uraw else []})
-        except Exception as _e:
-            st.error(f"UNRATE error: {_e}")
-
-        # PAYEMS employment change
-        st.markdown("**PAYEMS — Employment Change MoM**")
-        try:
-            _pay_raw = fetch_fred_series("PAYEMS", 10)
-            st.write({"mom_change": _fred_mom_change("PAYEMS"), "raw_tail": _pay_raw[-4:] if _pay_raw else []})
-        except Exception as _e:
-            st.error(f"PAYEMS error: {_e}")
-
-        # DGS10
-        st.markdown("**DGS10 — 10Y Treasury Yield (limit=30)**")
-        try:
-            _d10 = fetch_fred_series("DGS10", 30)
-            st.write({"count": len(_d10), "latest": _d10[-1] if _d10 else None, "tail": _d10[-5:] if _d10 else []})
-        except Exception as _e:
-            st.error(f"DGS10 error: {_e}")
-
-        # DGS2
-        st.markdown("**DGS2 — 2Y Treasury Yield (limit=30)**")
-        try:
-            _d2 = fetch_fred_series("DGS2", 30)
-            st.write({"count": len(_d2), "latest": _d2[-1] if _d2 else None})
-        except Exception as _e:
-            st.error(f"DGS2 error: {_e}")
-
-        # UMCSENT
-        st.markdown("**UMCSENT — Consumer Sentiment (limit=24)**")
-        try:
-            _ums = fetch_fred_series("UMCSENT", 24)
-            st.write({"count": len(_ums), "latest": _ums[-1] if _ums else None,
-                      "all_tail": _ums[-4:] if _ums else []})
-        except Exception as _e:
-            st.error(f"UMCSENT error: {_e}")
-
-        # D4 FRED path (USD only)
-        st.markdown("**D4 FRED path — CPI/GDP/Employment two-obs comparison**")
-        try:
-            _d4_cpi_c, _d4_cpi_p = _fred_yoy_with_prev("CPIAUCSL")
-            _d4_gdp = fetch_fred_series("A191RL1Q225SBEA", 5)
-            _d4_pems = fetch_fred_series("PAYEMS", 5)
-            _d4_emp_c = (_d4_pems[-1][1] - _d4_pems[-2][1]) if len(_d4_pems) >= 2 else None
-            _d4_emp_p = (_d4_pems[-2][1] - _d4_pems[-3][1]) if len(_d4_pems) >= 3 else None
-            st.write({
-                "CPI_curr": _d4_cpi_c, "CPI_prev": _d4_cpi_p,
-                "GDP_curr": _d4_gdp[-1][1] if _d4_gdp else None,
-                "GDP_prev": _d4_gdp[-2][1] if len(_d4_gdp) >= 2 else None,
-                "EMP_curr_K": _d4_emp_c, "EMP_prev_K": _d4_emp_p,
-                "PAYEMS_tail": _d4_pems,
-            })
-        except Exception as _e:
-            st.error(f"D4 FRED error: {_e}")
-
-        # yfinance DXY
-        st.markdown("**yfinance DX-Y.NYB — DXY**")
-        try:
-            _dxy_dbg = fetch_yf_price("DX-Y.NYB")
-            st.write({"value": _dxy_dbg})
-        except Exception as _e:
-            st.error(f"DXY error: {_e}")
-
-        # yfinance BHP
-        st.markdown("**yfinance BHP — Iron Ore proxy**")
-        try:
-            _bhp_dbg = fetch_yf_price("BHP")
-            st.write({"value": _bhp_dbg})
-        except Exception as _e:
-            st.error(f"BHP error: {_e}")
-
-        # FF Calendar — raw first 10 events (Step 3: verify field names & currency format)
-        st.markdown("**ForexFactory Calendar — raw first 10 events**")
-        if not ff_df.empty:
-            st.write(ff_df.head(10).to_dict(orient="records"))
-            _currencies_found = sorted(ff_df["currency"].unique().tolist())
-            _usd_count = int((ff_df["currency"] == "USD").sum())
-            st.write({"total_events": len(ff_df), "usd_events": _usd_count,
-                      "all_currencies": _currencies_found})
-        else:
-            st.warning("⚠️ FF calendar returned EMPTY DataFrame — all endpoints failed")
-            # Attempt one raw fetch to expose the error
-            try:
-                import requests as _req
-                _test = _req.get(
-                    "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-                    headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.forexfactory.com/"},
-                    timeout=10,
-                )
-                st.write({"status": _test.status_code, "first_event": _test.json()[0] if _test.ok else _test.text[:200]})
-            except Exception as _e2:
-                st.error(f"Raw FF fetch error: {_e2}")
-
-        # D4 Surprise matching — test _ff_beat_miss for all USD patterns
-        st.markdown("**D4 Surprise — USD pattern matching results**")
-        if not ff_df.empty:
-            _usd_patterns = _FF_PATTERNS.get("USD", [])
-            for _pi, _pat in enumerate(_usd_patterns):
-                _act, _fore, _sc = _ff_beat_miss(ff_df, "USD", _pat)
-                _usd_events = ff_df[
-                    (ff_df["currency"] == "USD") &
-                    ff_df["title"].str.contains(_pat, case=False, na=False)
-                ][["title", "date", "actual", "forecast"]].sort_values("date", ascending=False).head(3)
-                st.write({
-                    "pattern": _pat,
-                    "result": {"actual": _act, "forecast": _fore, "score": _sc},
-                    "matching_events": _usd_events.to_dict(orient="records"),
-                })
-        else:
-            st.warning("FF calendar empty — cannot test D4 matching")
 
     # ── Compute scores ────────────────────────────────────────────────────────
     cache_key = f"macro_scores_{ccy}"
