@@ -1087,11 +1087,14 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
     if pmi_prev is None:
         pmi_prev = _FB_PREV_PMI.get(ccy)
 
-    # CPI: lower = bullish for all currencies (inflation erodes real value)
-    # EXCEPT JPY: higher CPI = bullish (forces BoJ hikes = JPY supportive)
+    # CPI: direction of change drives score.
+    # Falling CPI = bullish for all non-JPY (cooling inflation → rate cuts possible).
+    # EXCEPT JPY: rising CPI = bullish (forces BoJ hikes = JPY supportive).
     _cpi_inv = (ccy != "JPY")
-    s_cpi  = _score(cpi,      1.0, 1.5, 2.5, 3.5, invert=_cpi_inv)
-    s_ccpi = _score(core_cpi, 1.0, 1.5, 2.5, 3.0, invert=_cpi_inv)
+    cpi_delta  = (cpi      - prev_cpi)      if (cpi      is not None and prev_cpi      is not None) else None
+    ccpi_delta = (core_cpi - prev_core_cpi) if (core_cpi is not None and prev_core_cpi is not None) else None
+    s_cpi  = _score(cpi_delta,  -0.3, -0.1, 0.1, 0.3, invert=_cpi_inv) if cpi_delta  is not None else 0.0
+    s_ccpi = _score(ccpi_delta, -0.3, -0.1, 0.1, 0.3, invert=_cpi_inv) if ccpi_delta is not None else 0.0
     s_gdp  = _score(gdp, 0.0, 0.2, 0.8, 1.2)
     s_pmi  = _score(pmi, 47.0, 49.0, 51.0, 53.0)
     d2 = _mean(s_cpi, s_ccpi, s_gdp, s_pmi)
@@ -1210,11 +1213,20 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
             retail = retail_fred
 
     s_unemp  = _score(unemp, N_u - 1.5, N_u - 0.5, N_u + 0.5, N_u + 1.5, invert=True)
-    # EUR/NZD/CHF report employment change as %; other currencies in K persons
-    if ccy in _EMPLOY_IS_PCT:
-        s_employ = _score(employ_change, -1.0, -0.2, 0.2, 1.0)
+    # Employment Change: score the direction vs previous period.
+    # Fewer jobs than last month = bearish regardless of absolute level.
+    if employ_prev is not None:
+        employ_delta = employ_change - employ_prev
+        if ccy in _EMPLOY_IS_PCT:
+            s_employ = _score(employ_delta, -1.0, -0.2, 0.2, 1.0)
+        else:
+            s_employ = _score(employ_delta, -30.0, -5.0, 5.0, 30.0)
     else:
-        s_employ = _score(employ_change, -50.0, -10.0, 10.0, 50.0)
+        # No previous: fall back to absolute level as crude signal
+        if ccy in _EMPLOY_IS_PCT:
+            s_employ = _score(employ_change, -1.0, -0.2, 0.2, 1.0)
+        else:
+            s_employ = _score(employ_change, -50.0, -10.0, 10.0, 50.0)
     s_trade  = _score(trade, t0, t1, t2, t3)
     s_retail = _score(retail, -0.3, 0.0, 0.5, 1.0)
     d3 = _mean(s_unemp, s_employ, s_trade, s_retail)
@@ -1453,10 +1465,12 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         # DGS10: >4.0% = positive for USD (higher yields = tighter = bullish)
         # DXY: >98 = positive, <95 = negative; no invert — higher DXY = stronger USD
         # Conf: calibrated to UMCSENT scale (0-100); 70-90 = neutral-mild, >90 = strong
+        # Rate vs Neutral: score the CHANGE (shrinking buffer = bearish, widening = bullish)
+        rate_vs_neutral_delta = rate_vs_neutral - rate_vs_neutral_prev
         s1 = _score(dgs10, 3.0, 3.5, 4.0, 4.5)
         s2 = _score(dxy,   90.0, 95.0, 98.0, 102.0)
         s3 = _score(spread, -1.0, -0.2, 0.5, 1.0)
-        s4 = _score(rate_vs_neutral, -1.0, -0.5, 0.5, 1.0)
+        s4 = _score(rate_vs_neutral_delta, -0.5, -0.1, 0.1, 0.5)
         s5 = _score(conf, 60.0, 70.0, 80.0, 90.0)
         scores = [s1, s2, s3, s4, s5]
         rows = [
@@ -1543,7 +1557,8 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         s1 = _score(svc_pmi, 47.0, 49.0, 51.0, 53.0)
         s2 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s3 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
-        s4 = _score(rate - N_gbp, -1.0, -0.5, 0.5, 1.0)
+        # Rate vs Neutral: score the CHANGE in buffer, not absolute level
+        s4 = _score((rate - N_gbp) - (rate_prev_raw - N_gbp), -0.5, -0.1, 0.1, 0.5)
         s5 = _score(ftse, 7000.0, 7500.0, 8000.0, 8500.0)
         scores = [s1, s2, s3, s4, s5]
         rows = [
