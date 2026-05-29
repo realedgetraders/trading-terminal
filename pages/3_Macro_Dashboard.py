@@ -53,8 +53,8 @@ CURRENCY_FLAG = {
 # ╚══════════════════════════════════════════════════════════════════════════════
 _FB_DATE  = "2026-05-28"
 
-_FB_RATES  = {"USD": 4.50, "EUR": 2.40, "GBP": 4.25, "JPY": 0.50,
-              "AUD": 4.10, "NZD": 3.25, "CAD": 2.75, "CHF": 0.25}
+_FB_RATES  = {"USD": 3.75, "EUR": 2.00, "GBP": 3.75, "JPY": 0.75,
+              "AUD": 3.85, "NZD": 2.25, "CAD": 2.50, "CHF": 0.00}
 _FB_CPI    = {"USD": 2.4,  "EUR": 2.2,  "GBP": 2.6,  "JPY": 2.2,
               "AUD": 3.2,  "NZD": 2.5,  "CAD": 1.7,  "CHF": 0.0}
 _FB_CCPI   = {"USD": 2.8,  "EUR": 2.7,  "GBP": 3.4,  "JPY": 2.2,
@@ -71,8 +71,8 @@ _FB_RETAIL = {"USD": 0.1,  "EUR": 0.1,  "GBP": 0.0,  "JPY": -1.1,
               "AUD": 0.3,  "NZD": -0.1, "CAD": -0.4, "CHF": 0.0}
 
 # Previous-period fallbacks — used when live API is unavailable so PREV column never shows "—"
-_FB_PREV_RATES = {"USD": 4.75, "EUR": 2.65, "GBP": 4.50, "JPY": 0.25,
-                  "AUD": 4.35, "NZD": 3.50, "CAD": 3.00, "CHF": 0.50}
+_FB_PREV_RATES = {"USD": 4.00, "EUR": 2.25, "GBP": 4.00, "JPY": 0.50,
+                  "AUD": 4.10, "NZD": 2.50, "CAD": 2.75, "CHF": 0.25}
 _FB_PREV_CPI   = {"USD": 2.6,  "EUR": 2.3,  "GBP": 2.8,  "JPY": 2.8,
                   "AUD": 3.4,  "NZD": 2.2,  "CAD": 1.9,  "CHF": 0.3}
 _FB_PREV_CCPI  = {"USD": 3.0,  "EUR": 2.8,  "GBP": 3.6,  "JPY": 2.4,
@@ -492,6 +492,74 @@ def fetch_boc_rate(limit: int = 60):
         return []
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_usd_rate():
+    """USD policy rate (target range upper bound) via NY Fed EFFR API.
+    No API key required. Fetches ~800 calendar days to expose prior rate levels.
+    Returns [(date_str, upper_rate)] sorted ascending, or [] on failure."""
+    try:
+        start_dt = (datetime.today() - timedelta(days=800)).strftime("%Y-%m-%d")
+        end_dt   = datetime.today().strftime("%Y-%m-%d")
+        url = (
+            f"https://markets.newyorkfed.org/read?productCode=50"
+            f"&startDt={start_dt}&endDt={end_dt}&eventCodes=500&format=json"
+        )
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return []
+        rows = []
+        for e in r.json().get("refRates", []):
+            if e.get("type") != "EFFR":
+                continue
+            try:
+                # Use published upper target when available; fall back to effective rate
+                upper = e.get("targetRateTo") or e.get("percentRate")
+                if upper is not None:
+                    rows.append((e["effectiveDate"], float(upper)))
+            except Exception:
+                continue
+        rows.sort(key=lambda x: x[0])
+        return rows
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_boe_rate():
+    """GBP policy rate (Official Bank Rate) via BoE Statistics iadb API.
+    No API key required. Fetches from 2020-01-01 to expose prior rate levels.
+    Returns [(date_str, rate)] sorted ascending, or [] on failure."""
+    try:
+        url = (
+            "https://www.bankofengland.co.uk/boeapps/iadb/fromshowcolumns.asp"
+            "?csv.x=yes&Datefrom=01/Jan/2020&Dateto=now"
+            "&SeriesCodes=IUDBEDR&UsingCodes=Y&CSVF=TT&html.x=66&html.y=26"
+        )
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return []
+        rows = []
+        data_started = False
+        for line in r.text.strip().split("\n"):
+            line = line.strip()
+            if line.startswith("DATE"):
+                data_started = True
+                continue
+            if not data_started or not line:
+                continue
+            parts = line.split(",")
+            if len(parts) >= 2:
+                try:
+                    date_val = datetime.strptime(parts[0].strip(), "%d %b %Y")
+                    rows.append((date_val.strftime("%Y-%m-%d"), float(parts[1].strip())))
+                except Exception:
+                    continue
+        rows.sort(key=lambda x: x[0])
+        return rows
+    except Exception:
+        return []
+
+
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  FOREXFACTORY CALENDAR  (ttl=1800)
 # ╚══════════════════════════════════════════════════════════════════════════════
@@ -750,26 +818,24 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
     """D1: Monetary Policy — rate level vs neutral, delta, next move expectation."""
     N = _NEUTRAL_RATE[ccy]
 
-    # ── Policy rate — tiered by source freshness ────────────────────────────
-    # Daily FRED series (zero reporting lag):
-    #   USD → DFEDTARU  (Fed Funds Target Range Upper, daily)
-    #   EUR → ECBDFR    (ECB Deposit Facility Rate, daily)
-    #   GBP → BOEBR     (Bank of England Base Rate, daily)
-    # Daily BoC Valet API with FRED monthly fallback:
-    #   CAD → V122530 / IRSTCB01CAM156N
-    # OECD monthly FRED (adequate for less-frequently-changed CBs):
-    #   JPY → IRSTCB01JPM156N
-    #   AUD → IRSTCB01AUM156N
-    #   NZD → IRSTCB01NZM156N
-    #   CHF → IRSTCB01CHM156N
+    # ── Policy rate — layered fetch (no-key primary → FRED secondary → static fallback) ──
     #
-    # For daily step-function series we fetch 500 observations to ensure
-    # the previous rate level is always visible in the window.
-    _CB_DAILY_FRED = {
-        "USD": "DFEDTARU",
-        "EUR": "ECBDFR",
-        "GBP": "BOEBR",
-    }
+    # Tier 1 — no API key needed (always attempted first):
+    #   USD → NY Fed EFFR API  (targetRateTo = upper bound, daily)
+    #   GBP → BoE iadb Stats API  (IUDBEDR daily)
+    #   CAD → BoC Valet API  (V122530 monthly)
+    #
+    # Tier 2 — FRED daily/monthly (requires valid FRED_API_KEY in secrets):
+    #   USD → DFEDTARU   EUR → ECBDFR   GBP → BOEBR   CAD → IRSTCB01CAM156N
+    #
+    # Tier 3 — ECB SDW monthly (no key, EUR only):
+    #   EUR → FM/M.U2.EUR.RT0.DFR.R.1.Z5.I.A
+    #
+    # Tier 4 — OECD monthly FRED (JPY/AUD/NZD/CHF, requires FRED key):
+    #   IRSTCB01{CCY}M156N
+    #
+    # Tier 5 — _FB_RATES static fallback (correct 2026 values, last resort)
+
     _CB_MONTHLY_FRED = {
         "JPY": "IRSTCB01JPM156N",
         "AUD": "IRSTCB01AUM156N",
@@ -783,32 +849,62 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
     prev_rate_delta = 0.0
     _r_data         = []
 
-    if ccy in _CB_DAILY_FRED:
-        # 500 daily obs ≈ 2 years — enough to find the previous rate level
-        _r_data = fetch_fred_series(_CB_DAILY_FRED[ccy], 500)
+    if ccy == "USD":
+        # Tier 1: NY Fed EFFR (no key)
+        _r_data = fetch_usd_rate()
+        if not _r_data:
+            # Tier 2: FRED DFEDTARU (requires key)
+            _r_data = fetch_fred_series("DFEDTARU", 500)
         if _r_data:
-            _check_freshness(f"PolicyRate/{ccy}", _r_data[-1][0], 5)
+            _check_freshness("PolicyRate/USD", _r_data[-1][0], 5)
             rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
-    elif ccy == "CAD":
-        # BoC Valet API — daily; fallback to OECD monthly
-        _r_data = fetch_boc_rate(60)
+
+    elif ccy == "EUR":
+        # Tier 2: FRED ECBDFR daily (requires key) — most precise
+        _r_data = fetch_fred_series("ECBDFR", 500)
         if _r_data:
-            _check_freshness("PolicyRate/CAD", _r_data[-1][0], 5)
+            _check_freshness("PolicyRate/EUR", _r_data[-1][0], 5)
             rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
         else:
+            # Tier 3: ECB SDW monthly (no key)
+            rate, prev_rate = fetch_ecb_series_with_prev("FM", "M.U2.EUR.RT0.DFR.R.1.Z5.I.A")
+            if rate is not None and prev_rate is not None:
+                rate_delta = (rate - prev_rate) * 100.0
+
+    elif ccy == "GBP":
+        # Tier 1: BoE iadb Stats API (no key)
+        _r_data = fetch_boe_rate()
+        if not _r_data:
+            # Tier 2: FRED BOEBR (requires key)
+            _r_data = fetch_fred_series("BOEBR", 500)
+        if _r_data:
+            _check_freshness("PolicyRate/GBP", _r_data[-1][0], 5)
+            rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
+
+    elif ccy == "CAD":
+        # Tier 1: BoC Valet API (no key, monthly)
+        _r_data = fetch_boc_rate(60)
+        if _r_data:
+            _check_freshness("PolicyRate/CAD", _r_data[-1][0], 45)  # monthly data
+            rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
+        else:
+            # Tier 2: FRED OECD monthly (requires key)
             _r_data = fetch_fred_series("IRSTCB01CAM156N", 15)
             if _r_data:
                 _check_freshness("PolicyRate/CAD", _r_data[-1][0], 60)
                 rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
+
     elif ccy in _CB_MONTHLY_FRED:
+        # Tier 2/4: FRED OECD monthly (requires key)
         _r_data = fetch_fred_series(_CB_MONTHLY_FRED[ccy], 15)
         if _r_data:
             _check_freshness(f"PolicyRate/{ccy}", _r_data[-1][0], 60)
             rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
 
+    # Tier 5: static fallback (correct 2026 values — only reached if all APIs fail)
     if rate is None:
         rate = _FB_RATES.get(ccy)
-    # prev_rate is resolved later — after the next-move block
+    # prev_rate is resolved after the next-move block
 
     # Expected next move: use FF calendar for rate decision events
     next_move_diff = 0.0
@@ -1670,6 +1766,8 @@ _CACHE_FUNS = [
     fetch_ecb_series_with_prev,
     fetch_yf_price,
     fetch_yf_price_with_prev,
+    fetch_usd_rate,
+    fetch_boe_rate,
     fetch_boc_rate,
     fetch_ff_calendar,
     fetch_cot_data,
