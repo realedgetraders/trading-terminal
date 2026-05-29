@@ -118,7 +118,7 @@ _TRADE_DELTA_THRESH = {
     "USD": (-10.0, -2.0,  2.0, 10.0),
     "EUR": ( -5.0, -1.0,  1.0,  5.0),
     "GBP": ( -2.0, -0.5,  0.5,  2.0),
-    "JPY": ( -1.0, -0.3,  0.3,  1.0),
+    "JPY": ( -0.5, -0.1,  0.1,  0.5),    # JPY: tightened so 0.20T improvement scores +0.5
     "AUD": ( -2.0, -0.5,  0.5,  2.0),
     "NZD": ( -0.5, -0.1,  0.1,  0.5),
     "CAD": ( -2.0, -0.5,  0.5,  2.0),
@@ -129,7 +129,7 @@ _EMPLOY_DELTA_THRESH = {
     "USD": (-50.0, -10.0, 10.0, 50.0),
     "EUR": ( -0.5,  -0.1,  0.1,  0.5),   # QoQ % (pct)
     "GBP": (-20.0,  -3.0,  3.0, 20.0),   # K persons
-    "JPY": (-20.0,  -3.0,  3.0, 20.0),   # K persons
+    "JPY": (-10.0,  -1.5,  1.5, 10.0),   # K persons — tightened so 2K miss scores -0.5
     "AUD": (-20.0,  -3.0,  3.0, 20.0),   # K persons
     "NZD": ( -0.5,  -0.1,  0.1,  0.5),   # QoQ % (pct)
     "CAD": (-20.0,  -3.0,  3.0, 20.0),   # K persons
@@ -1135,8 +1135,15 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
         ccpi_impr = _cpi_impr(core_cpi, prev_core_cpi)
         s_cpi  = _score(cpi_impr,  -0.3, -0.05, 0.05, 0.3) if cpi_impr  is not None else 0.0
         s_ccpi = _score(ccpi_impr, -0.3, -0.05, 0.05, 0.3) if ccpi_impr is not None else 0.0
-    # GDP: USD series is annualized QoQ %; all others are raw QoQ % (different scales)
-    s_gdp = _score(gdp, -0.5, 0.5, 1.5, 2.5) if ccy == "USD" else _score(gdp, -0.2, 0.0, 0.3, 0.6)
+    # GDP: USD series is annualized QoQ %; all others are raw QoQ % (different scales).
+    # Non-USD: score DIRECTION vs previous — accelerating growth = bullish, slowing = bearish.
+    # Thresholds calibrated so a 0.10pp change in QoQ registers (e.g. 0.10 rise → +0.5).
+    if ccy == "USD":
+        s_gdp = _score(gdp, -0.5, 0.5, 1.5, 2.5)
+    elif gdp is not None and prev_gdp is not None:
+        s_gdp = _score(gdp - prev_gdp, -0.3, -0.05, 0.05, 0.3)
+    else:
+        s_gdp = _score(gdp, -0.2, 0.0, 0.3, 0.6)
     s_pmi  = _score(pmi, 47.0, 49.0, 51.0, 53.0)
     d2 = _mean(s_cpi, s_ccpi, s_gdp, s_pmi)
     rows = [
@@ -1563,7 +1570,10 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         s1 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s2 = _score(pmi, 47.0, 49.0, 51.0, 53.0)
         s3 = _score(eurchf, 0.93, 0.95, 0.97, 0.99)
-        s4 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
+        # Real Rate: score DIRECTION of change — rising = bullish, falling = bearish
+        s4 = (_score(real_rate - real_rate_prev, -0.5, -0.1, 0.1, 0.5)
+              if real_rate is not None and real_rate_prev is not None
+              else _score(real_rate, -1.0, -0.5, 0.5, 1.5))
         # EUR/USD: score direction vs previous — rising = bullish, flat = neutral
         s5 = _score(eurusd - eurusd_prev, -0.02, -0.005, 0.005, 0.02)
         scores = [s1, s2, s3, s4, s5]
@@ -1607,9 +1617,11 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         if ftse_prev is None:
             ftse_prev = 7600.0
 
-        s1 = _score(svc_pmi, 47.0, 49.0, 51.0, 53.0)
+        # Services PMI: above 50 = expanding; t2=50.0 ensures 50.5 scores +0.5
+        s1 = _score(svc_pmi, 46.0, 48.0, 50.0, 52.0)
         s2 = _score(cot, 30.0, 40.0, 60.0, 70.0)
-        s3 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
+        # Real Rate: score DIRECTION of change — rising = bullish, falling = bearish
+        s3 = _score(real_rate - real_rate_prev, -0.5, -0.1, 0.1, 0.5)
         # Rate vs Neutral: score the CHANGE in buffer, not absolute level
         s4 = _score((rate - N_gbp) - (rate_prev_raw - N_gbp), -0.5, -0.1, 0.1, 0.5)
         s5 = _score(ftse, 7000.0, 7500.0, 8000.0, 8500.0)
@@ -1647,7 +1659,11 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
              else _score(vix, 12.0, 15.0, 22.0, 30.0)
         s3 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s4 = _score(nk_sp, 0.20, 0.22, 0.27, 0.30, invert=True)
-        s5 = _score(real_rate, -3.0, -1.5, -0.5, 0.5)
+        # Real Rate: score DIRECTION of change — rising = bullish, falling = bearish.
+        # JPY real rates are deeply negative; use wider thresholds so a 0.60pp rise scores +0.5.
+        s5 = (_score(real_rate - real_rate_prev, -1.5, -0.3, 0.3, 1.5)
+              if real_rate_prev is not None
+              else _score(real_rate, -3.0, -1.5, -0.5, 0.5))
         scores = [s1, s2, s3, s4, s5]
         rows = [
             ("USD-JPY Carry (inverted)",  carry,     carry_prev,    None, None, s1, "FRED"),
@@ -1693,7 +1709,8 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
              else _score(crude, 55.0, 65.0, 80.0, 95.0)
         s3 = _score(caixin, 47.0, 49.0, 51.0, 53.0)
         s4 = _score(cot, 30.0, 40.0, 60.0, 70.0)
-        s5 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
+        # Real Rate: score DIRECTION of change — rising = bullish, falling = bearish
+        s5 = _score(real_rate - real_rate_prev, -0.5, -0.1, 0.1, 0.5)
         scores = [s1, s2, s3, s4, s5]
         rows = [
             ("Iron Ore (BHP proxy)",  iron,      iron_prev,      None, None, s1, "yfinance"),
@@ -1733,10 +1750,14 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         if caixin_prev is None:
             caixin_prev = _FB_PREV_PMI.get("AUD")
 
-        s1 = _score(dairy, 3.0, 3.5, 4.5, 5.5)          # FCG.NZ NZD share price
+        # Dairy: score DIRECTION of change — rising price = bullish for NZD (25% of exports)
+        # Thresholds calibrated for FCG.NZ NZD range (~$3-6); 0.12 rise scores +0.5
+        s1 = (_score(dairy - dairy_prev, -0.3, -0.05, 0.05, 0.3)
+              if dairy_prev is not None else _score(dairy, 3.0, 3.5, 4.5, 5.5))
         s2 = _score(caixin, 47.0, 49.0, 51.0, 53.0)
         s3 = _score(cot, 30.0, 40.0, 60.0, 70.0)
-        s4 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
+        # Real Rate: score DIRECTION of change — rising = bullish, falling = bearish
+        s4 = _score(real_rate - real_rate_prev, -0.5, -0.1, 0.1, 0.5)
         # Gold: risk-off asset — higher gold = risk-off = bearish for NZD
         s5 = _score(gold, 2500.0, 2800.0, 3200.0, 3600.0, invert=True)
         scores = [s1, s2, s3, s4, s5]
@@ -1772,7 +1793,8 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         s1 = _score(crude - crude_prev, -10.0, -2.0, 2.0, 10.0) if crude_prev is not None \
              else _score(crude, 55.0, 65.0, 80.0, 95.0)
         s2 = _score(cot, 30.0, 40.0, 60.0, 70.0)
-        s3 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
+        # Real Rate: score DIRECTION of change — rising = bullish, falling = bearish
+        s3 = _score(real_rate - real_rate_prev, -0.5, -0.1, 0.1, 0.5)
         # USD/CAD: score direction — rising USD/CAD = CAD weakening = bearish
         s4 = _score(usdcad - usdcad_prev, -0.03, -0.01, 0.01, 0.03, invert=True) \
              if usdcad_prev is not None else _score(usdcad, 1.28, 1.32, 1.38, 1.42, invert=True)
@@ -1810,7 +1832,8 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         s3 = _score(vix - vix_prev, -5.0, -1.0, 1.0, 5.0) if vix_prev is not None \
              else _score(vix, 12.0, 15.0, 22.0, 30.0)
         s4 = _score(cot, 30.0, 40.0, 60.0, 70.0)
-        s5 = _score(real_rate, -2.0, -1.0, 0.0, 1.0)
+        # Real Rate: score DIRECTION of change — rising = bullish, falling = bearish
+        s5 = _score(real_rate - real_rate_prev, -0.5, -0.1, 0.1, 0.5)
         scores = [s1, s2, s3, s4, s5]
         rows = [
             ("Gold Price",           gold,      gold_prev,      None, None, s1, "yfinance"),
