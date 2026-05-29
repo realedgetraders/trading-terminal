@@ -1072,8 +1072,11 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
     if pmi_prev is None:
         pmi_prev = _FB_PREV_PMI.get(ccy)
 
-    s_cpi  = _score(cpi, 1.0, 1.5, 2.5, 3.5)
-    s_ccpi = _score(core_cpi, 1.0, 1.5, 2.5, 3.0)
+    # CPI: lower = bullish for all currencies (inflation erodes real value)
+    # EXCEPT JPY: higher CPI = bullish (forces BoJ hikes = JPY supportive)
+    _cpi_inv = (ccy != "JPY")
+    s_cpi  = _score(cpi,      1.0, 1.5, 2.5, 3.5, invert=_cpi_inv)
+    s_ccpi = _score(core_cpi, 1.0, 1.5, 2.5, 3.0, invert=_cpi_inv)
     s_gdp  = _score(gdp, 0.0, 0.2, 0.8, 1.2)
     s_pmi  = _score(pmi, 47.0, 49.0, 51.0, 53.0)
     d2 = _mean(s_cpi, s_ccpi, s_gdp, s_pmi)
@@ -1555,7 +1558,9 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         real_rate_prev = jpy_rate - jpy_cpi_prev  # BOJ rate unchanged; prior CPI
 
         s1 = _score(carry, 3.0, 4.0, 5.5, 6.5, invert=True)
-        s2 = _score(vix, 30.0, 22.0, 15.0, 12.0, invert=True)
+        # VIX: higher = more fear = more safe-haven demand = bullish for JPY
+        # Use ascending thresholds (no invert) so higher VIX → higher score
+        s2 = _score(vix, 12.0, 15.0, 22.0, 30.0)
         s3 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s4 = _score(nk_sp, 0.20, 0.22, 0.27, 0.30, invert=True)
         s5 = _score(real_rate, -3.0, -1.5, -0.5, 0.5)
@@ -1646,7 +1651,8 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         s2 = _score(caixin, 47.0, 49.0, 51.0, 53.0)
         s3 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s4 = _score(real_rate, -1.0, -0.5, 0.5, 1.5)
-        s5 = _score(gold, 2500.0, 2800.0, 3200.0, 3600.0)  # updated for current gold range
+        # Gold: risk-off asset — higher gold = risk-off = bearish for NZD
+        s5 = _score(gold, 2500.0, 2800.0, 3200.0, 3600.0, invert=True)
         scores = [s1, s2, s3, s4, s5]
         rows = [
             ("Dairy (Fonterra FCG.NZ)", dairy,     dairy_prev,     None, None, s1, "yfinance"),
@@ -1705,9 +1711,13 @@ def _d5_proxies(ccy: str, ff_df: pd.DataFrame):
         real_rate      = rate - cpi
         real_rate_prev = rate - cpi_prev
 
-        s1 = _score(gold, 2500.0, 2800.0, 3200.0, 3600.0)  # updated for current gold range
-        s2 = _score(eurchf, 0.92, 0.94, 0.96, 0.98)
-        s3 = _score(vix, 30.0, 22.0, 15.0, 12.0, invert=True)
+        # Gold: higher = bullish for CHF (safe-haven correlation)
+        s1 = _score(gold, 2500.0, 2800.0, 3200.0, 3600.0)
+        # EUR/CHF: higher = EUR stronger = CHF weaker = bearish for CHF
+        s2 = _score(eurchf, 0.92, 0.94, 0.96, 0.98, invert=True)
+        # VIX: higher = more fear = safe-haven demand = bullish for CHF
+        # Ascending thresholds (no invert) so higher VIX → higher score
+        s3 = _score(vix, 12.0, 15.0, 22.0, 30.0)
         s4 = _score(cot, 30.0, 40.0, 60.0, 70.0)
         s5 = _score(real_rate, -2.0, -1.0, 0.0, 1.0)
         scores = [s1, s2, s3, s4, s5]
