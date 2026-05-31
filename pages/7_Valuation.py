@@ -510,14 +510,14 @@ def main() -> None:
 
     chips = ""
     for lbl, val, color in legend_rows:
-        _, vcolor = val_label(val)
         chips += (
             f"<span style='display:inline-block;background:{C['card']};"
             f"border:1px solid {C['border']};border-radius:8px;padding:7px 14px;"
             f"margin:4px 8px 4px 0;font-family:monospace;font-size:12px;'>"
             f"<span style='color:{color};font-size:14px;'>●</span> "
             f"<span style='color:{C['text']};'>{lbl}</span> "
-            f"<b style='color:{vcolor};'>{val:.0f}</b>"
+            f"<span style='color:{C['muted']};'>-</span> "
+            f"<b style='color:{C['text']};'>{val:.0f}</b>"
             f"</span>"
         )
     st.markdown(f"<div style='margin-top:4px;margin-bottom:10px;'>{chips}</div>",
