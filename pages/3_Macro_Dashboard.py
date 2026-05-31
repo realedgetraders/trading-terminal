@@ -2526,9 +2526,11 @@ def _compute_currency_scores(ccy: str, ff_df: pd.DataFrame):
 # ║  CACHE FUNCTION LIST (for .clear() on refresh)
 # ╚══════════════════════════════════════════════════════════════════════════════
 _CACHE_FUNS = [
-    fetch_fred_series,
+    # fetch_fred_series is a plain wrapper; the cached inner function is below
+    _fetch_fred_series_cached,
     fetch_ecb_series,
     fetch_ecb_series_with_prev,
+    fetch_ecb_series_dated,
     fetch_ecb_estr,
     fetch_yf_price,
     fetch_yf_price_with_prev,
@@ -2537,6 +2539,12 @@ _CACHE_FUNS = [
     fetch_boc_rate,
     fetch_ff_calendar,
     fetch_cot_data,
+    # New key-free national CPI sources
+    fetch_eurostat_hicp,
+    fetch_abs_cpi,
+    fetch_statcan_cpi,
+    fetch_ons_cpi_yoy,
+    fetch_ons_core_cpi_yoy,
 ]
 
 # ╔══════════════════════════════════════════════════════════════════════════════
