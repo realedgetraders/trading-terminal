@@ -1,5 +1,5 @@
 """
-Trading Analytics Terminal — Pair Intelligence
+Trading Analytics Terminal — Master Terminal
 Cross-module signal aggregator: COT · Seasonality · Macro Bias · Calendar
 
 Data functions are imported from _shared.py (project root).
@@ -425,7 +425,7 @@ def _render_calendar(cal) -> str:
 
 def main() -> None:
     st.set_page_config(
-        page_title="Pair Intelligence — EdgeLab",
+        page_title="Master Terminal — EdgeLab",
         page_icon="🔬",
         layout="wide",
         initial_sidebar_state="collapsed",
@@ -454,7 +454,7 @@ def main() -> None:
                 f"</div>"
                 f"<div style='font-size:24px;font-weight:800;color:{C['text']};"
                 f"font-family:monospace;letter-spacing:-0.5px;margin-bottom:8px;'>"
-                f"Pair Intelligence</div>"
+                f"Master Terminal</div>"
                 f"<div style='font-size:12px;color:{C['muted']};font-family:sans-serif;"
                 f"line-height:1.7;max-width:360px;margin:0 auto;'>"
                 f"This module is currently under construction and not yet available. "
@@ -496,7 +496,7 @@ def main() -> None:
             f"<div style='text-align:center;margin-bottom:14px;'>"
             f"<div style='font-size:20px;font-weight:700;color:{C['text']};"
             f"font-family:monospace;letter-spacing:-0.5px;line-height:1.2;'>"
-            f"Pair Intelligence</div>"
+            f"Master Terminal</div>"
             f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
             f"margin-top:3px;'>COT · Seasonality · Macro Bias · Calendar</div>"
             f"</div>",

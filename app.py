@@ -58,7 +58,7 @@ MODULES = [
         "page":     "pages/5_Market_Regime.py",
     },
     {
-        "title":    "Pair Intelligence",
+        "title":    "Master Terminal",
         "icon":     "🔬",
         "desc":     "PRO aggregator for any forex pair — COT positioning, seasonal pattern, macro bias, and upcoming events in one unified view.",
         "active":   True,
@@ -554,15 +554,15 @@ def _render_analysis():
     hero = next((m for m in visible if m.get("hero")), None)
     rest = [m for m in visible if not m.get("hero")]
 
-    # Hero banner — spans the full width (two card slots), centered premium layout
-    if hero:
-        _render_hero_card(hero)
-
-    # Remaining modules — standard 2-column grid
+    # Standard 2-column grid first
     for row_start in range(0, len(rest), 2):
         col_l, col_r = st.columns(2, gap="large")
         for col, mod in zip([col_l, col_r], rest[row_start:row_start + 2]):
             _render_module_card(col, mod)
+
+    # Hero banner at the bottom — spans the full width (two card slots)
+    if hero:
+        _render_hero_card(hero)
 
 
 def _render_journal_section():
