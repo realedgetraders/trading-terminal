@@ -41,13 +41,19 @@ PAIRS = [
 ]
 PAIR_TICKERS = {p: f"{p}=X" for p in PAIRS}
 
-# Four macro anchors — (label, primary ticker, fallback ticker, line colour)
+# Highlight colour for the selected asset (electric blue, foreground line)
+ASSET_COLOR = "#2f9bff"
+
+# Equal-weighted precious-metals basket → one composite anchor row
+METALS = ["GC=F", "SI=F", "PL=F", "PA=F"]
+
+# Four macro anchors — distinct, well-separated line colours so no two lines blur.
 # Bonds use a PRICE proxy (high price = expensive = low yield), never the yield.
 ANCHORS = [
-    {"label": "Gold",           "primary": "GC=F",      "fallback": "GLD", "color": "#b8902f"},
-    {"label": "USD (DXY)",      "primary": "DX-Y.NYB",  "fallback": "DX=F", "color": "#7f8a99"},
-    {"label": "10Y Bonds",      "primary": "ZN=F",      "fallback": "IEF", "color": "#4a8c7a"},
-    {"label": "World Equities", "primary": "ACWI",      "fallback": "VT",  "color": "#9a7fc0"},
+    {"label": "Precious Metals", "kind": "basket", "tickers": METALS,     "fallback": "GLD",  "color": "#f3c33b"},  # amber
+    {"label": "USD (DXY)",       "kind": "single", "primary": "DX-Y.NYB", "fallback": "DX=F", "color": "#21c777"},  # green
+    {"label": "10Y Bonds",       "kind": "single", "primary": "ZN=F",     "fallback": "IEF",  "color": "#ff7a33"},  # orange
+    {"label": "World Equities",  "kind": "single", "primary": "ACWI",     "fallback": "VT",   "color": "#c25cff"},  # magenta
 ]
 
 # Lookback → rolling-window length and displayed trailing span (trading days)
@@ -93,6 +99,25 @@ def fetch_anchor(primary: str, fallback: str) -> tuple[pd.Series | None, str]:
     if s2 is not None and len(s2) >= 60:
         return s2, fallback
     return (s, primary) if s is not None else (None, primary)
+
+
+def fetch_basket(tickers: list[str], fallback: str) -> tuple[pd.Series | None, str]:
+    """Rebased, equal-weighted composite of several tickers (e.g. a metals basket)."""
+    series = {}
+    for t in tickers:
+        s = fetch_one(t)
+        if s is not None and len(s) >= 60:
+            series[t] = s
+    if not series:
+        s = fetch_one(fallback)
+        return (s, fallback) if (s is not None and len(s) >= 60) else (None, "")
+    df = pd.DataFrame(series).sort_index().ffill().dropna()
+    if df.empty or len(df) < 60:
+        s = fetch_one(fallback)
+        return (s, fallback) if (s is not None and len(s) >= 60) else (None, "")
+    rebased   = df / df.iloc[0] * 100.0      # rebase each metal to 100 at the common start
+    composite = rebased.mean(axis=1)         # equal-weighted average
+    return composite, " · ".join(series.keys())
 
 
 def stochastic_norm(s: pd.Series, window: int) -> pd.Series:
@@ -160,14 +185,14 @@ def _val_chart(frame: pd.DataFrame, asset_label: str,
             continue
         fig.add_trace(go.Scatter(
             x=frame.index, y=frame[label], mode="lines", name=label,
-            line=dict(color=color, width=1.4), opacity=0.6,
+            line=dict(color=color, width=1.9), opacity=0.85,
             hovertemplate="%{x|%b %d, %Y}<br>" + label + ": %{y:.0f}/100<extra></extra>",
         ))
 
     # ── Selected asset (bright, thick, foreground) ───────────────────────────
     fig.add_trace(go.Scatter(
         x=frame.index, y=frame[asset_label], mode="lines", name=asset_label,
-        line=dict(color=C["teal"], width=3.4),
+        line=dict(color=ASSET_COLOR, width=3.8),
         hovertemplate="%{x|%b %d, %Y}<br>" + asset_label + ": %{y:.0f}/100<extra></extra>",
     ))
 
@@ -181,12 +206,8 @@ def _val_chart(frame: pd.DataFrame, asset_label: str,
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=55, r=95, t=70, b=45),
-        legend=dict(
-            orientation="h", yanchor="bottom", y=1.04, xanchor="left", x=0,
-            font=dict(size=10, color=C["muted"], family="monospace"),
-            bgcolor="rgba(0,0,0,0)",
-        ),
+        margin=dict(l=55, r=95, t=50, b=40),
+        showlegend=False,
         xaxis=dict(
             showgrid=False, zeroline=False,
             tickfont=dict(size=10, color=C["muted"], family="monospace"),
@@ -356,7 +377,7 @@ def main() -> None:
             f"font-family:monospace;letter-spacing:-0.5px;'>VALUATION TOOL</div>"
             f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
             f"letter-spacing:1px;margin-top:4px;'>"
-            f"Under-/overvaluation vs. Gold · USD · Bonds · World Equities</div>"
+            f"Under-/overvaluation vs. Precious Metals · USD · Bonds · World Equities</div>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -394,8 +415,13 @@ def main() -> None:
     # ── Fetch ────────────────────────────────────────────────────────────────
     with st.spinner("Loading price data…"):
         asset_close = fetch_one(asset_ticker)
-        anchors_raw = {a["label"]: (*fetch_anchor(a["primary"], a["fallback"]), a["color"])
-                       for a in ANCHORS}
+        anchors_raw = {}
+        for a in ANCHORS:
+            if a.get("kind") == "basket":
+                series, used = fetch_basket(a["tickers"], a["fallback"])
+            else:
+                series, used = fetch_anchor(a["primary"], a["fallback"])
+            anchors_raw[a["label"]] = (series, used, a["color"])
 
     if asset_close is None or len(asset_close) < 60:
         st.error(
@@ -438,14 +464,44 @@ def main() -> None:
     a_label, a_color   = val_label(asset_val)
     rel_phrase, r_color = relative_label(diff)
 
-    # ── Metric cards ─────────────────────────────────────────────────────────
+    # ── Chart first (most visible element) ───────────────────────────────────
+    st.plotly_chart(
+        _val_chart(frame, asset_label, anchor_colors, lookback_label),
+        use_container_width=True,
+        config={"displayModeBar": False},
+    )
+
+    # ── Colour-coded legend — bottom chips for all 5 rows (same line colours) ─
+    legend_rows = [(asset_label, asset_val, ASSET_COLOR, "selected asset")]
+    for lbl in anchor_colors:
+        legend_rows.append((lbl, anchor_vals[lbl], anchor_colors[lbl],
+                            anchor_used.get(lbl, "")))
+
+    chips = ""
+    for lbl, val, color, extra in legend_rows:
+        _, vcolor = val_label(val)
+        extra_html = (f"<span style='color:#555;font-size:10px;'> · {extra}</span>"
+                      if extra else "")
+        chips += (
+            f"<span style='display:inline-block;background:{C['card']};"
+            f"border:1px solid {C['border']};border-radius:8px;padding:7px 14px;"
+            f"margin:4px 8px 4px 0;font-family:monospace;font-size:12px;'>"
+            f"<span style='color:{color};font-size:14px;'>●</span> "
+            f"<span style='color:{C['text']};'>{lbl}</span> "
+            f"<b style='color:{vcolor};'>{val:.0f}</b>"
+            f"{extra_html}</span>"
+        )
+    st.markdown(f"<div style='margin-top:4px;margin-bottom:10px;'>{chips}</div>",
+                unsafe_allow_html=True)
+
+    # ── Metric cards (below the chart) ───────────────────────────────────────
     m1, m2, m3 = st.columns(3)
     with m1:
         st.markdown(_metric_card("Asset Valuation", f"{asset_val:.0f}/100",
                                  a_label, a_color), unsafe_allow_html=True)
     with m2:
         st.markdown(_metric_card("Macro-Anchor Avg", f"{anchor_avg:.0f}/100",
-                                 "Gold · USD · Bonds · Equities", C["teal"]),
+                                 "Metals · USD · Bonds · Equities", C["teal"]),
                     unsafe_allow_html=True)
     with m3:
         st.markdown(_metric_card("Relative Position", f"{diff:+.0f}",
@@ -466,30 +522,6 @@ def main() -> None:
         f"</div>",
         unsafe_allow_html=True,
     )
-
-    # ── Chart ────────────────────────────────────────────────────────────────
-    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-    st.plotly_chart(
-        _val_chart(frame, asset_label, anchor_colors, lookback_label),
-        use_container_width=True,
-        config={"displayModeBar": False},
-    )
-
-    # ── Anchor readings (chips) ──────────────────────────────────────────────
-    chips = ""
-    for lbl, val in anchor_vals.items():
-        _, c = val_label(val)
-        chips += (
-            f"<span style='display:inline-block;background:{C['card']};"
-            f"border:1px solid {C['border']};border-radius:8px;padding:7px 14px;"
-            f"margin:4px 6px 4px 0;font-family:monospace;font-size:12px;'>"
-            f"<span style='color:{anchor_colors[lbl]};'>●</span> "
-            f"<span style='color:{C['muted']};'>{lbl}</span> "
-            f"<b style='color:{c};'>{val:.0f}</b>"
-            f"<span style='color:#555;font-size:10px;'> · {anchor_used[lbl]}</span>"
-            f"</span>"
-        )
-    st.markdown(f"<div style='margin-top:6px;'>{chips}</div>", unsafe_allow_html=True)
 
     _render_footer()
 
