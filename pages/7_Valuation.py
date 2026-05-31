@@ -289,30 +289,35 @@ def _render_gate() -> None:
     _, col, _ = st.columns([2, 3, 2])
     with col:
         st.markdown(
-            f"<div style='background:{C['card']};border:1px solid rgba(79,142,247,0.22);"
-            f"border-radius:16px;padding:46px 46px 38px;text-align:center;"
-            f"box-shadow:0 0 48px rgba(79,142,247,0.07);'>"
-            f"<div style='margin-bottom:22px;'>"
-            f"<span style='background:{C['yellow']};color:#0a0c10;font-size:10px;"
-            f"font-family:monospace;font-weight:800;letter-spacing:3px;"
-            f"padding:4px 14px;border-radius:20px;text-transform:uppercase;'>PRO</span>"
+            f"<div style='background:{C['card']};border:1px dashed {C['border']};"
+            f"border-radius:16px;padding:44px 44px 36px;text-align:center;"
+            f"box-shadow:inset 0 0 80px rgba(0,0,0,0.4);'>"
+            f"<div style='font-size:46px;line-height:1;margin-bottom:18px;'>🚧</div>"
+            f"<div style='margin-bottom:16px;'>"
+            f"<span style='background:#1a1a1a;color:#8a8a8a;font-size:10px;"
+            f"font-family:monospace;font-weight:800;letter-spacing:2.5px;"
+            f"padding:5px 16px;border-radius:20px;text-transform:uppercase;"
+            f"border:1px solid #333333;'>In Arbeit</span>"
             f"</div>"
-            f"<div style='font-size:42px;line-height:1;margin-bottom:18px;'>⚖️</div>"
             f"<div style='font-size:24px;font-weight:800;color:{C['text']};"
             f"font-family:monospace;letter-spacing:-0.5px;margin-bottom:8px;'>"
             f"Valuation Tool</div>"
-            f"<div style='font-size:10px;color:{C['teal']};font-family:monospace;"
-            f"letter-spacing:2px;text-transform:uppercase;margin-bottom:14px;'>"
-            f"Module 07 &nbsp;·&nbsp; Valuation Tool</div>"
-            f"<div style='font-size:12px;color:{C['muted']};font-family:monospace;'>"
-            f"Enter password to continue</div></div>",
+            f"<div style='font-size:12px;color:{C['muted']};font-family:sans-serif;"
+            f"line-height:1.7;max-width:360px;margin:0 auto;'>"
+            f"This module is currently under construction and not yet available. "
+            f"Check back soon.</div></div>",
             unsafe_allow_html=True,
         )
-        st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
-        pw = st.text_input("Password", type="password", placeholder="Enter password…",
+        st.markdown("<div style='height:18px;'></div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='text-align:center;font-size:9px;color:#555555;"
+            f"font-family:monospace;letter-spacing:2px;text-transform:uppercase;"
+            f"margin-bottom:8px;'>Developer Access</div>",
+            unsafe_allow_html=True,
+        )
+        pw = st.text_input("Password", type="password", placeholder="Developer password…",
                            label_visibility="collapsed", key="val_pw")
-        st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
-        if st.button("Unlock →", use_container_width=True, key="val_unlock"):
+        if st.button("Enter →", use_container_width=True, key="val_unlock"):
             if pw == _PASSWORD:
                 st.session_state["valuation_auth"] = True
                 st.rerun()

@@ -30,7 +30,7 @@ from _shared import (
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  CONSTANTS
 # ╚══════════════════════════════════════════════════════════════════════════════
-_PASSWORD = "t26imheim"   # developer access to the in-progress module
+_PASSWORD = "12345"   # developer access to the in-progress module
 
 # All 28 major forex pairs in standard market notation
 PAIRS = [

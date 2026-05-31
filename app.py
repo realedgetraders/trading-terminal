@@ -70,8 +70,8 @@ MODULES = [
         "title":    "Valuation Tool",
         "icon":     "⚖️",
         "desc":     "Measure any asset against four macro anchors — Gold, USD, Bonds and World Equities — to see whether it is currently under- or overvalued.",
-        "active":   True,
-        "pro":      True,
+        "active":   False,
+        "wip":      True,
         "page":     "pages/7_Valuation.py",
     },
     {
