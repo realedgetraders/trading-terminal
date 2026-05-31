@@ -16,6 +16,8 @@ C = {
     "teal":   "#4f8ef7",
 }
 
+_PASSWORD = "t26imheim"   # developer access to the in-progress module
+
 
 def _inject_css():
     st.markdown(
@@ -39,6 +41,16 @@ def _inject_css():
         f"border-color:{C['teal']}70 !important;color:{C['teal']} !important;"
         f"box-shadow:0 0 12px rgba(79,142,247,0.14) !important;"
         f"}}"
+        f"[data-testid='stTextInput'] input{{"
+        f"background:#1c1c1c !important;border:1px solid rgba(79,142,247,0.28) !important;"
+        f"color:{C['text']} !important;font-family:monospace !important;"
+        f"border-radius:8px !important;font-size:13px !important;"
+        f"}}"
+        f"[data-testid='stTextInput'] input::placeholder{{color:#555 !important;}}"
+        f"[data-testid='stTextInput'] input:focus{{"
+        f"border-color:rgba(79,142,247,0.65) !important;"
+        f"box-shadow:0 0 0 3px rgba(79,142,247,0.10) !important;"
+        f"}}"
         f"</style>",
         unsafe_allow_html=True,
     )
@@ -52,6 +64,58 @@ def _render_footer():
         f"Built by @realedgetraders</div>",
         unsafe_allow_html=True,
     )
+
+
+def _render_gate():
+    """Construction screen with developer-access password (same as Pair Intelligence)."""
+    _back_col, _ = st.columns([1, 6])
+    with _back_col:
+        if st.button("← Back to Hub", key="val_gate_back"):
+            st.switch_page("app.py")
+    st.markdown("<div style='height:7vh;'></div>", unsafe_allow_html=True)
+    _, col_c, _ = st.columns([2, 3, 2])
+    with col_c:
+        st.markdown(
+            f"<div style='background:{C['card']};border:1px dashed {C['border']};"
+            f"border-radius:16px;padding:44px 44px 36px;text-align:center;"
+            f"box-shadow:inset 0 0 80px rgba(0,0,0,0.4);'>"
+            f"<div style='font-size:46px;line-height:1;margin-bottom:18px;'>🚧</div>"
+            f"<div style='margin-bottom:16px;'>"
+            f"<span style='background:#1a1a1a;color:#8a8a8a;font-size:10px;"
+            f"font-family:monospace;font-weight:800;letter-spacing:2.5px;"
+            f"padding:5px 16px;border-radius:20px;text-transform:uppercase;"
+            f"border:1px solid #333333;'>In Arbeit</span>"
+            f"</div>"
+            f"<div style='font-size:24px;font-weight:800;color:{C['text']};"
+            f"font-family:monospace;letter-spacing:-0.5px;margin-bottom:8px;'>"
+            f"Valuation Tool</div>"
+            f"<div style='font-size:12px;color:{C['muted']};font-family:sans-serif;"
+            f"line-height:1.7;max-width:360px;margin:0 auto;'>"
+            f"This module is currently under construction and not yet available. "
+            f"Check back soon.</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("<div style='height:18px;'></div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='text-align:center;font-size:9px;color:#555555;"
+            f"font-family:monospace;letter-spacing:2px;text-transform:uppercase;"
+            f"margin-bottom:8px;'>Developer Access</div>",
+            unsafe_allow_html=True,
+        )
+        pw = st.text_input(
+            "Password",
+            type="password",
+            placeholder="Developer password…",
+            label_visibility="collapsed",
+            key="valuation_pw",
+        )
+        if st.button("Enter →", use_container_width=True, key="valuation_unlock"):
+            if pw == _PASSWORD:
+                st.session_state["valuation_auth"] = True
+                st.rerun()
+            else:
+                st.error("Incorrect password.")
 
 
 def _render_placeholder():
@@ -112,6 +176,13 @@ def main():
         initial_sidebar_state="collapsed",
     )
     _inject_css()
+
+    # Developer-access gate
+    if not st.session_state.get("valuation_auth"):
+        _render_gate()
+        _render_footer()
+        return
+
     _render_placeholder()
     _render_footer()
 
