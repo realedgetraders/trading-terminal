@@ -349,10 +349,9 @@ def _fred_qoq_yoy_fresh(series_id: str, name: str, max_days: int):
 # ╚══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_fred_series(series_id: str, limit: int = 36):
-    """Fetch FRED series, return list of (date, value) sorted ascending."""
-    if not FRED_API_KEY:
-        return []
+def _fetch_fred_series_cached(series_id: str, limit: int = 36):
+    """Internal implementation — only called when _FRED_KEY_VALID is True.
+    Cached with 1-hour TTL so API calls are not repeated on every rerun."""
     try:
         url = (
             f"https://api.stlouisfed.org/fred/series/observations"
@@ -374,6 +373,21 @@ def fetch_fred_series(series_id: str, limit: int = 36):
         return result
     except Exception:
         return []
+
+
+def fetch_fred_series(series_id: str, limit: int = 36):
+    """Fetch FRED series, return list of (date_str, value) sorted ascending.
+
+    Public wrapper: returns [] immediately (without touching the cache) when
+    the API key is absent or invalid.  This prevents empty results from an
+    invalid key being stored in the cache and masking a later valid key — the
+    exact failure mode that caused USD GDP to appear static after first deploying
+    with a placeholder key.  Once _FRED_KEY_VALID is True the inner cached
+    function is called normally and the result is cached for 1 hour.
+    """
+    if not _FRED_KEY_VALID:
+        return []
+    return _fetch_fred_series_cached(series_id, limit)
 
 
 def _fred_latest(series_id: str, limit: int = 36):
@@ -408,7 +422,7 @@ def _fred_yoy(series_id: str):
         return None
 
 
-def _gdp_qoq_from_fred(series_id: str, max_days: int = 180) -> tuple:
+def _gdp_qoq_from_fred(series_id: str, max_days: int = 270) -> tuple:
     """Fetch OECD GDP series from FRED; return (current_qoq_pct, prev_qoq_pct).
 
     Auto-detects whether the series returns a % change or an absolute level:
@@ -416,8 +430,10 @@ def _gdp_qoq_from_fred(series_id: str, max_days: int = 180) -> tuple:
       and QoQ % = (curr / prev - 1) * 100 is computed from consecutive observations.
     - Otherwise → assumed to be already a % change (used as-is).
 
-    max_days=180: GDP is quarterly, so data can naturally be 3-5 months old.
-    Beyond 6 months → discard (likely a wrong series ID or truly stale source).
+    max_days=270 (9 months): OECD publishes GDP with a 1-2 quarter lag on FRED;
+    for AUD/NZD the observation date (end of reference quarter) can be ~8 months
+    old by the time it appears on FRED (Q3 2025 = Sep 30 → ~243 days on 2026-05-31).
+    The 270-day ceiling still rejects data older than ~3 quarters (genuinely stale).
     """
     data = fetch_fred_series(series_id, 6)
     if not data:
@@ -1269,16 +1285,19 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
         if gdp is not None: _gdp_is_live = True
     elif ccy == "AUD":
         # Australia CPI is quarterly (AUSCPIALLQINMEI = OECD quarterly index 2010=100).
-        # Q3 2025 data is ~5 months old → gate 150 days for quarterly release cadence.
+        # OECD publishes ~1-2 quarters behind: Q3 2025 (Sep 30) is 243 days old by
+        # May 2026, and Q4 2025 (Dec 31) is 151 days old.  Gate 270 days = same
+        # policy as _gdp_qoq_from_fred, covers worst-case Q3 2025 observation date.
         # CPALTT01AUM659N (monthly YoY%) is sparse/outdated on FRED.
-        cpi, prev_cpi = _fred_qoq_yoy_fresh("AUSCPIALLQINMEI", "CPI/AUD", 150)
+        cpi, prev_cpi = _fred_qoq_yoy_fresh("AUSCPIALLQINMEI", "CPI/AUD", 270)
         if cpi is not None: _cpi_is_live = True
         # GDP: NAEXKP01AUQ652S does not exist; correct suffix is Q657S.
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01AUQ657S")
         if gdp is not None: _gdp_is_live = True
     elif ccy == "NZD":
         # NZ CPI is quarterly (NZLCPIALLQINMEI = OECD quarterly index 2010=100).
-        cpi, prev_cpi = _fred_qoq_yoy_fresh("NZLCPIALLQINMEI", "CPI/NZD", 150)
+        # Same 270-day gate as AUD — OECD lag means Q3 2025 observation is ~243 days old.
+        cpi, prev_cpi = _fred_qoq_yoy_fresh("NZLCPIALLQINMEI", "CPI/NZD", 270)
         if cpi is not None: _cpi_is_live = True
         # GDP: NAEXKP01NZQ652S does not exist; correct suffix is Q657S.
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01NZQ657S")
