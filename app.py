@@ -66,6 +66,14 @@ MODULES = [
         "page":     "pages/7_Pair_Intelligence.py",
     },
     {
+        "title":    "Valuation Tool",
+        "icon":     "⚖️",
+        "desc":     "Detect whether the currently selected asset is under- or overvalued relative to other assets. Engine still in development.",
+        "active":   False,
+        "wip":      True,
+        "page":     "pages/7_Valuation.py",
+    },
+    {
         "title":    "Correlation",
         "icon":     "🔗",
         "desc":     "Cross-asset correlation matrix and rolling correlation heatmaps.",
@@ -186,6 +194,41 @@ def main():
           z-index: 10;
       }}
       div[data-testid="stElementContainer"]:has(.ret-module-active)
+        + div[data-testid="stElementContainer"] button {{
+          width: 100% !important;
+          height: 160px !important;
+          min-height: 0 !important;
+          opacity: 0 !important;
+          cursor: pointer !important;
+          border-radius: 12px !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          display: block !important;
+      }}
+      /* ── WIP module clickable overlay (muted grey, no accent glow) ──── */
+      .ret-module-wip {{
+          cursor: pointer;
+          transition: box-shadow 0.25s ease, border-color 0.25s ease;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-module-wip):has(+ div[data-testid="stElementContainer"]:hover) .ret-module-wip {{
+          box-shadow:
+              0 0 0 1px rgba(120,120,120,0.30),
+              0 0 14px rgba(120,120,120,0.10) !important;
+          border-color: rgba(120,120,120,0.50) !important;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-module-wip) {{
+          position: relative;
+          z-index: 1;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-module-wip)
+        + div[data-testid="stElementContainer"] {{
+          margin-top: -176px;
+          margin-bottom: 20px;
+          height: 160px;
+          position: relative;
+          z-index: 10;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-module-wip)
         + div[data-testid="stElementContainer"] button {{
           width: 100% !important;
           height: 160px !important;
@@ -471,7 +514,7 @@ def _render_landing():
 
 def _render_analysis():
     """Analysis module card grid — active + teaser modules."""
-    visible = [m for m in MODULES if m["active"] or m.get("teaser")]
+    visible = [m for m in MODULES if m["active"] or m.get("teaser") or m.get("wip")]
     for row_start in range(0, len(visible), 2):
         col_l, col_r = st.columns(2, gap="large")
         for col, mod in zip([col_l, col_r], visible[row_start:row_start + 2]):
@@ -595,9 +638,18 @@ def _render_journal_section():
 def _render_module_card(col, mod: dict):
     active = mod["active"]
     teaser = mod.get("teaser", False)
+    wip    = mod.get("wip", False)
     pro    = mod.get("pro", False)
 
-    if teaser:
+    if wip:
+        border       = "#2e2e2e"
+        title_color  = "#5a5a5a"
+        desc_color   = "#3c3c3c"
+        badge_bg     = "#1a1a1a"
+        badge_color  = "#6a6a6a"
+        badge_text   = "Work in Progress"
+        border_style = "dashed"
+    elif teaser:
         border       = "#252525"
         title_color  = "#383838"
         desc_color   = "#2e2e2e"
@@ -630,10 +682,15 @@ def _render_module_card(col, mod: dict):
         badge_text   = "Coming Soon"
         border_style = "solid"
 
-    is_clickable  = active and not teaser
-    card_class    = "ret-module-active" if is_clickable else ""
-    if is_clickable and pro:
-        card_class += " ret-module-pro"
+    is_clickable  = (active and not teaser) or wip
+    if wip:
+        card_class = "ret-module-wip"
+    elif is_clickable:
+        card_class = "ret-module-active"
+        if pro:
+            card_class += " ret-module-pro"
+    else:
+        card_class = ""
     card_sizing   = "height:160px;overflow:hidden;" if is_clickable else "min-height:140px;margin-bottom:16px;"
 
     with col:
