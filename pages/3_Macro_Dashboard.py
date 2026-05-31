@@ -102,6 +102,21 @@ _FB_CONF_USD   = 67.0
 
 _NEUTRAL_RATE  = {"USD": 2.5, "EUR": 2.0, "GBP": 2.5, "JPY": 0.5,
                   "AUD": 3.0, "NZD": 2.5, "CAD": 2.5, "CHF": 0.0}
+
+# Rate delta displayed when no live rate series is available (static fallback path).
+# Represents the most recent CB decision in bps: 0 = hold, +N = hike, -N = cut.
+# *** MUST BE MANUALLY UPDATED when any of these CBs change rates ***
+# Last reviewed: 2026-05-31
+_FB_RATE_DELTA = {
+    "USD": 0.0,    # Fed: holding at 3.75 (last cut Dec 2024)
+    "EUR": 0.0,    # ECB: holding at 2.00
+    "GBP": 0.0,    # BoE: holding at 3.75
+    "JPY": 25.0,   # BoJ: hiked +25 bps to 0.75 (early 2026)
+    "AUD": 50.0,   # RBA: hiked +50 bps to 4.35 (5 May 2026; 2×25 bps vs prev FB 3.85)
+    "NZD": 0.0,    # RBNZ: holding at 2.25
+    "CAD": 0.0,    # BoC: handled by live V39079 data; fallback = holding
+    "CHF": 0.0,    # SNB: holding at 0.00
+}
 _NEUTRAL_UNEMP = {"USD": 4.5, "EUR": 7.5, "GBP": 4.5, "JPY": 3.0,
                   "AUD": 5.0, "NZD": 5.0, "CAD": 6.0, "CHF": 3.0}
 
@@ -1037,10 +1052,13 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
     if prev_rate is None:
         prev_rate = _FB_PREV_RATES.get(ccy)
 
-    # When both rate values came from static fallback (no live data available),
-    # compute rate_delta from the static prev vs current so the delta is informative.
-    if not _r_data and rate is not None and prev_rate is not None and rate_delta == 0.0:
-        rate_delta = (rate - prev_rate) * 100.0
+    # When no live rate series was available, use the explicitly maintained _FB_RATE_DELTA.
+    # This encodes the actual most-recent CB decision (0 = hold, ±N = change).
+    # Computing it from (rate - prev_rate) would incorrectly show the *last change ever*,
+    # not the last decision — e.g. EUR holding at 2.00 would show -25 bps from the prev
+    # fallback of 2.25, even though ECB has been on hold for months.
+    if not _r_data and rate_delta == 0.0:
+        rate_delta = _FB_RATE_DELTA.get(ccy, 0.0)
 
     # Per-currency policy rate level thresholds
     if ccy == "JPY":
@@ -1452,12 +1470,12 @@ def _d4_surprises(ccy: str, ff_df: pd.DataFrame):
             cpi_act, cpi_fore = _fred_latest_with_prev(_CPI_FRED[ccy], 10)
         s_cpi = _score_surprise(cpi_act, cpi_fore)
 
-        # ── GDP: current QoQ vs prior quarter QoQ ────────────────────────────
-        _gdp_s  = _GDP_FRED.get(ccy)
-        _gdata  = fetch_fred_series(_gdp_s, 5) if _gdp_s else []
-        gdp_act  = _gdata[-1][1] if _gdata else None
-        gdp_fore = _gdata[-2][1] if len(_gdata) >= 2 else None
-        s_gdp   = _score_surprise(gdp_act, gdp_fore)
+        # ── GDP: current QoQ% vs prior quarter QoQ% ──────────────────────────
+        # Use _gdp_qoq_from_fred so the NAEXKP01 level series are correctly
+        # converted to QoQ % before comparison (same path as D2).
+        _gdp_s = _GDP_FRED.get(ccy)
+        gdp_act, gdp_fore = _gdp_qoq_from_fred(_gdp_s) if _gdp_s else (None, None)
+        s_gdp  = _score_surprise(gdp_act, gdp_fore)
 
         # ── Employment: last two actual releases via FF ───────────────────────
         emp_act, emp_fore = _ff_latest_two(ff_df, ccy, "Employment Change")
