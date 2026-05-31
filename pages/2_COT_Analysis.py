@@ -411,14 +411,20 @@ def plot_cot_index(df: pd.DataFrame, groups: list[str], x_range=None) -> go.Figu
 # ─── Divergence Screener ──────────────────────────────────────────────────────
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def build_divergence_table(_raw: pd.DataFrame) -> pd.DataFrame:
+def build_divergence_table(_raw: pd.DataFrame, category: str = "All") -> pd.DataFrame:
     """Compute Commercials vs Non-Reportable COT Index divergence for every market.
     Filters to notable rows only: divergence > 70 OR either group in extreme territory
     (Comm or NRept >= 75 or <= 25). Returns top 10 by divergence.
+    When `category` is a single MARKET_GROUPS key, only that category's instruments are
+    scanned; "All" scans every category. The divergence logic is identical either way.
     """
     _cache_version = 3
     rows = []
-    for cat, markets in MARKET_GROUPS.items():
+    if category == "All":
+        groups_iter = MARKET_GROUPS.items()
+    else:
+        groups_iter = [(category, MARKET_GROUPS.get(category, {}))]
+    for cat, markets in groups_iter:
         for display, cftc_name in markets.items():
             df = get_market_data(_raw, cftc_name)
             if df.empty:
@@ -743,10 +749,27 @@ def main():
         f"<span style='font-size:9px;'>(top 10 · divergence &gt;70 or extreme reading ≥75/≤25 · sorted by divergence)</span></div>",
         unsafe_allow_html=True,
     )
+    screener_cat = st.radio(
+        "Asset class filter",
+        list(MARKET_GROUPS.keys()) + ["All"],
+        index=0,                      # default: Forex — preserves prior behaviour
+        horizontal=True,
+        label_visibility="collapsed",
+        key="screener_cat",
+    )
+
     with st.spinner("Computing screener…"):
-        screener_df = build_divergence_table(raw)
+        screener_df = build_divergence_table(raw, screener_cat)
     if not screener_df.empty:
         st.markdown(_screener_html(screener_df), unsafe_allow_html=True)
+    else:
+        st.markdown(
+            f"<div style='background:{C['card']};border:1px solid {C['border']};"
+            f"border-radius:10px;padding:20px;text-align:center;color:{C['muted']};"
+            f"font-family:monospace;font-size:12px;margin-top:4px;'>"
+            f"No notable divergence in <b style='color:{C['text']}'>{screener_cat}</b> right now.</div>",
+            unsafe_allow_html=True,
+        )
 
     # ── Footer ────────────────────────────────────────────────────────────────
     st.markdown(
