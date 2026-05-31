@@ -30,16 +30,44 @@ C = {
 
 _PASSWORD = "12345"
 
-# 28 major forex pairs (same set as the Master Terminal)
-PAIRS = [
-    "EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY",
-    "EURGBP", "EURAUD", "EURCAD", "EURCHF", "EURJPY", "EURNZD",
-    "GBPAUD", "GBPCAD", "GBPCHF", "GBPJPY", "GBPNZD",
-    "AUDCAD", "AUDCHF", "AUDJPY", "AUDNZD",
-    "CADCHF", "CADJPY", "CHFJPY",
-    "NZDCAD", "NZDCHF", "NZDJPY",
-]
-PAIR_TICKERS = {p: f"{p}=X" for p in PAIRS}
+# Tradable futures only — currencies, energy, metals, agriculture, crypto.
+# Label → yfinance continuous-future ticker. (No FX cross-pairs.)
+FUTURES = {
+    # ── Currencies ──
+    "Euro FX":            "6E=F",
+    "British Pound":      "6B=F",
+    "Japanese Yen":       "6J=F",
+    "Australian Dollar":  "6A=F",
+    "Canadian Dollar":    "6C=F",
+    "Swiss Franc":        "6S=F",
+    "New Zealand Dollar": "6N=F",
+    "Mexican Peso":       "6M=F",
+    # ── Energy ──
+    "Crude Oil (WTI)":    "CL=F",
+    "Brent Crude":        "BZ=F",
+    "Natural Gas":        "NG=F",
+    "RBOB Gasoline":      "RB=F",
+    "Heating Oil":        "HO=F",
+    # ── Metals ──
+    "Gold":               "GC=F",
+    "Silver":             "SI=F",
+    "Platinum":           "PL=F",
+    "Palladium":          "PA=F",
+    "Copper":             "HG=F",
+    # ── Agriculture ──
+    "Corn":               "ZC=F",
+    "Wheat":              "ZW=F",
+    "Soybeans":           "ZS=F",
+    "Coffee":             "KC=F",
+    "Cocoa":              "CC=F",
+    "Cotton":             "CT=F",
+    "Sugar":              "SB=F",
+    "Live Cattle":        "LE=F",
+    "Lean Hogs":          "HE=F",
+    # ── Crypto ──
+    "Bitcoin":            "BTC=F",
+    "Ethereum":           "ETH=F",
+}
 
 # Highlight colour for the selected asset (electric blue, foreground line)
 ASSET_COLOR = "#2f9bff"
@@ -392,7 +420,8 @@ def main() -> None:
     # ── Controls: asset dropdown + custom ticker + lookback ──────────────────
     col_dd, col_custom, col_lb = st.columns([2, 2, 3])
     with col_dd:
-        selected_pair = st.selectbox("Select Asset", options=PAIRS, index=0, key="val_select")
+        selected_future = st.selectbox("Select Asset (futures)",
+                                       options=list(FUTURES.keys()), index=0, key="val_select")
     with col_custom:
         custom = st.text_input("Custom Ticker (overrides dropdown)",
                                placeholder="e.g. AAPL, BTC-USD, CL=F", key="val_custom")
@@ -405,9 +434,11 @@ def main() -> None:
     if custom.strip():
         asset_label  = custom.strip().upper()
         asset_ticker = custom.strip()
+        asset_note   = "custom"
     else:
-        asset_label  = selected_pair
-        asset_ticker = PAIR_TICKERS.get(selected_pair, f"{selected_pair}=X")
+        asset_label  = selected_future
+        asset_ticker = FUTURES[selected_future]
+        asset_note   = asset_ticker
 
     window = LOOKBACKS[lookback_label]["window"]
     disp   = LOOKBACKS[lookback_label]["disp"]
@@ -472,7 +503,7 @@ def main() -> None:
     )
 
     # ── Colour-coded legend — bottom chips for all 5 rows (same line colours) ─
-    legend_rows = [(asset_label, asset_val, ASSET_COLOR, "selected asset")]
+    legend_rows = [(asset_label, asset_val, ASSET_COLOR, asset_note)]
     for lbl in anchor_colors:
         legend_rows.append((lbl, anchor_vals[lbl], anchor_colors[lbl],
                             anchor_used.get(lbl, "")))
