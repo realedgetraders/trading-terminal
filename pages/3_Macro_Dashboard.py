@@ -54,7 +54,8 @@ CURRENCY_FLAG = {
 _FB_DATE  = "2026-05-28"
 
 _FB_RATES  = {"USD": 3.75, "EUR": 2.00, "GBP": 3.75, "JPY": 0.75,
-              "AUD": 3.85, "NZD": 2.25, "CAD": 2.50, "CHF": 0.00}
+              "AUD": 4.35, "NZD": 2.25, "CAD": 2.25, "CHF": 0.00}
+# AUD: 4.35 after RBA hike 5 May 2026; CAD: 2.25 = Target Overnight Rate (not Bank Rate)
 _FB_CPI    = {"USD": 2.4,  "EUR": 2.2,  "GBP": 2.6,  "JPY": 2.2,
               "AUD": 3.2,  "NZD": 2.5,  "CAD": 1.7,  "CHF": 0.0}
 _FB_CCPI   = {"USD": 2.8,  "EUR": 2.7,  "GBP": 3.4,  "JPY": 2.2,
@@ -72,7 +73,8 @@ _FB_RETAIL = {"USD": 0.1,  "EUR": 0.1,  "GBP": 0.0,  "JPY": -1.1,
 
 # Previous-period fallbacks — used when live API is unavailable so PREV column never shows "—"
 _FB_PREV_RATES = {"USD": 4.00, "EUR": 2.25, "GBP": 4.00, "JPY": 0.50,
-                  "AUD": 4.10, "NZD": 2.50, "CAD": 2.75, "CHF": 0.25}
+                  "AUD": 3.85, "NZD": 2.50, "CAD": 2.50, "CHF": 0.25}
+# AUD prev: 3.85 (before 5 May 2026 hike); CAD prev: 2.50 (before last cut)
 _FB_PREV_CPI   = {"USD": 2.6,  "EUR": 2.3,  "GBP": 2.8,  "JPY": 2.8,
                   "AUD": 3.4,  "NZD": 2.2,  "CAD": 1.9,  "CHF": 0.3}
 _FB_PREV_CCPI  = {"USD": 3.0,  "EUR": 2.8,  "GBP": 3.6,  "JPY": 2.4,
@@ -268,10 +270,18 @@ def _check_freshness(name: str, date_str: str, max_days: int) -> None:
 
 
 def _fred_fresh(series_id: str, name: str, max_days: int, limit: int = 10):
-    """Fetch FRED series, run freshness check, return (current, prev)."""
+    """Fetch FRED series, run freshness check, return (current, prev).
+    Returns (None, None) if data is stale (age > max_days) — caller should
+    then try an alternative source (e.g. FF calendar)."""
     data = fetch_fred_series(series_id, limit)
     if data:
-        _check_freshness(name, data[-1][0], max_days)
+        try:
+            age = (datetime.now() - datetime.strptime(data[-1][0][:10], "%Y-%m-%d")).days
+            if age > max_days:
+                print(f"[MACRO FRESHNESS] {name}: {data[-1][0]} is {age}d old (>{max_days}d), discarding")
+                return None, None
+        except Exception:
+            pass
         return (data[-1][1], data[-2][1] if len(data) >= 2 else None)
     return None, None
 
@@ -337,6 +347,46 @@ def _fred_yoy(series_id: str):
         return (current / year_ago - 1.0) * 100.0
     except (TypeError, ValueError, ZeroDivisionError):
         return None
+
+
+def _gdp_qoq_from_fred(series_id: str) -> tuple:
+    """Fetch OECD GDP series from FRED; return (current_qoq_pct, prev_qoq_pct).
+
+    Auto-detects whether the series returns a % change or an absolute level:
+    - If |latest value| > 5  → treated as a GDP level (millions/billions of currency)
+      and QoQ % = (curr / prev - 1) * 100 is computed from consecutive observations.
+    - Otherwise → assumed to be already a % change (used as-is).
+
+    This transparently handles FRED OECD series like NAEXKP01EZQ652S (Euro Area GDP
+    in millions of EUR) which return absolute levels rather than growth rates.
+    """
+    data = fetch_fred_series(series_id, 6)
+    if not data:
+        return None, None
+    last_val = data[-1][1]
+    if last_val is None:
+        return None, None
+
+    if abs(last_val) > 5.0:
+        # Absolute level series — compute QoQ%
+        if len(data) < 2 or not data[-2][1]:
+            return None, None
+        try:
+            curr = (data[-1][1] / data[-2][1] - 1.0) * 100.0
+        except (ZeroDivisionError, TypeError):
+            return None, None
+        prev = None
+        if len(data) >= 3 and data[-3][1]:
+            try:
+                prev = (data[-2][1] / data[-3][1] - 1.0) * 100.0
+            except (ZeroDivisionError, TypeError):
+                pass
+        return curr, prev
+    else:
+        # Already a % change series
+        curr = data[-1][1]
+        prev = data[-2][1] if len(data) >= 2 else None
+        return curr, prev
 
 
 def _fred_yoy_with_prev(series_id: str):
@@ -491,11 +541,13 @@ def fetch_yf_price_with_prev(ticker: str, lookback: int = 20):
         return None, None
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_boc_rate(limit: int = 60):
-    """Bank of Canada target overnight rate via BoC Valet API.
+def fetch_boc_rate(limit: int = 200):
+    """Bank of Canada Target Overnight Rate via BoC Valet API (series V39079).
+    V39079 = Target for the overnight rate (daily).
+    V122530 = Bank Rate (target + 25 bps) — NOT used here.
     Returns [(date_str, value)] sorted ascending, or [] on failure."""
     try:
-        url = "https://www.bankofcanada.ca/valet/observations/V122530/json?recent=60"
+        url = "https://www.bankofcanada.ca/valet/observations/V39079/json?recent=200"
         r = requests.get(url, timeout=10)
         if r.status_code != 200:
             return []
@@ -504,7 +556,7 @@ def fetch_boc_rate(limit: int = 60):
         for ob in obs:
             try:
                 date_str = ob["d"]
-                val = float(ob["V122530"]["v"])
+                val = float(ob["V39079"]["v"])
                 rows.append((date_str, val))
             except Exception:
                 continue
@@ -797,23 +849,52 @@ def _ff_latest_two(ff_df: pd.DataFrame, ccy: str, pattern: str):
 # ╚══════════════════════════════════════════════════════════════════════════════
 
 def _last_rate_changes(series_data):
-    """Extract the two most recent actual rate-change events from a step-function series.
+    """Extract policy rate info from a step-function time series.
 
-    Works for both daily (step-function) and monthly FRED/Valet series.
-    Consecutive identical values between meetings are skipped.
+    Works for both daily (USD/GBP/CAD via live APIs) and monthly (FRED OECD) series.
+
+    rate_delta_bps reflects the MOST RECENT CB DECISION:
+      - Hold → 0 bps (rate unchanged from ~1 meeting cycle ago)
+      - Cut/hike → ±N bps (change vs 1 meeting cycle ago)
+    This is achieved by comparing the current rate to the rate ~1 meeting interval ago,
+    NOT by finding the last distinct level (which would always show the last change,
+    even if the CB has held for many consecutive meetings).
 
     Returns (current_rate, prev_rate, rate_delta_bps, prev_delta_bps):
       current_rate     — latest observed rate
-      prev_rate        — rate in effect before the most recent change
-      rate_delta_bps   — size of most recent change in bps (0 if no change found)
-      prev_delta_bps   — size of the change before that (0 if only one change found)
+      prev_rate        — rate in effect before the most recent change (for display)
+      rate_delta_bps   — change vs ~1 meeting cycle ago (0 when CB is holding)
+      prev_delta_bps   — size of the change before the most recent one
     """
     if not series_data:
         return None, None, 0.0, 0.0
 
     current_rate = series_data[-1][1]
 
-    # Walk backwards, collecting distinct rate levels
+    # ── Detect daily vs monthly by checking the gap between the last two dates ──
+    is_daily = False
+    if len(series_data) >= 2:
+        try:
+            d1 = datetime.strptime(series_data[-1][0][:10], "%Y-%m-%d")
+            d2 = datetime.strptime(series_data[-2][0][:10], "%Y-%m-%d")
+            is_daily = abs((d1 - d2).days) <= 7
+        except Exception:
+            pass
+
+    # ── rate_delta: current vs 1 CB meeting cycle ago ──
+    # Daily: ~44 trading days ≈ 9 calendar weeks (covers 2-3 typical meeting gaps)
+    # Monthly: 2 months (covers 1-1.5 typical meeting gaps)
+    lookback_n = 44 if is_daily else 2
+    if len(series_data) > lookback_n:
+        comparison_rate = series_data[-(lookback_n + 1)][1]
+    elif len(series_data) > 1:
+        comparison_rate = series_data[0][1]
+    else:
+        comparison_rate = current_rate
+    rate_delta_bps = (current_rate - comparison_rate) * 100.0
+
+    # ── prev_rate: rate before the most recent change (for Prev column display) ──
+    # Walk backwards to find the last distinct level.
     levels = [current_rate]
     for i in range(len(series_data) - 2, -1, -1):
         val = series_data[i][1]
@@ -822,12 +903,7 @@ def _last_rate_changes(series_data):
             if len(levels) >= 3:
                 break
 
-    if len(levels) == 1:
-        # Rate has been constant throughout the available window
-        return current_rate, current_rate, 0.0, 0.0
-
-    prev_rate      = levels[1]
-    rate_delta_bps = (current_rate - prev_rate) * 100.0
+    prev_rate = levels[1] if len(levels) >= 2 else current_rate
 
     prev_delta_bps = 0.0
     if len(levels) >= 3:
@@ -845,7 +921,7 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
     # Tier 1 — no API key needed (always attempted first):
     #   USD → NY Fed EFFR API  (targetRateTo = upper bound, daily)
     #   GBP → BoE iadb Stats API  (IUDBEDR daily)
-    #   CAD → BoC Valet API  (V122530 monthly)
+    #   CAD → BoC Valet API  (V39079 = Target Overnight Rate, daily)
     #
     # Tier 2 — FRED daily/monthly (requires valid FRED_API_KEY in secrets):
     #   USD → DFEDTARU   EUR → ECBDFR   GBP → BOEBR   CAD → IRSTCB01CAM156N
@@ -904,10 +980,10 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
             rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
 
     elif ccy == "CAD":
-        # Tier 1: BoC Valet API (no key, monthly)
-        _r_data = fetch_boc_rate(60)
+        # Tier 1: BoC Valet API (no key, daily — V39079 = Target Overnight Rate)
+        _r_data = fetch_boc_rate(200)
         if _r_data:
-            _check_freshness("PolicyRate/CAD", _r_data[-1][0], 45)  # monthly data
+            _check_freshness("PolicyRate/CAD", _r_data[-1][0], 10)  # daily data
             rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
         else:
             # Tier 2: FRED OECD monthly (requires key)
@@ -917,13 +993,23 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
                 rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
 
     elif ccy in _CB_MONTHLY_FRED:
-        # Tier 2/4: FRED OECD monthly (requires key)
-        _r_data = fetch_fred_series(_CB_MONTHLY_FRED[ccy], 15)
-        if _r_data:
-            _check_freshness(f"PolicyRate/{ccy}", _r_data[-1][0], 60)
-            rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
+        # Tier 2/4: FRED OECD monthly (requires key).
+        # REJECT if data is >90 days old: OECD series often lags 2-4 months and would
+        # show the wrong (stale) rate. Fall through to static fallback in that case.
+        _r_data_raw = fetch_fred_series(_CB_MONTHLY_FRED[ccy], 15)
+        if _r_data_raw:
+            try:
+                _age = (datetime.now() - datetime.strptime(_r_data_raw[-1][0][:10], "%Y-%m-%d")).days
+            except Exception:
+                _age = 0
+            if _age <= 90:
+                _r_data = _r_data_raw
+                _check_freshness(f"PolicyRate/{ccy}", _r_data[-1][0], 60)
+                rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
+            else:
+                print(f"[MACRO] PolicyRate/{ccy}: FRED data {_age}d old, using static fallback")
 
-    # Tier 5: static fallback (correct 2026 values — only reached if all APIs fail)
+    # Tier 5: static fallback (correct 2026 values — only reached if all APIs fail/stale)
     if rate is None:
         rate = _FB_RATES.get(ccy)
     # prev_rate is resolved after the next-move block
@@ -950,6 +1036,11 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
 
     if prev_rate is None:
         prev_rate = _FB_PREV_RATES.get(ccy)
+
+    # When both rate values came from static fallback (no live data available),
+    # compute rate_delta from the static prev vs current so the delta is informative.
+    if not _r_data and rate is not None and prev_rate is not None and rate_delta == 0.0:
+        rate_delta = (rate - prev_rate) * 100.0
 
     # Per-currency policy rate level thresholds
     if ccy == "JPY":
@@ -1001,53 +1092,27 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
     elif ccy == "EUR":
         cpi,      prev_cpi      = fetch_ecb_series_with_prev("ICP", "M.U2.N.000000.4.ANR")
         core_cpi, prev_core_cpi = fetch_ecb_series_with_prev("ICP", "M.U2.N.XEF000.4.ANR")
-        gdp_data = fetch_fred_series("NAEXKP01EZQ652S", 5)
-        gdp      = gdp_data[-1][1] if gdp_data else None
-        prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
-        if gdp_data:
-            _check_freshness("GDP/EUR", gdp_data[-1][0], 120)
+        # _gdp_qoq_from_fred auto-detects whether NAEXKP01EZQ652S returns a level
+        # (millions of EUR → converts to QoQ %) or already a % (used as-is).
+        gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01EZQ652S")
     elif ccy == "GBP":
         cpi, prev_cpi = _fred_fresh("CPALTT01GBM659N", "CPI/GBP", 45, 10)
-        gdp_data = fetch_fred_series("NAEXKP01GBQ652S", 5)
-        gdp      = gdp_data[-1][1] if gdp_data else None
-        prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
-        if gdp_data:
-            _check_freshness("GDP/GBP", gdp_data[-1][0], 120)
+        gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01GBQ652S")
     elif ccy == "JPY":
         cpi, prev_cpi = _fred_fresh("CPALTT01JPM659N", "CPI/JPY", 45, 10)
-        gdp_data = fetch_fred_series("NAEXKP01JPQ652S", 5)
-        gdp      = gdp_data[-1][1] if gdp_data else None
-        prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
-        if gdp_data:
-            _check_freshness("GDP/JPY", gdp_data[-1][0], 120)
+        gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01JPQ652S")
     elif ccy == "AUD":
         cpi, prev_cpi = _fred_fresh("CPALTT01AUM659N", "CPI/AUD", 60, 10)
-        gdp_data = fetch_fred_series("NAEXKP01AUQ652S", 5)
-        gdp      = gdp_data[-1][1] if gdp_data else None
-        prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
-        if gdp_data:
-            _check_freshness("GDP/AUD", gdp_data[-1][0], 120)
+        gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01AUQ652S")
     elif ccy == "NZD":
         cpi, prev_cpi = _fred_fresh("CPALTT01NZM659N", "CPI/NZD", 60, 10)
-        gdp_data = fetch_fred_series("NAEXKP01NZQ652S", 5)
-        gdp      = gdp_data[-1][1] if gdp_data else None
-        prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
-        if gdp_data:
-            _check_freshness("GDP/NZD", gdp_data[-1][0], 120)
+        gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01NZQ652S")
     elif ccy == "CAD":
         cpi, prev_cpi = _fred_fresh("CPALTT01CAM659N", "CPI/CAD", 45, 10)
-        gdp_data = fetch_fred_series("NAEXKP01CAQ652S", 5)
-        gdp      = gdp_data[-1][1] if gdp_data else None
-        prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
-        if gdp_data:
-            _check_freshness("GDP/CAD", gdp_data[-1][0], 120)
+        gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01CAQ652S")
     elif ccy == "CHF":
         cpi, prev_cpi = _fred_fresh("CPALTT01CHM659N", "CPI/CHF", 45, 10)
-        gdp_data = fetch_fred_series("NAEXKP01CHQ652S", 5)
-        gdp      = gdp_data[-1][1] if gdp_data else None
-        prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
-        if gdp_data:
-            _check_freshness("GDP/CHF", gdp_data[-1][0], 120)
+        gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01CHQ652S")
 
     # Core CPI live fetch for non-USD/EUR currencies (FRED OECD ex-food-energy series).
     # These are monthly YoY % values; threshold 45 days for monthly series, 60 for quarterly.
@@ -1066,7 +1131,20 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
             prev_core_cpi = _cc_data[-2][1] if len(_cc_data) >= 2 else None
             _check_freshness(f"CoreCPI/{ccy}", _cc_data[-1][0], 60)
 
-    # Fallback — current values
+    # CPI FF calendar fallback — fills in when FRED is unavailable or rejected as stale.
+    # FF "CPI y/y" events carry the latest actual headline CPI YoY % for most currencies.
+    # Applied before static fallback so live-released values are preferred over static constants.
+    if cpi is None and not ff_df.empty:
+        try:
+            _ff_c, _ff_cp = _ff_latest_two(ff_df, ccy, "CPI y/y")
+            if _ff_c is not None:
+                cpi = _ff_c
+                if prev_cpi is None and _ff_cp is not None:
+                    prev_cpi = _ff_cp
+        except Exception:
+            pass
+
+    # Fallback — current values (static constants, updated periodically)
     if cpi is None:
         cpi = _FB_CPI.get(ccy)
     if core_cpi is None:
