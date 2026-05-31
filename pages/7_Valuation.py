@@ -87,6 +87,7 @@ ANCHORS = [
 # Lookback → rolling-window length and displayed trailing span (trading days).
 # Quarterly steps + short windows so the 0–100 swings stay clearly visible.
 LOOKBACKS = {
+    "1M":  dict(window=21,  disp=21),
     "3M":  dict(window=63,  disp=63),
     "6M":  dict(window=126, disp=126),
     "9M":  dict(window=189, disp=189),
@@ -189,7 +190,7 @@ def relative_label(diff: float) -> tuple[str, str]:
 # ╚══════════════════════════════════════════════════════════════════════════════
 
 def _val_chart(frame: pd.DataFrame, asset_label: str,
-               anchor_colors: dict[str, str], lookback_label: str) -> go.Figure:
+               anchor_colors: dict[str, str]) -> go.Figure:
     fig = go.Figure()
 
     # ── Valuation zones (style like Module 05) ───────────────────────────────
@@ -208,35 +209,38 @@ def _val_chart(frame: pd.DataFrame, asset_label: str,
             font=dict(color=color, size=9, family="monospace"),
         )
 
-    # ── Macro anchors (muted, thin, in the background) ───────────────────────
-    for label, color in anchor_colors.items():
+    # ── Macro anchors (faded + thin, in the background) ──────────────────────
+    for i, (label, color) in enumerate(anchor_colors.items()):
         if label not in frame:
             continue
         fig.add_trace(go.Scatter(
             x=frame.index, y=frame[label], mode="lines", name=label,
-            line=dict(color=color, width=1.9), opacity=0.85,
+            line=dict(color=color, width=1.6), opacity=0.5, legendrank=i + 2,
             hovertemplate="%{x|%b %d, %Y}<br>" + label + ": %{y:.0f}/100<extra></extra>",
         ))
 
-    # ── Selected asset (bright, thick, foreground) ───────────────────────────
+    # ── Selected asset (bright, thick, foreground, first in legend) ──────────
     fig.add_trace(go.Scatter(
         x=frame.index, y=frame[asset_label], mode="lines", name=asset_label,
-        line=dict(color=ASSET_COLOR, width=3.8),
+        line=dict(color=ASSET_COLOR, width=3.8), legendrank=1,
         hovertemplate="%{x|%b %d, %Y}<br>" + asset_label + ": %{y:.0f}/100<extra></extra>",
     ))
 
     fig.update_layout(
         height=520,
-        title=dict(
-            text=f"Valuation vs. Macro Anchors — {lookback_label} rolling range",
-            font=dict(size=11, color=C["muted"], family="monospace"),
-            x=0, xanchor="left", pad=dict(l=4),
-        ),
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=55, r=95, t=50, b=40),
-        showlegend=False,
+        margin=dict(l=55, r=95, t=42, b=40),
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom", y=1.0,
+            xanchor="center", x=0.5,
+            font=dict(size=10, color=C["text"], family="monospace"),
+            bgcolor="rgba(0,0,0,0)",
+            itemsizing="constant",
+        ),
         xaxis=dict(
             showgrid=False, zeroline=False,
             tickfont=dict(size=10, color=C["muted"], family="monospace"),
@@ -435,11 +439,9 @@ def main() -> None:
     if custom.strip():
         asset_label  = custom.strip().upper()
         asset_ticker = custom.strip()
-        asset_note   = "custom"
     else:
         asset_label  = selected_future
         asset_ticker = FUTURES[selected_future]
-        asset_note   = asset_ticker
 
     window = LOOKBACKS[lookback_label]["window"]
     disp   = LOOKBACKS[lookback_label]["disp"]
@@ -476,14 +478,12 @@ def main() -> None:
     frame[asset_label] = asset_norm.reindex(disp_idx)
 
     anchor_colors: dict[str, str] = {}
-    anchor_used:   dict[str, str] = {}
-    for label, (series, used, color) in anchors_raw.items():
+    for label, (series, _used, color) in anchors_raw.items():
         if series is None:
             continue
         a_norm = stochastic_norm(series, window)
         frame[label] = a_norm.reindex(disp_idx, method="ffill")
         anchor_colors[label] = color
-        anchor_used[label]   = used
 
     frame = frame.ffill().bfill()
 
@@ -498,22 +498,19 @@ def main() -> None:
 
     # ── Chart first (most visible element) ───────────────────────────────────
     st.plotly_chart(
-        _val_chart(frame, asset_label, anchor_colors, lookback_label),
+        _val_chart(frame, asset_label, anchor_colors),
         use_container_width=True,
         config={"displayModeBar": False},
     )
 
-    # ── Colour-coded legend — bottom chips for all 5 rows (same line colours) ─
-    legend_rows = [(asset_label, asset_val, ASSET_COLOR, asset_note)]
+    # ── Colour-coded readings — bottom chips for all 5 rows (same line colours) ─
+    legend_rows = [(asset_label, asset_val, ASSET_COLOR)]
     for lbl in anchor_colors:
-        legend_rows.append((lbl, anchor_vals[lbl], anchor_colors[lbl],
-                            anchor_used.get(lbl, "")))
+        legend_rows.append((lbl, anchor_vals[lbl], anchor_colors[lbl]))
 
     chips = ""
-    for lbl, val, color, extra in legend_rows:
+    for lbl, val, color in legend_rows:
         _, vcolor = val_label(val)
-        extra_html = (f"<span style='color:#555;font-size:10px;'> · {extra}</span>"
-                      if extra else "")
         chips += (
             f"<span style='display:inline-block;background:{C['card']};"
             f"border:1px solid {C['border']};border-radius:8px;padding:7px 14px;"
@@ -521,7 +518,7 @@ def main() -> None:
             f"<span style='color:{color};font-size:14px;'>●</span> "
             f"<span style='color:{C['text']};'>{lbl}</span> "
             f"<b style='color:{vcolor};'>{val:.0f}</b>"
-            f"{extra_html}</span>"
+            f"</span>"
         )
     st.markdown(f"<div style='margin-top:4px;margin-bottom:10px;'>{chips}</div>",
                 unsafe_allow_html=True)
