@@ -2428,7 +2428,20 @@ def _compute_currency_scores(ccy: str, ff_df: pd.DataFrame):
     d4, rows_d4 = _d4_surprises(ccy, ff_df)
     d5, rows_d5 = _d5_proxies(ccy, ff_df)
 
-    composite = (d1 + d2 + d3 + d4 + d5) / 5.0
+    # Average only over dimensions that actually carry data. A dimension is "empty"
+    # (no data) when none of its indicator rows holds a numeric sub-score — e.g. D4
+    # when no release in the window carries a consensus forecast. An empty dimension
+    # is dropped from BOTH numerator and divisor so it can't dilute the bias toward
+    # neutral; a dimension that HAS data but nets to 0.0 keeps numeric row scores and
+    # still counts. This mirrors how _mean() already skips missing sub-scores WITHIN a
+    # dimension. Divisor stays ≥1 in practice (D1/D2/D3/D5 are always populated via
+    # static fallbacks). The *1.3 gain and _level() thresholds are unchanged.
+    def _has_data(rows):
+        return any(isinstance(r[5], float) for r in rows)
+
+    _dims = [(d1, rows_d1), (d2, rows_d2), (d3, rows_d3), (d4, rows_d4), (d5, rows_d5)]
+    _active = [score for score, rows in _dims if _has_data(rows)]
+    composite = (sum(_active) / len(_active)) if _active else 0.0
     final = max(-1.0, min(1.0, composite * 1.3))
 
     all_rows = rows_d1 + rows_d2 + rows_d3 + rows_d4 + rows_d5

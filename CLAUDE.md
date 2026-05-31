@@ -262,13 +262,25 @@ Currency-filtered macro scanner for 8 major FX currencies (USD EUR GBP JPY AUD C
 5. Full-width indicators table + All Currencies ranking
 6. Footer
 
-### Scoring Architecture
-- `_score_indicator(name, vals)` — scores one indicator (len >= 3 required)
-- `_calc_raw_score(history)` — weighted average, returns (indicator_scores, raw_float, monthly_scores)
-- `calc_all_biases(all_histories)` — z-score normalization across all 8 currencies
-  - Formula: `(raw - mean) / max(std, 0.1) * 1.2`, clamped `[-3, +3]`
-  - Labels: > +0.4 BULLISH, < -0.4 BEARISH, else NEUTRAL
-- 12M chart: true monthly re-score per month
+### Scoring Architecture (current — NO z-score / NO `calc_all_biases`)
+Each currency is scored **fully independently** — there is no cross-currency
+normalization. (An older z-score `calc_all_biases` design is gone.)
+- Sub-scores: `_score(v, t0,t1,t2,t3, invert=)` → one of `{-1, -0.5, 0, +0.5, +1}`;
+  `_score_surprise(actual, forecast)` → beat/miss vs consensus (None when no consensus).
+- 5 dimensions, each = `_mean(...)` of its sub-scores (`_mean` skips None sub-scores).
+  D1 Monetary · D2 Inflation+Growth · D3 Labour+Activity · D4 Surprises · D5 Proxies.
+- `_compute_currency_scores(ccy, ff_df)` builds the composite:
+  - **Active-dimension divisor:** average ONLY over dimensions that carry data.
+    A dimension is "empty" when none of its `rows` holds a numeric sub-score
+    (e.g. D4 when no release in the FF window has a consensus). Empty dims are
+    dropped from numerator AND divisor; a dim that HAS data but nets to 0.0 still
+    counts. `composite = sum(active_scores) / len(active_scores)` (≥1 in practice —
+    D1/D2/D3/D5 always populated via static fallbacks).
+  - `final = max(-1.0, min(1.0, composite * 1.3))` — fixed 1.3 gain + clamp `[-1,+1]`.
+- Labels: `_level(final)` with fixed thresholds — STRONG/SLIGHT/MILD BULLISH (>0.60/0.30/0.10),
+  NEUTRAL (`[-0.10, +0.10]`), MILD/SLIGHT/STRONG BEARISH.
+- All-currencies ranking sorts by the independent `total` (`final`) — no relative scaling.
+- 12M chart: true monthly re-score per month.
 
 ### Session State Keys
 - `macro_scores_{CCY}`: dict with keys `total` (float score), `level` (label string e.g. "BULLISH"), `currency` (str), `fmt` ("indicator_12m")
