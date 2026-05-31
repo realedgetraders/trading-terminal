@@ -305,8 +305,8 @@ def _metric_card(label: str, value: str, sub: str = "", color: str = "") -> str:
     )
 
 
-def _screener_table_html(rows: list[tuple[str, str, float]], top: int = 15) -> str:
-    """Render the futures screener table (rows pre-sorted by extremeness)."""
+def _screener_table_html(rows: list[tuple[str, str, float]], top: int | None = None) -> str:
+    """Render the futures screener table (rows pre-sorted, highest value first)."""
     def _th(text, align="left"):
         return (f"<th style='padding:9px 12px;font-size:9px;color:{C['muted']};"
                 f"font-family:monospace;letter-spacing:1px;text-transform:uppercase;"
@@ -316,7 +316,7 @@ def _screener_table_html(rows: list[tuple[str, str, float]], top: int = 15) -> s
               f"{_th('0–100', 'left')}{_th('Status', 'right')}</tr>")
 
     body = ""
-    for i, (label, tk, val) in enumerate(rows[:top]):
+    for i, (label, tk, val) in enumerate(rows if top is None else rows[:top]):
         status, color = val_label(val)
         bg  = C["dim"] if i % 2 == 0 else "transparent"
         bar = (f"<div style='position:relative;height:7px;width:130px;"
@@ -646,19 +646,18 @@ def main() -> None:
 
     screen_rows = [(label, tk, screen_vals[tk])
                    for label, tk in screen_items if tk in screen_vals]
-    screen_rows.sort(key=lambda r: abs(r[2] - 50), reverse=True)
+    screen_rows.sort(key=lambda r: r[2], reverse=True)
 
     if not screen_rows:
         st.info("No screener data available for this category right now.")
     else:
-        st.markdown(_screener_table_html(screen_rows, top=15), unsafe_allow_html=True)
-        if len(screen_rows) > 15:
-            st.markdown(
-                f"<div style='font-size:10px;color:{C['muted']};font-family:monospace;"
-                f"margin-top:8px;'>Top 15 of {len(screen_rows)} scanned · "
-                f"sorted by distance from fair value (50)</div>",
-                unsafe_allow_html=True,
-            )
+        st.markdown(_screener_table_html(screen_rows), unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='font-size:10px;color:{C['muted']};font-family:monospace;"
+            f"margin-top:8px;'>{len(screen_rows)} futures · "
+            f"sorted by valuation (overvalued → neutral → undervalued)</div>",
+            unsafe_allow_html=True,
+        )
 
     _render_footer()
 
