@@ -213,10 +213,9 @@ def main():
       }}
       div[data-testid="stElementContainer"]:has(.ret-module-hero):has(+ div[data-testid="stElementContainer"]:hover) .ret-module-hero {{
           box-shadow:
-              0 0 0 1px rgba(240,180,41,0.5),
-              0 0 22px rgba(240,180,41,0.26),
-              0 0 48px rgba(240,180,41,0.10) !important;
-          border-color: rgba(240,180,41,0.95) !important;
+              0 0 0 1px rgba(120,120,120,0.32),
+              0 0 18px rgba(120,120,120,0.12) !important;
+          border-color: rgba(120,120,120,0.55) !important;
       }}
       div[data-testid="stElementContainer"]:has(.ret-module-hero) {{
           position: relative;
@@ -681,35 +680,35 @@ def _render_journal_section():
 # ── Hero banner renderer (flagship, full-width, centered) ──────────────────────
 
 def _render_hero_card(mod: dict):
-    """Full-width centered premium banner for the flagship module."""
-    _AMBER = C["yellow"]
+    """Full-width centered banner for the flagship module — greyed 'in progress'."""
     st.markdown(
         f"""
 <div class="ret-module-hero"
-     style="background:linear-gradient(170deg, #1a1813 0%, #161410 60%, #131313 100%);
-            border:1.5px solid {_AMBER};border-radius:14px;padding:30px 40px;
-            height:220px;overflow:hidden;text-align:center;
+     style="background:linear-gradient(170deg, #161616 0%, #141414 60%, #121212 100%);
+            border:1.5px dashed #303030;border-radius:14px;padding:30px 40px;
+            height:220px;overflow:hidden;text-align:center;opacity:0.92;
             display:flex;flex-direction:column;align-items:center;justify-content:center;
-            box-shadow:inset 0 0 90px rgba(0,0,0,0.45),0 0 18px rgba(240,180,41,0.07);">
+            box-shadow:inset 0 0 90px rgba(0,0,0,0.5);">
   <div style="margin-bottom:14px;">
-    <span style="background:{_AMBER};color:{C['bg']};font-size:9px;
+    <span style="background:#1a1a1a;color:#8a8a8a;font-size:9px;
                  font-family:monospace;font-weight:800;letter-spacing:2.5px;
-                 padding:4px 16px;border-radius:20px;text-transform:uppercase;">PRO · All-in-One</span>
+                 padding:4px 16px;border-radius:20px;text-transform:uppercase;
+                 border:1px solid #333333;">🚧 In Arbeit</span>
   </div>
   <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:6px;">
-    <span style="font-size:26px;">{mod['icon']}</span>
-    <span style="font-size:23px;font-weight:800;color:{C['text']};
+    <span style="font-size:26px;filter:grayscale(1);">{mod['icon']}</span>
+    <span style="font-size:23px;font-weight:800;color:#6a6a6a;
                  font-family:monospace;letter-spacing:2px;">{mod['title']}</span>
   </div>
-  <div style="font-size:9px;color:{_AMBER};font-family:monospace;
+  <div style="font-size:9px;color:#5a5a5a;font-family:monospace;
               letter-spacing:3px;text-transform:uppercase;margin-bottom:14px;">
     Every Module · One View
   </div>
-  <div style="font-size:13px;color:{C['muted']};line-height:1.7;
+  <div style="font-size:13px;color:#4a4a4a;line-height:1.7;
               font-family:sans-serif;max-width:700px;">
-    The premium flagship that fuses every module into a single screen — COT positioning,
+    The premium flagship that will fuse every module into a single screen — COT positioning,
     seasonality, macro bias and the economic calendar for any forex pair, all evaluated
-    at one glance. Your complete edge, fully assembled in one absolutely insane terminal.
+    at one glance. Currently in development.
   </div>
 </div>
         """,

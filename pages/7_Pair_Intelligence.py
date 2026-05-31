@@ -30,7 +30,7 @@ from _shared import (
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  CONSTANTS
 # ╚══════════════════════════════════════════════════════════════════════════════
-_PASSWORD = "12345"
+_PASSWORD = "t26imheim"   # developer access to the in-progress module
 
 # All 28 major forex pairs in standard market notation
 PAIRS = [
@@ -432,36 +432,51 @@ def main() -> None:
     )
     _inject_css()
 
-    # ── Password gate ──────────────────────────────────────────────────────────
+    # ── Construction gate (developer access only) ──────────────────────────────
     if not st.session_state.get("pair_intel_auth"):
         _p7_back_col, _ = st.columns([1, 6])
         with _p7_back_col:
             if st.button("← Back to Hub", key="pair_intel_back"):
                 st.switch_page("app.py")
-        st.markdown("<div style='height:8vh;'></div>", unsafe_allow_html=True)
-        _, col_c, _ = st.columns([3, 2, 3])
+        st.markdown("<div style='height:7vh;'></div>", unsafe_allow_html=True)
+        _, col_c, _ = st.columns([2, 3, 2])
         with col_c:
             st.markdown(
-                f"<div style='text-align:center;margin-bottom:22px;'>"
-                f"<span style='background:{C['teal']};color:#0a0c10;font-size:9px;"
-                f"font-weight:800;font-family:monospace;letter-spacing:2px;"
-                f"padding:3px 12px;border-radius:12px;'>PRO ACCESS</span>"
-                f"<div style='font-size:22px;font-weight:800;color:{C['text']};"
-                f"font-family:monospace;letter-spacing:-0.5px;margin-top:14px;'>"
+                f"<div style='background:{C['card']};border:1px dashed {C['border']};"
+                f"border-radius:16px;padding:44px 44px 36px;text-align:center;"
+                f"box-shadow:inset 0 0 80px rgba(0,0,0,0.4);'>"
+                f"<div style='font-size:46px;line-height:1;margin-bottom:18px;'>🚧</div>"
+                f"<div style='margin-bottom:16px;'>"
+                f"<span style='background:#1a1a1a;color:#8a8a8a;font-size:10px;"
+                f"font-family:monospace;font-weight:800;letter-spacing:2.5px;"
+                f"padding:5px 16px;border-radius:20px;text-transform:uppercase;"
+                f"border:1px solid #333333;'>In Arbeit</span>"
+                f"</div>"
+                f"<div style='font-size:24px;font-weight:800;color:{C['text']};"
+                f"font-family:monospace;letter-spacing:-0.5px;margin-bottom:8px;'>"
                 f"Pair Intelligence</div>"
-                f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
-                f"margin-top:5px;'>Enter password to continue</div>"
+                f"<div style='font-size:12px;color:{C['muted']};font-family:sans-serif;"
+                f"line-height:1.7;max-width:360px;margin:0 auto;'>"
+                f"This module is currently under construction and not yet available. "
+                f"Check back soon.</div>"
                 f"</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown("<div style='height:18px;'></div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div style='text-align:center;font-size:9px;color:#555555;"
+                f"font-family:monospace;letter-spacing:2px;text-transform:uppercase;"
+                f"margin-bottom:8px;'>Developer Access</div>",
                 unsafe_allow_html=True,
             )
             pw = st.text_input(
                 "Password",
                 type="password",
-                placeholder="Enter password…",
+                placeholder="Developer password…",
                 label_visibility="collapsed",
                 key="pair_intel_pw",
             )
-            if st.button("Unlock →", use_container_width=True, key="pair_intel_unlock"):
+            if st.button("Enter →", use_container_width=True, key="pair_intel_unlock"):
                 if pw == _PASSWORD:
                     st.session_state["pair_intel_auth"] = True
                     st.rerun()
