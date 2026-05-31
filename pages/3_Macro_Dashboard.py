@@ -28,6 +28,10 @@ _FRED_KEY_VALID: bool = (
     and FRED_API_KEY not in ("your_fred_api_key_here", "")
 )
 
+# Set env MACRO_DEBUG=1 to print freshness/fallback diagnostics to the server log.
+_MACRO_DEBUG: bool = _os.environ.get("MACRO_DEBUG") == "1"
+
+
 def _src(live_label: str, is_live: bool) -> str:
     """Return the source label with a '⚠' prefix when falling back to static data."""
     return live_label if is_live else f"⚠ static ({_FB_DATE})"
@@ -64,7 +68,7 @@ CURRENCY_FLAG = {
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  STATIC FALLBACKS
 # ╚══════════════════════════════════════════════════════════════════════════════
-_FB_DATE  = "2026-05-28"
+_FB_DATE  = "2026-05-31"
 
 _FB_RATES  = {"USD": 3.75, "EUR": 2.00, "GBP": 3.75, "JPY": 0.75,
               "AUD": 4.35, "NZD": 2.25, "CAD": 2.25, "CHF": 0.00}
@@ -297,7 +301,7 @@ def _check_freshness(name: str, date_str: str, max_days: int) -> None:
     try:
         d = datetime.strptime(str(date_str)[:10], "%Y-%m-%d")
         age = (datetime.now() - d).days
-        if age > max_days:
+        if age > max_days and _MACRO_DEBUG:
             print(
                 f"[MACRO FRESHNESS] {name}: last obs {date_str[:10]} "
                 f"is {age}d old (threshold {max_days}d)"
@@ -315,7 +319,8 @@ def _fred_fresh(series_id: str, name: str, max_days: int, limit: int = 10):
         try:
             age = (datetime.now() - datetime.strptime(data[-1][0][:10], "%Y-%m-%d")).days
             if age > max_days:
-                print(f"[MACRO FRESHNESS] {name}: {data[-1][0]} is {age}d old (>{max_days}d), discarding")
+                if _MACRO_DEBUG:
+                    print(f"[MACRO FRESHNESS] {name}: {data[-1][0]} is {age}d old (>{max_days}d), discarding")
                 return None, None
         except Exception:
             pass
@@ -336,7 +341,8 @@ def _fred_qoq_yoy_fresh(series_id: str, name: str, max_days: int):
     try:
         age = (datetime.now() - datetime.strptime(data[-1][0][:10], "%Y-%m-%d")).days
         if age > max_days:
-            print(f"[MACRO FRESHNESS] {name}: {data[-1][0]} is {age}d old (>{max_days}d), discarding")
+            if _MACRO_DEBUG:
+                print(f"[MACRO FRESHNESS] {name}: {data[-1][0]} is {age}d old (>{max_days}d), discarding")
             return None, None
     except Exception:
         pass
@@ -451,7 +457,8 @@ def _gdp_qoq_from_fred(series_id: str, max_days: int = 270) -> tuple:
     try:
         age = (datetime.now() - datetime.strptime(data[-1][0][:10], "%Y-%m-%d")).days
         if age > max_days:
-            print(f"[MACRO FRESHNESS] GDP/{series_id}: {data[-1][0]} is {age}d old (>{max_days}d), discarding")
+            if _MACRO_DEBUG:
+                print(f"[MACRO FRESHNESS] GDP/{series_id}: {data[-1][0]} is {age}d old (>{max_days}d), discarding")
             return None, None
     except Exception:
         pass
@@ -709,7 +716,8 @@ def fetch_abs_cpi():
             _ld = _cal.monthrange(_y, _m)[1]
             _age = (datetime.now().date() - datetime(_y, _m, _ld).date()).days
             if _age > 60:
-                print(f"[MACRO FRESHNESS] CPI/AUD ABS: {h_period} is {_age}d old (>60d), discarding")
+                if _MACRO_DEBUG:
+                    print(f"[MACRO FRESHNESS] CPI/AUD ABS: {h_period} is {_age}d old (>60d), discarding")
                 return None, None, None, None
         except Exception:
             pass
@@ -763,7 +771,8 @@ def fetch_eurostat_hicp(geo: str):
             _ld = _cal2.monthrange(_ey, _em)[1]
             _age = (datetime.now().date() - datetime(_ey, _em, _ld).date()).days
             if _age > 45:
-                print(f"[MACRO FRESHNESS] HICP/{geo}: {last_period} is {_age}d old (>45d), discarding")
+                if _MACRO_DEBUG:
+                    print(f"[MACRO FRESHNESS] HICP/{geo}: {last_period} is {_age}d old (>45d), discarding")
                 return None, None, None, None
         except Exception:
             pass
@@ -1192,17 +1201,6 @@ def _cot_index(ccy: str):
 # ║  FF CALENDAR HELPERS — BEAT/MISS LOOKUP
 # ╚══════════════════════════════════════════════════════════════════════════════
 
-_FF_PATTERNS = {
-    "USD": ["CPI m/m", "Core CPI m/m", "Nonfarm Payrolls", "GDP q/q", "ISM Manufacturing PMI"],
-    "EUR": ["CPI y/y", "Core CPI y/y", "Employment Change q/q", "GDP q/q", "Manufacturing PMI"],
-    "GBP": ["CPI y/y", "Core CPI y/y", "Employment Change", "GDP m/m", "Manufacturing PMI"],
-    "JPY": ["National Core CPI y/y", "GDP q/q", "Employment Change", "Unemployment Rate", "Manufacturing PMI"],
-    "AUD": ["CPI q/q", "Trimmed Mean CPI q/q", "Employment Change", "GDP q/q", "Manufacturing PMI"],
-    "NZD": ["CPI q/q", "Employment Change q/q", "GDP q/q", "Manufacturing PMI"],
-    "CAD": ["CPI m/m", "Employment Change", "GDP m/m", "Ivey PMI"],
-    "CHF": ["CPI m/m", "Employment Change", "GDP q/q", "Manufacturing PMI"],
-}
-
 
 def _ff_beat_miss(ff_df: pd.DataFrame, ccy: str, pattern: str):
     """Find latest FF event matching pattern that has both actual+forecast populated.
@@ -1446,7 +1444,7 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
                 _check_freshness(f"PolicyRate/{ccy}", _r_data[-1][0], 60)
                 rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
                 _rate_is_live = True
-            else:
+            elif _MACRO_DEBUG:
                 print(f"[MACRO] PolicyRate/{ccy}: FRED data {_age}d old, using static fallback")
 
     # Tier 5: static fallback (correct 2026 values — only reached if all APIs fail/stale)
@@ -1508,7 +1506,10 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
 
     s_next  = _score(next_move_diff, -0.30, -0.10, 0.10, 0.30)
     d1 = _mean(s_level, s_delta, s_next)
-    _rate_src = _src("NY Fed / BoE / BoC / ECB", _rate_is_live)
+    # Source label reflects the actual data provider per currency. USD/EUR/GBP/CAD
+    # have dedicated no-key APIs; JPY/AUD/NZD/CHF come from the FRED OECD series.
+    _rate_label = {"USD": "NY Fed", "EUR": "ECB", "GBP": "BoE", "CAD": "BoC"}.get(ccy, "FRED OECD")
+    _rate_src = _src(_rate_label, _rate_is_live)
     rows = [
         ("Policy Rate",        rate,           prev_rate,        None, None, s_level, _rate_src),
         ("Rate Delta (bps)",   rate_delta,     prev_rate_delta,  None, None, s_delta, _rate_src),
@@ -1530,12 +1531,15 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
     _cpi_is_live = False
     _gdp_is_live = False
     _cpi_src_label = "FRED/ECB"  # overridden below per actual source
+    _ccpi_is_live   = False
+    _ccpi_src_label = "FRED/ECB"  # core CPI source, tracked independently of headline
 
     # ── USD: FRED BLS (unchanged) ─────────────────────────────────────────────
     if ccy == "USD":
         cpi, prev_cpi           = _fred_yoy_with_prev("CPIAUCSL")
         core_cpi, prev_core_cpi = _fred_yoy_with_prev("CPILFESL")
         if cpi is not None: _cpi_is_live = True; _cpi_src_label = "FRED"
+        if core_cpi is not None: _ccpi_is_live = True; _ccpi_src_label = "FRED"
         gdp_data = fetch_fred_series("A191RL1Q225SBEA", 5)
         gdp      = gdp_data[-1][1] if gdp_data else None
         prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
@@ -1580,6 +1584,7 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
                     _cpi_is_live = True; _cpi_src_label = "Eurostat"
                     if core_cpi is None and _eur_c is not None:
                         core_cpi = _eur_c; prev_core_cpi = _eur_cp
+                        _ccpi_is_live = True; _ccpi_src_label = "Eurostat"
 
             elif ccy == "GBP":
                 cpi, prev_cpi = _fred_fresh("CPALTT01GBM659N", "CPI/GBP", 45, 10)
@@ -1608,6 +1613,7 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
                     _cpi_is_live = True; _cpi_src_label = "ABS"
                     if core_cpi is None and _abs_c is not None:
                         core_cpi = _abs_c; prev_core_cpi = _abs_cp
+                        _ccpi_is_live = True; _ccpi_src_label = "ABS"
                 else:
                     cpi, prev_cpi = _fred_qoq_yoy_fresh("AUSCPIALLQINMEI", "CPI/AUD", 100)
                     if cpi is not None: _cpi_is_live = True; _cpi_src_label = "FRED"
@@ -1638,6 +1644,7 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
                     _cpi_is_live = True; _cpi_src_label = "Eurostat"
                     if core_cpi is None and _chf_c is not None:
                         core_cpi = _chf_c; prev_core_cpi = _chf_cp
+                        _ccpi_is_live = True; _ccpi_src_label = "Eurostat"
                 else:
                     cpi, prev_cpi = _fred_fresh("CPALTT01CHM659N", "CPI/CHF", 45, 10)
                     if cpi is not None: _cpi_is_live = True; _cpi_src_label = "FRED"
@@ -1671,6 +1678,8 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
     # Others: FRED OECD 659N with 45-day gate — accepts if FRED has current month's data.
     if core_cpi is None and ccy == "GBP":
         core_cpi, prev_core_cpi = fetch_ons_core_cpi_yoy()
+        if core_cpi is not None:
+            _ccpi_is_live = True; _ccpi_src_label = "ONS"
 
     if core_cpi is None and ccy == "EUR":
         # Eurostat ei_cphi_m CP-HI00XEF (ex energy, food, alcohol, tobacco).
@@ -1679,6 +1688,7 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
         _, _, _eur_c2, _eur_cp2 = fetch_eurostat_hicp("EA")
         if _eur_c2 is not None:
             core_cpi = _eur_c2; prev_core_cpi = _eur_cp2
+            _ccpi_is_live = True; _ccpi_src_label = "Eurostat"
 
     _CORE_CPI_FRED = {
         "JPY": "CPGRLE01JPM659N",
@@ -1698,6 +1708,7 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
             if _cc_age <= 45:
                 core_cpi = _cc_data[-1][1]
                 prev_core_cpi = _cc_data[-2][1] if len(_cc_data) >= 2 else None
+                _ccpi_is_live = True; _ccpi_src_label = "FRED"
 
     # Fallback — current values (static constants, updated periodically)
     if cpi is None:
@@ -1784,7 +1795,7 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
     _gdp_src = _src("FRED",        _gdp_is_live)
     rows = [
         ("CPI YoY %",         cpi,      prev_cpi,      None,     None,   s_cpi,  _cpi_src),
-        ("Core CPI YoY %",    core_cpi, prev_core_cpi, None,     None,   s_ccpi, _cpi_src),
+        ("Core CPI YoY %",    core_cpi, prev_core_cpi, None,     None,   s_ccpi, _src(_ccpi_src_label, _ccpi_is_live)),
         ("GDP QoQ %",         gdp,      prev_gdp,      None,     None,   s_gdp,  _gdp_src),
         ("Manufacturing PMI", pmi,      pmi_prev,      pmi_fcst, pmi_bm, s_pmi,  _src("ForexFactory", _pmi_is_live)),
     ]
@@ -3222,9 +3233,12 @@ def _render_data_health(indicator_rows: list):
         )
         for row in indicator_rows:
             indicator = row[0]; source = row[6]
-            is_static = source.startswith("⚠")
-            status_col  = _warn if is_static else _green
-            status_icon = "⚠ STATIC" if is_static else "✓ LIVE"
+            if source.startswith("⚠ static"):
+                status_col  = _warn;  status_icon = "⚠ STATIC"
+            elif source.startswith("⚠"):
+                status_col  = _muted; status_icon = "○ UNAVAILABLE"
+            else:
+                status_col  = _green; status_icon = "✓ LIVE"
             src_display = source.replace("⚠ ", "")
             html += (
                 "<tr>"
