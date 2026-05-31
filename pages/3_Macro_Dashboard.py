@@ -19,6 +19,18 @@ try:
 except Exception:
     FRED_API_KEY = _os.environ.get("FRED_API_KEY", "")
 
+# True only when the key looks like a real 32-char FRED key (not placeholder).
+# Used throughout the module to mark FRED-dependent indicators as live vs static.
+_FRED_KEY_VALID: bool = (
+    len(FRED_API_KEY) == 32
+    and FRED_API_KEY.replace("-", "").isalnum()
+    and FRED_API_KEY not in ("your_fred_api_key_here", "")
+)
+
+def _src(live_label: str, is_live: bool) -> str:
+    """Return the source label with a '⚠' prefix when falling back to static data."""
+    return live_label if is_live else f"⚠ static ({_FB_DATE})"
+
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  DESIGN SYSTEM
 # ╚══════════════════════════════════════════════════════════════════════════════
@@ -73,8 +85,8 @@ _FB_RETAIL = {"USD": 0.1,  "EUR": 0.1,  "GBP": 0.0,  "JPY": -1.1,
 
 # Previous-period fallbacks — used when live API is unavailable so PREV column never shows "—"
 _FB_PREV_RATES = {"USD": 4.00, "EUR": 2.25, "GBP": 4.00, "JPY": 0.50,
-                  "AUD": 3.85, "NZD": 2.50, "CAD": 2.50, "CHF": 0.25}
-# AUD prev: 3.85 (before 5 May 2026 hike); CAD prev: 2.50 (before last cut)
+                  "AUD": 4.10, "NZD": 2.50, "CAD": 2.50, "CHF": 0.25}
+# AUD prev: 4.10 (rate before 5 May 2026 hike to 4.35, not 3.85); CAD prev: 2.50 (before last cut)
 _FB_PREV_CPI   = {"USD": 2.6,  "EUR": 2.3,  "GBP": 2.8,  "JPY": 2.8,
                   "AUD": 3.4,  "NZD": 2.2,  "CAD": 1.9,  "CHF": 0.3}
 _FB_PREV_CCPI  = {"USD": 3.0,  "EUR": 2.8,  "GBP": 3.6,  "JPY": 2.4,
@@ -111,8 +123,8 @@ _FB_RATE_DELTA = {
     "USD": 0.0,    # Fed: holding at 3.75 (last cut Dec 2024)
     "EUR": 0.0,    # ECB: holding at 2.00
     "GBP": 0.0,    # BoE: holding at 3.75
-    "JPY": 25.0,   # BoJ: hiked +25 bps to 0.75 (early 2026)
-    "AUD": 50.0,   # RBA: hiked +50 bps to 4.35 (5 May 2026; 2×25 bps vs prev FB 3.85)
+    "JPY": 0.0,    # BoJ: held at 0.75 (last move was hike in early 2026; held Mar/Apr)
+    "AUD": 25.0,   # RBA: hiked +25 bps to 4.35 on 5 May 2026 (from 4.10)
     "NZD": 0.0,    # RBNZ: holding at 2.25
     "CAD": 0.0,    # BoC: handled by live V39079 data; fallback = holding
     "CHF": 0.0,    # SNB: holding at 0.00
@@ -649,6 +661,46 @@ def fetch_boe_rate():
         return []
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_ecb_estr(limit: int = 200):
+    """Euro Short-Term Rate (€STR) via ECB Data Portal — series EST/B.EU000A2X2A25.WT.
+    No API key required. €STR tracks the ECB Deposit Facility Rate (DFR) within ~10 bps.
+    Rounding to the nearest 25 bps recovers the exact DFR level reliably.
+    Returns [(date_str, estr_rate)] sorted ascending, or [] on failure.
+    """
+    try:
+        url = (
+            "https://data-api.ecb.europa.eu/service/data/EST/B.EU000A2X2A25.WT"
+            f"?format=jsondata&lastNObservations={limit}"
+        )
+        r = requests.get(url, timeout=12)
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        series = data["dataSets"][0]["series"]
+        k = list(series.keys())[0]
+        obs = series[k]["observations"]
+        periods = data["structure"]["dimensions"]["observation"][0]["values"]
+        rows = []
+        for idx_str, val_list in obs.items():
+            try:
+                date_str = periods[int(idx_str)]["id"]
+                rows.append((date_str, float(val_list[0])))
+            except Exception:
+                continue
+        rows.sort(key=lambda x: x[0])
+        return rows
+    except Exception:
+        return []
+
+
+def _estr_to_dfr(estr_rate: float) -> float:
+    """Convert €STR to ECB DFR by rounding to the nearest 25 bps.
+    €STR typically trades 0–10 bps below the DFR. Since the ECB always
+    sets the DFR as a multiple of 25 bps, this rounding is exact."""
+    return round(estr_rate / 0.25) * 0.25
+
+
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  FOREXFACTORY CALENDAR  (ttl=1800)
 # ╚══════════════════════════════════════════════════════════════════════════════
@@ -961,6 +1013,7 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
     rate_delta      = 0.0
     prev_rate_delta = 0.0
     _r_data         = []
+    _rate_is_live   = False   # True if rate came from a live API (not static fallback)
 
     if ccy == "USD":
         # Tier 1: NY Fed EFFR (no key)
@@ -971,18 +1024,26 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
         if _r_data:
             _check_freshness("PolicyRate/USD", _r_data[-1][0], 5)
             rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
+            _rate_is_live = True
 
     elif ccy == "EUR":
-        # Tier 2: FRED ECBDFR daily (requires key) — most precise
-        _r_data = fetch_fred_series("ECBDFR", 500)
-        if _r_data:
+        # Tier 1: ECB €STR (no key) → round to nearest 25 bps = ECB DFR level.
+        # The ECB FM dataset is unavailable on the new ECB Data Portal (HTTP 400).
+        # €STR tracks the DFR within <10 bps; rounding to 25 bps recovers the exact DFR.
+        _estr_data = fetch_ecb_estr(200)
+        if _estr_data:
+            # Convert each ESTR observation to DFR equivalent (round to 25 bps)
+            _r_data = [(_d, _estr_to_dfr(_v)) for _d, _v in _estr_data]
             _check_freshness("PolicyRate/EUR", _r_data[-1][0], 5)
             rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
+            _rate_is_live = True
         else:
-            # Tier 3: ECB SDW monthly (no key)
-            rate, prev_rate = fetch_ecb_series_with_prev("FM", "M.U2.EUR.RT0.DFR.R.1.Z5.I.A")
-            if rate is not None and prev_rate is not None:
-                rate_delta = (rate - prev_rate) * 100.0
+            # Tier 2: FRED ECBDFR daily (requires key) — fallback if ECB API down
+            _r_data = fetch_fred_series("ECBDFR", 500)
+            if _r_data:
+                _check_freshness("PolicyRate/EUR", _r_data[-1][0], 5)
+                rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
+                _rate_is_live = True
 
     elif ccy == "GBP":
         # Tier 1: BoE iadb Stats API (no key)
@@ -993,6 +1054,7 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
         if _r_data:
             _check_freshness("PolicyRate/GBP", _r_data[-1][0], 5)
             rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
+            _rate_is_live = True
 
     elif ccy == "CAD":
         # Tier 1: BoC Valet API (no key, daily — V39079 = Target Overnight Rate)
@@ -1000,12 +1062,14 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
         if _r_data:
             _check_freshness("PolicyRate/CAD", _r_data[-1][0], 10)  # daily data
             rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
+            _rate_is_live = True
         else:
             # Tier 2: FRED OECD monthly (requires key)
             _r_data = fetch_fred_series("IRSTCB01CAM156N", 15)
             if _r_data:
                 _check_freshness("PolicyRate/CAD", _r_data[-1][0], 60)
                 rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
+                _rate_is_live = True
 
     elif ccy in _CB_MONTHLY_FRED:
         # Tier 2/4: FRED OECD monthly (requires key).
@@ -1021,6 +1085,7 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
                 _r_data = _r_data_raw
                 _check_freshness(f"PolicyRate/{ccy}", _r_data[-1][0], 60)
                 rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
+                _rate_is_live = True
             else:
                 print(f"[MACRO] PolicyRate/{ccy}: FRED data {_age}d old, using static fallback")
 
@@ -1081,9 +1146,10 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
 
     s_next  = _score(next_move_diff, -0.30, -0.10, 0.10, 0.30)
     d1 = _mean(s_level, s_delta, s_next)
+    _rate_src = _src("NY Fed / BoE / BoC / ECB", _rate_is_live)
     rows = [
-        ("Policy Rate",        rate,           prev_rate,        None, None, s_level, "FRED/ECB"),
-        ("Rate Delta (bps)",   rate_delta,     prev_rate_delta,  None, None, s_delta, "FRED/ECB"),
+        ("Policy Rate",        rate,           prev_rate,        None, None, s_level, _rate_src),
+        ("Rate Delta (bps)",   rate_delta,     prev_rate_delta,  None, None, s_delta, _rate_src),
         ("Next Move Forecast", next_move_diff, None,             None, None, s_next,  "ForexFactory"),
     ]
     return d1, rows
@@ -1098,39 +1164,57 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
     prev_cpi = None
     prev_core_cpi = None
     prev_gdp = None
+    _cpi_is_live = False
+    _gdp_is_live = False
 
     if ccy == "USD":
         cpi, prev_cpi           = _fred_yoy_with_prev("CPIAUCSL")
         core_cpi, prev_core_cpi = _fred_yoy_with_prev("CPILFESL")
+        if cpi is not None: _cpi_is_live = True
         gdp_data = fetch_fred_series("A191RL1Q225SBEA", 5)
         gdp      = gdp_data[-1][1] if gdp_data else None
         prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
         if gdp_data:
             _check_freshness("GDP/USD", gdp_data[-1][0], 120)
+            _gdp_is_live = True
     elif ccy == "EUR":
         cpi,      prev_cpi      = fetch_ecb_series_with_prev("ICP", "M.U2.N.000000.4.ANR")
         core_cpi, prev_core_cpi = fetch_ecb_series_with_prev("ICP", "M.U2.N.XEF000.4.ANR")
+        if cpi is not None: _cpi_is_live = True
         # _gdp_qoq_from_fred auto-detects whether NAEXKP01EZQ652S returns a level
         # (millions of EUR → converts to QoQ %) or already a % (used as-is).
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01EZQ652S")
+        if gdp is not None: _gdp_is_live = True
     elif ccy == "GBP":
         cpi, prev_cpi = _fred_fresh("CPALTT01GBM659N", "CPI/GBP", 45, 10)
+        if cpi is not None: _cpi_is_live = True
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01GBQ652S")
+        if gdp is not None: _gdp_is_live = True
     elif ccy == "JPY":
         cpi, prev_cpi = _fred_fresh("CPALTT01JPM659N", "CPI/JPY", 45, 10)
+        if cpi is not None: _cpi_is_live = True
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01JPQ652S")
+        if gdp is not None: _gdp_is_live = True
     elif ccy == "AUD":
         cpi, prev_cpi = _fred_fresh("CPALTT01AUM659N", "CPI/AUD", 60, 10)
+        if cpi is not None: _cpi_is_live = True
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01AUQ652S")
+        if gdp is not None: _gdp_is_live = True
     elif ccy == "NZD":
         cpi, prev_cpi = _fred_fresh("CPALTT01NZM659N", "CPI/NZD", 60, 10)
+        if cpi is not None: _cpi_is_live = True
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01NZQ652S")
+        if gdp is not None: _gdp_is_live = True
     elif ccy == "CAD":
         cpi, prev_cpi = _fred_fresh("CPALTT01CAM659N", "CPI/CAD", 45, 10)
+        if cpi is not None: _cpi_is_live = True
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01CAQ652S")
+        if gdp is not None: _gdp_is_live = True
     elif ccy == "CHF":
         cpi, prev_cpi = _fred_fresh("CPALTT01CHM659N", "CPI/CHF", 45, 10)
+        if cpi is not None: _cpi_is_live = True
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01CHQ652S")
+        if gdp is not None: _gdp_is_live = True
 
     # Core CPI live fetch for non-USD/EUR currencies (FRED OECD ex-food-energy series).
     # These are monthly YoY % values; threshold 45 days for monthly series, 60 for quarterly.
@@ -1157,6 +1241,7 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
             _ff_c, _ff_cp = _ff_latest_two(ff_df, ccy, "CPI y/y")
             if _ff_c is not None:
                 cpi = _ff_c
+                _cpi_is_live = True  # FF is a live source
                 if prev_cpi is None and _ff_cp is not None:
                     prev_cpi = _ff_cp
         except Exception:
@@ -1242,10 +1327,12 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
         s_gdp = _score(gdp, -0.2, 0.0, 0.3, 0.6)
     s_pmi  = _score(pmi, 47.0, 49.0, 51.0, 53.0)
     d2 = _mean(s_cpi, s_ccpi, s_gdp, s_pmi)
+    _cpi_src = _src("FRED/ECB", _cpi_is_live)
+    _gdp_src = _src("FRED",     _gdp_is_live)
     rows = [
-        ("CPI YoY %",         cpi,      prev_cpi,      None,     None,   s_cpi,  "FRED/ECB"),
-        ("Core CPI YoY %",    core_cpi, prev_core_cpi, None,     None,   s_ccpi, "FRED/ECB"),
-        ("GDP QoQ %",         gdp,      prev_gdp,      None,     None,   s_gdp,  "FRED"),
+        ("CPI YoY %",         cpi,      prev_cpi,      None,     None,   s_cpi,  _cpi_src),
+        ("Core CPI YoY %",    core_cpi, prev_core_cpi, None,     None,   s_ccpi, _cpi_src),
+        ("GDP QoQ %",         gdp,      prev_gdp,      None,     None,   s_gdp,  _gdp_src),
         ("Manufacturing PMI", pmi,      pmi_prev,      pmi_fcst, pmi_bm, s_pmi,  "ForexFactory"),
     ]
     return d2, rows
@@ -1984,6 +2071,7 @@ _CACHE_FUNS = [
     fetch_fred_series,
     fetch_ecb_series,
     fetch_ecb_series_with_prev,
+    fetch_ecb_estr,
     fetch_yf_price,
     fetch_yf_price_with_prev,
     fetch_usd_rate,
@@ -2173,6 +2261,8 @@ def _render_indicators_table(rows: list):
     _text   = C["text"]
     _bg     = C["bg"]
 
+    _warn = "#f0b429"  # amber for ⚠ static markers
+
     hdr_style = (
         f"background:{_bg};color:{_muted};font-size:9px;font-family:monospace;"
         "letter-spacing:1.5px;padding:7px 10px;text-transform:uppercase;"
@@ -2191,24 +2281,25 @@ def _render_indicators_table(rows: list):
         f"<th style='{hdr_style}'>Indicator</th>"
         f"<th style='{hdr_style};text-align:right;'>Value</th>"
         f"<th style='{hdr_style};text-align:right;'>Previous</th>"
-        f"<th style='{hdr_style};text-align:right;'>Forecast</th>"
-        f"<th style='{hdr_style};text-align:right;'>Beat / Miss</th>"
         f"<th style='{hdr_style};text-align:right;'>Score</th>"
+        f"<th style='{hdr_style};'>Source</th>"
         "</tr></thead><tbody>"
     )
     for row in rows:
-        indicator, value, prev, forecast, beat_miss, score, source = row  # source kept in tuple, not rendered
+        indicator, value, prev, forecast, beat_miss, score, source = row
         score_col = _score_color(score)
         score_val = f"{score:+.2f}" if isinstance(score, float) else "—"
-        bm_str = beat_miss if beat_miss else "—"
+        is_static = source.startswith("⚠")
+        # Amber colour for ⚠ source entries so stale/static data is immediately visible
+        src_col   = _warn if is_static else _muted
+        src_disp  = source
         html += (
             "<tr>"
             f"<td style='{cell_style}'>{indicator}</td>"
             f"<td style='{cell_style};text-align:right;'>{_fmt_val(value)}</td>"
             f"<td style='{cell_style};text-align:right;color:{_muted};'>{_fmt_val(prev)}</td>"
-            f"<td style='{cell_style};text-align:right;color:{_muted};'>{_fmt_val(forecast)}</td>"
-            f"<td style='{cell_style};text-align:right;color:{_muted};'>{bm_str}</td>"
             f"<td style='{cell_style};text-align:right;font-weight:700;color:{score_col};'>{score_val}</td>"
+            f"<td style='{cell_style};font-size:9px;color:{src_col};'>{src_disp}</td>"
             "</tr>"
         )
     html += "</tbody></table></div>"
@@ -2583,7 +2674,110 @@ def main():
         )
         _render_all_currencies_ranking()
 
+    _render_data_health(indicator_rows)
     _render_footer()
+
+
+def _render_data_health(indicator_rows: list):
+    """Compact Data Health panel — shows live vs static status for every indicator.
+
+    Displayed as a collapsed expander so it doesn't clutter the default view.
+    Includes FRED key guidance when the key is invalid.
+    """
+    _card   = C["card"]
+    _border = C["border"]
+    _muted  = C["muted"]
+    _text   = C["text"]
+    _warn   = "#f0b429"
+    _green  = C["green"]
+
+    static_rows = [r for r in indicator_rows if r[6].startswith("⚠")]
+    live_rows   = [r for r in indicator_rows if not r[6].startswith("⚠")]
+    n_static = len(static_rows)
+    n_live   = len(live_rows)
+
+    expander_label = (
+        f"🟡 Data Health — {n_static} indicator{'s' if n_static!=1 else ''} on static fallback"
+        if n_static else "🟢 Data Health — all indicators live"
+    )
+
+    with st.expander(expander_label, expanded=(n_static > 0)):
+        # ── FRED key status ──────────────────────────────────────────────────
+        if not _FRED_KEY_VALID:
+            st.markdown(
+                f"""<div style='background:#1a1200;border:1px solid {_warn}44;border-radius:8px;
+                padding:12px 16px;margin-bottom:14px;font-family:monospace;font-size:11px;'>
+                <span style='color:{_warn};font-weight:700;'>⚠ FRED API KEY INVALID</span><br>
+                <span style='color:{_muted};'>The FRED_API_KEY in <code>.streamlit/secrets.toml</code>
+                is a placeholder ("<code>your_fred_api_key_here</code>").<br>
+                Without a valid key, GDP, CPI, and some policy rates use static fallbacks instead of live data.<br><br>
+                <b style='color:{_text};'>Action required:</b><br>
+                1. Register for a free key at
+                <span style='color:{_warn};'>fred.stlouisfed.org/docs/api/api_key.html</span><br>
+                2. Replace <code>FRED_API_KEY = "your_fred_api_key_here"</code> in
+                <code>.streamlit/secrets.toml</code> with your 32-character key.<br>
+                3. Redeploy / restart the app.</span>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+
+        # ── Summary counts ────────────────────────────────────────────────
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown(
+                f"<div style='font-family:monospace;font-size:11px;color:{_green};'>"
+                f"✓ {n_live} live</div>", unsafe_allow_html=True)
+        with c2:
+            col = _warn if n_static else _green
+            st.markdown(
+                f"<div style='font-family:monospace;font-size:11px;color:{col};'>"
+                f"{'⚠ ' if n_static else '✓ '}{n_static} static fallback</div>",
+                unsafe_allow_html=True)
+
+        # ── Full source table ─────────────────────────────────────────────
+        hdr = (f"background:{_card};color:{_muted};font-size:9px;font-family:monospace;"
+               "letter-spacing:1.5px;padding:6px 10px;text-transform:uppercase;"
+               "border-bottom:1px solid #252525;")
+        cell = (f"color:{_text};font-size:10px;font-family:monospace;"
+                "padding:5px 10px;border-bottom:1px solid #181818;")
+
+        html = (
+            f"<div style='background:{_card};border:1px solid {_border};border-radius:8px;"
+            "overflow:hidden;margin-top:10px;'>"
+            "<table style='width:100%;border-collapse:collapse;'>"
+            "<thead><tr>"
+            f"<th style='{hdr}'>Indicator</th>"
+            f"<th style='{hdr}'>Source</th>"
+            f"<th style='{hdr};text-align:center;'>Status</th>"
+            "</tr></thead><tbody>"
+        )
+        for row in indicator_rows:
+            indicator = row[0]; source = row[6]
+            is_static = source.startswith("⚠")
+            status_col  = _warn if is_static else _green
+            status_icon = "⚠ STATIC" if is_static else "✓ LIVE"
+            src_display = source.replace("⚠ ", "")
+            html += (
+                "<tr>"
+                f"<td style='{cell}'>{indicator}</td>"
+                f"<td style='{cell};color:{_muted};font-size:9px;'>{src_display}</td>"
+                f"<td style='{cell};text-align:center;color:{status_col};font-weight:700;"
+                f"font-size:9px;'>{status_icon}</td>"
+                "</tr>"
+            )
+        html += "</tbody></table></div>"
+        st.markdown(html, unsafe_allow_html=True)
+
+        # ── No-key live sources note ──────────────────────────────────────
+        st.markdown(
+            f"<div style='font-size:9px;color:{_muted};font-family:monospace;margin-top:8px;'>"
+            "No-key live sources: NY Fed (USD rate) · BoE (GBP rate) · BoC V39079 (CAD rate) · "
+            "ECB €STR→DFR (EUR rate) · ECB ICP (EUR CPI) · ForexFactory (PMI/Employment/Trade) · "
+            "yfinance (equity/commodity proxies) · CFTC (COT). "
+            "FRED key unlocks: USD CPI · GDP (all) · additional CB rates."
+            "</div>",
+            unsafe_allow_html=True,
+        )
 
 
 def _render_all_currencies_ranking():
