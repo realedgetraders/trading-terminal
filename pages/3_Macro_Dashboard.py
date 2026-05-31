@@ -312,6 +312,38 @@ def _fred_fresh(series_id: str, name: str, max_days: int, limit: int = 10):
         return (data[-1][1], data[-2][1] if len(data) >= 2 else None)
     return None, None
 
+
+def _fred_qoq_yoy_fresh(series_id: str, name: str, max_days: int):
+    """Fetch quarterly index series, compute YoY% via 4-quarter comparison.
+
+    Used for currencies whose CPI is published quarterly (AUD, NZD).
+    Returns (current_yoy_pct, prev_yoy_pct) or (None, None) if stale/unavailable.
+    Requires at least 6 quarterly observations (5 for current YoY, 6 for prev YoY).
+    """
+    data = fetch_fred_series(series_id, 8)
+    if not data:
+        return None, None
+    try:
+        age = (datetime.now() - datetime.strptime(data[-1][0][:10], "%Y-%m-%d")).days
+        if age > max_days:
+            print(f"[MACRO FRESHNESS] {name}: {data[-1][0]} is {age}d old (>{max_days}d), discarding")
+            return None, None
+    except Exception:
+        pass
+    if len(data) < 5:
+        return None, None
+    try:
+        curr = (data[-1][1] / data[-5][1] - 1.0) * 100.0
+    except (ZeroDivisionError, TypeError):
+        return None, None
+    prev = None
+    if len(data) >= 6:
+        try:
+            prev = (data[-2][1] / data[-6][1] - 1.0) * 100.0
+        except (ZeroDivisionError, TypeError):
+            pass
+    return curr, prev
+
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  FRED FETCH  (ttl=3600)
 # ╚══════════════════════════════════════════════════════════════════════════════
@@ -376,7 +408,7 @@ def _fred_yoy(series_id: str):
         return None
 
 
-def _gdp_qoq_from_fred(series_id: str) -> tuple:
+def _gdp_qoq_from_fred(series_id: str, max_days: int = 180) -> tuple:
     """Fetch OECD GDP series from FRED; return (current_qoq_pct, prev_qoq_pct).
 
     Auto-detects whether the series returns a % change or an absolute level:
@@ -384,12 +416,19 @@ def _gdp_qoq_from_fred(series_id: str) -> tuple:
       and QoQ % = (curr / prev - 1) * 100 is computed from consecutive observations.
     - Otherwise → assumed to be already a % change (used as-is).
 
-    This transparently handles FRED OECD series like NAEXKP01EZQ652S (Euro Area GDP
-    in millions of EUR) which return absolute levels rather than growth rates.
+    max_days=180: GDP is quarterly, so data can naturally be 3-5 months old.
+    Beyond 6 months → discard (likely a wrong series ID or truly stale source).
     """
     data = fetch_fred_series(series_id, 6)
     if not data:
         return None, None
+    try:
+        age = (datetime.now() - datetime.strptime(data[-1][0][:10], "%Y-%m-%d")).days
+        if age > max_days:
+            print(f"[MACRO FRESHNESS] GDP/{series_id}: {data[-1][0]} is {age}d old (>{max_days}d), discarding")
+            return None, None
+    except Exception:
+        pass
     last_val = data[-1][1]
     if last_val is None:
         return None, None
@@ -1203,38 +1242,62 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01EZQ652S")
         if gdp is not None: _gdp_is_live = True
     elif ccy == "GBP":
-        cpi, prev_cpi = _fred_fresh("CPALTT01GBM659N", "CPI/GBP", 45, 10)
+        # CPALTT01GBM659N = OECD CPI YoY% (monthly). OECD publishes ~6 wks after reference
+        # month, so data is typically 45-75 days old → gate raised from 45→90 days.
+        cpi, prev_cpi = _fred_fresh("CPALTT01GBM659N", "CPI/GBP", 90, 10)
         if cpi is not None: _cpi_is_live = True
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01GBQ652S")
         if gdp is not None: _gdp_is_live = True
     elif ccy == "JPY":
-        cpi, prev_cpi = _fred_fresh("CPALTT01JPM659N", "CPI/JPY", 45, 10)
-        if cpi is not None: _cpi_is_live = True
-        gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01JPQ652S")
+        # CPALTT01JPM659N (OECD monthly YoY%) was discontinued on FRED around June 2021
+        # and no longer reflects current data. Use JPNCPIALLMINMEI (MEI monthly index,
+        # 2010=100) which is actively maintained; compute YoY from 12-month comparison.
+        _jpy_cpi_raw = fetch_fred_series("JPNCPIALLMINMEI", 20)
+        if _jpy_cpi_raw:
+            try:
+                age = (datetime.now() - datetime.strptime(_jpy_cpi_raw[-1][0][:10], "%Y-%m-%d")).days
+                if age <= 90 and len(_jpy_cpi_raw) >= 13:
+                    cpi      = (_jpy_cpi_raw[-1][1] / _jpy_cpi_raw[-13][1] - 1.0) * 100.0
+                    prev_cpi = (_jpy_cpi_raw[-2][1] / _jpy_cpi_raw[-14][1] - 1.0) * 100.0 \
+                               if len(_jpy_cpi_raw) >= 14 else None
+                    _cpi_is_live = True
+            except Exception:
+                pass
+        # GDP: NAEXKP01JPQ652S does not exist on FRED (wrong suffix).
+        # JPNRGDPEXP = Real GDP Japan, billions of chained 2015 yen, quarterly SA.
+        gdp, prev_gdp = _gdp_qoq_from_fred("JPNRGDPEXP")
         if gdp is not None: _gdp_is_live = True
     elif ccy == "AUD":
-        cpi, prev_cpi = _fred_fresh("CPALTT01AUM659N", "CPI/AUD", 60, 10)
+        # Australia CPI is quarterly (AUSCPIALLQINMEI = OECD quarterly index 2010=100).
+        # Q3 2025 data is ~5 months old → gate 150 days for quarterly release cadence.
+        # CPALTT01AUM659N (monthly YoY%) is sparse/outdated on FRED.
+        cpi, prev_cpi = _fred_qoq_yoy_fresh("AUSCPIALLQINMEI", "CPI/AUD", 150)
         if cpi is not None: _cpi_is_live = True
-        gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01AUQ652S")
+        # GDP: NAEXKP01AUQ652S does not exist; correct suffix is Q657S.
+        gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01AUQ657S")
         if gdp is not None: _gdp_is_live = True
     elif ccy == "NZD":
-        cpi, prev_cpi = _fred_fresh("CPALTT01NZM659N", "CPI/NZD", 60, 10)
+        # NZ CPI is quarterly (NZLCPIALLQINMEI = OECD quarterly index 2010=100).
+        cpi, prev_cpi = _fred_qoq_yoy_fresh("NZLCPIALLQINMEI", "CPI/NZD", 150)
         if cpi is not None: _cpi_is_live = True
-        gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01NZQ652S")
+        # GDP: NAEXKP01NZQ652S does not exist; correct suffix is Q657S.
+        gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01NZQ657S")
         if gdp is not None: _gdp_is_live = True
     elif ccy == "CAD":
-        cpi, prev_cpi = _fred_fresh("CPALTT01CAM659N", "CPI/CAD", 45, 10)
+        cpi, prev_cpi = _fred_fresh("CPALTT01CAM659N", "CPI/CAD", 90, 10)  # raised 45→90
         if cpi is not None: _cpi_is_live = True
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01CAQ652S")
         if gdp is not None: _gdp_is_live = True
     elif ccy == "CHF":
-        cpi, prev_cpi = _fred_fresh("CPALTT01CHM659N", "CPI/CHF", 45, 10)
+        cpi, prev_cpi = _fred_fresh("CPALTT01CHM659N", "CPI/CHF", 90, 10)  # raised 45→90
         if cpi is not None: _cpi_is_live = True
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01CHQ652S")
         if gdp is not None: _gdp_is_live = True
 
     # Core CPI live fetch for non-USD/EUR currencies (FRED OECD ex-food-energy series).
-    # These are monthly YoY % values; threshold 45 days for monthly series, 60 for quarterly.
+    # 659N series may be discontinued for some countries (same risk as headline CPI).
+    # Gate: 90 days for monthly series — silently discards stale data rather than
+    # showing outdated values as live.
     _CORE_CPI_FRED = {
         "GBP": "CPGRLE01GBM659N",
         "JPY": "CPGRLE01JPM659N",
@@ -1246,9 +1309,15 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
     if core_cpi is None and ccy in _CORE_CPI_FRED:
         _cc_data = fetch_fred_series(_CORE_CPI_FRED[ccy], 10)
         if _cc_data:
-            core_cpi = _cc_data[-1][1]
-            prev_core_cpi = _cc_data[-2][1] if len(_cc_data) >= 2 else None
-            _check_freshness(f"CoreCPI/{ccy}", _cc_data[-1][0], 60)
+            try:
+                _cc_age = (datetime.now() - datetime.strptime(_cc_data[-1][0][:10], "%Y-%m-%d")).days
+            except Exception:
+                _cc_age = 0
+            if _cc_age <= 90:
+                core_cpi = _cc_data[-1][1]
+                prev_core_cpi = _cc_data[-2][1] if len(_cc_data) >= 2 else None
+            else:
+                print(f"[MACRO FRESHNESS] CoreCPI/{ccy}: {_cc_data[-1][0]} is {_cc_age}d old (>90d), discarding")
 
     # CPI FF calendar fallback — fills in when FRED is unavailable or rejected as stale.
     # FF "CPI y/y" events carry the latest actual headline CPI YoY % for most currencies.
@@ -1555,28 +1624,46 @@ def _d4_surprises(ccy: str, ff_df: pd.DataFrame):
         # Tier 1: FRED/ECB — compare current release vs prior release as baseline
         # Tier 2: FF beat/miss (when FRED unavailable)
         # Tier 3: static fallback comparison
-        _CPI_FRED = {
-            "GBP": "CPALTT01GBM659N", "JPY": "CPALTT01JPM659N",
-            "AUD": "CPALTT01AUM659N", "NZD": "CPALTT01NZM659N",
-            "CAD": "CPALTT01CAM659N", "CHF": "CPALTT01CHM659N",
+        # CPI series for D4 surprise (current vs prior release).
+        # JPY: CPALTT01JPM659N discontinued 2021 → JPNCPIALLMINMEI (index, compute YoY).
+        # AUD/NZD: quarterly CPI → quarterly YoY via _fred_qoq_yoy_fresh.
+        # GBP/CAD/CHF: existing OECD YoY% series (no freshness gate in D4 — surprise
+        #              comparison is valid even with slightly older data).
+        _CPI_FRED_MONTHLY = {
+            "GBP": "CPALTT01GBM659N",
+            "CAD": "CPALTT01CAM659N",
+            "CHF": "CPALTT01CHM659N",
         }
         _GDP_FRED = {
             "EUR": "NAEXKP01EZQ652S", "GBP": "NAEXKP01GBQ652S",
-            "JPY": "NAEXKP01JPQ652S", "AUD": "NAEXKP01AUQ652S",
-            "NZD": "NAEXKP01NZQ652S", "CAD": "NAEXKP01CAQ652S",
+            "JPY": "JPNRGDPEXP",       "AUD": "NAEXKP01AUQ657S",
+            "NZD": "NAEXKP01NZQ657S",  "CAD": "NAEXKP01CAQ652S",
             "CHF": "NAEXKP01CHQ652S",
         }
 
-        # ── CPI: current YoY vs prior month YoY ──────────────────────────────
+        # ── CPI: current YoY vs prior YoY ────────────────────────────────────
         if ccy == "EUR":
             cpi_act, cpi_fore = fetch_ecb_series_with_prev("ICP", "M.U2.N.000000.4.ANR")
+        elif ccy == "JPY":
+            # Index series → compute YoY for current and prior month
+            cpi_act, cpi_fore = _fred_yoy_with_prev("JPNCPIALLMINMEI")
+        elif ccy in ("AUD", "NZD"):
+            # Quarterly index → 4-quarter YoY comparison (no freshness gate in D4)
+            _qsid = "AUSCPIALLQINMEI" if ccy == "AUD" else "NZLCPIALLQINMEI"
+            _qd = fetch_fred_series(_qsid, 8)
+            cpi_act = cpi_fore = None
+            if len(_qd) >= 5:
+                try:
+                    cpi_act  = (_qd[-1][1] / _qd[-5][1] - 1.0) * 100.0
+                    cpi_fore = (_qd[-2][1] / _qd[-6][1] - 1.0) * 100.0 if len(_qd) >= 6 else None
+                except (ZeroDivisionError, TypeError):
+                    pass
         else:
-            cpi_act, cpi_fore = _fred_latest_with_prev(_CPI_FRED[ccy], 10)
+            cpi_act, cpi_fore = _fred_latest_with_prev(_CPI_FRED_MONTHLY[ccy], 10)
         s_cpi = _score_surprise(cpi_act, cpi_fore)
 
         # ── GDP: current QoQ% vs prior quarter QoQ% ──────────────────────────
-        # Use _gdp_qoq_from_fred so the NAEXKP01 level series are correctly
-        # converted to QoQ % before comparison (same path as D2).
+        # _gdp_qoq_from_fred handles both level and % series and applies a 180-day gate.
         _gdp_s = _GDP_FRED.get(ccy)
         gdp_act, gdp_fore = _gdp_qoq_from_fred(_gdp_s) if _gdp_s else (None, None)
         s_gdp  = _score_surprise(gdp_act, gdp_fore)
