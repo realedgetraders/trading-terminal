@@ -93,7 +93,7 @@ LOOKBACKS = {
     "9M":  dict(window=189, disp=189),
     "12M": dict(window=252, disp=252),
 }
-_DEFAULT_LOOKBACK = "6M"
+_DEFAULT_LOOKBACK = "3M"
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════
