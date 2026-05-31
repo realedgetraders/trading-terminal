@@ -642,6 +642,80 @@ def fetch_ons_cpi_yoy():
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def fetch_abs_cpi():
+    """AUD Monthly CPI Indicator via ABS Data API (dataset 'CPI', no key required).
+
+    Dynamically locates the 'All groups CPI' (headline) and
+    'All groups CPI excluding food and energy' (core proxy) monthly YoY% series
+    for Australia + Original estimate.
+
+    Confirmed 2026-05-31: April 2026 = 4.20% headline / 3.30% core, ~31 d old.
+    Freshness gate: 60 days (rejects if latest period is >2 months old).
+    Returns (cpi_yoy, cpi_prev, core_yoy, core_prev) or (None, None, None, None).
+    """
+    try:
+        r = requests.get("https://api.data.abs.gov.au/data/CPI?lastNObservations=4",
+                         timeout=15)
+        if r.status_code != 200:
+            return None, None, None, None
+        d = r.json()
+        struct = d["structure"]
+        dims = struct["dimensions"]["series"]
+        time_vals = [v["id"] for v in struct["dimensions"]["observation"][0]["values"]]
+
+        def _n(dim): return {i: v.get("name", "") for i, v in enumerate(dim.get("values", []))}
+        def _c(dim): return {i: v.get("id", "")   for i, v in enumerate(dim.get("values", []))}
+
+        m_n = _n(dims[0]); i_n = _n(dims[1]); t_n = _n(dims[2]); r_n = _n(dims[3]); f_c = _c(dims[4])
+
+        m_yoy  = next((i for i, n in m_n.items() if "previous year" in n.lower()), None)
+        i_all  = next((i for i, n in i_n.items() if n.lower().strip() == "all groups cpi"), None)
+        i_core = next((i for i, n in i_n.items() if "food and energy" in n.lower() and "excluding" in n.lower()), None)
+        r_aus  = next((i for i, n in r_n.items() if n.lower().strip() == "australia"), None)
+        t_orig = next((i for i, n in t_n.items() if "original" in n.lower()), None)
+        f_m    = next((i for i, c in f_c.items() if c == "M"), None)
+
+        if None in (m_yoy, i_all, i_core, r_aus, t_orig, f_m):
+            return None, None, None, None
+
+        series_data = d["dataSets"][0]["series"]
+
+        def _extract(idx_dim):
+            key = f"{m_yoy}:{idx_dim}:{t_orig}:{r_aus}:{f_m}"
+            s = series_data.get(key, {})
+            obs = [(time_vals[int(k)], ob[0])
+                   for k, ob in s.get("observations", {}).items()
+                   if int(k) < len(time_vals) and "Q" not in time_vals[int(k)]]
+            obs.sort(key=lambda x: x[0])
+            if not obs:
+                return None, None, None
+            last = obs[-1]; prev = obs[-2] if len(obs) >= 2 else (None, None)
+            return last[0], last[1], (prev[1] if prev[0] else None)
+
+        h_period, h_val, h_prev = _extract(i_all)
+        _, c_val, c_prev        = _extract(i_core)
+
+        if not h_period:
+            return None, None, None, None
+
+        # Freshness gate: 60 days for monthly data
+        try:
+            _y, _m = map(int, h_period.split("-"))
+            import calendar as _cal
+            _ld = _cal.monthrange(_y, _m)[1]
+            _age = (datetime.now().date() - datetime(_y, _m, _ld).date()).days
+            if _age > 60:
+                print(f"[MACRO FRESHNESS] CPI/AUD ABS: {h_period} is {_age}d old (>60d), discarding")
+                return None, None, None, None
+        except Exception:
+            pass
+
+        return h_val, h_prev, c_val, c_prev
+    except Exception:
+        return None, None, None, None
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def fetch_ons_core_cpi_yoy():
     """GBP Core CPI YoY% via ONS public CSV (series D7G7, ex food+energy).
 
@@ -1418,9 +1492,18 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
                         pass
 
             elif ccy == "AUD":
-                # AUSCPIALLQINMEI (quarterly index 2010=100) — 4-quarter YoY, 100-day gate.
-                cpi, prev_cpi = _fred_qoq_yoy_fresh("AUSCPIALLQINMEI", "CPI/AUD", 100)
-                if cpi is not None: _cpi_is_live = True; _cpi_src_label = "FRED"
+                # ABS Monthly CPI Indicator API (key-free, confirmed Apr 2026 = 4.20%, 31 d).
+                _abs_h, _abs_hp, _abs_c, _abs_cp = fetch_abs_cpi()
+                if _abs_h is not None:
+                    cpi = _abs_h; prev_cpi = _abs_hp
+                    _cpi_is_live = True; _cpi_src_label = "ABS"
+                    # Core CPI from same API call — propagate if not yet set
+                    if core_cpi is None and _abs_c is not None:
+                        core_cpi = _abs_c; prev_core_cpi = _abs_cp
+                else:
+                    # Fallback: OECD quarterly index via FRED (100-day gate)
+                    cpi, prev_cpi = _fred_qoq_yoy_fresh("AUSCPIALLQINMEI", "CPI/AUD", 100)
+                    if cpi is not None: _cpi_is_live = True; _cpi_src_label = "FRED"
 
             elif ccy == "NZD":
                 cpi, prev_cpi = _fred_qoq_yoy_fresh("NZLCPIALLQINMEI", "CPI/NZD", 100)
