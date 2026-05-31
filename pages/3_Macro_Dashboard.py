@@ -72,11 +72,13 @@ _FB_RATES  = {"USD": 3.75, "EUR": 2.00, "GBP": 3.75, "JPY": 0.75,
 # Static CPI fallbacks — last updated 2026-05-31 (used ONLY when all live sources fail).
 # EUR Apr=3.0 (Eurostat flash), GBP Apr=2.82 (ONS D7BT confirmed), JPY Apr=1.4 (MIC),
 # AUD Apr=4.2 (ABS Monthly CPI Indicator), CAD Apr=2.8 (StatCan), CHF Mar=0.2 (BFS).
+# NZD Q1 2026 (Mar quarter) = 3.1% (Stats NZ, confirmed 2026-04-21); CPI is quarterly so
+# the FRED OECD series is gated out by the freshness window → this static value is shown.
 _FB_CPI    = {"USD": 2.4,  "EUR": 3.0,  "GBP": 2.8,  "JPY": 1.4,
-              "AUD": 4.2,  "NZD": 2.5,  "CAD": 2.8,  "CHF": 0.5}
+              "AUD": 4.2,  "NZD": 3.1,  "CAD": 2.8,  "CHF": 0.5}
 # CHF Apr=0.50 confirmed Eurostat ei_cphi_m 2026-05-31
-# Core CPI — GBP Apr=2.8 confirmed (ONS D7G7); others estimated.
-_FB_CCPI   = {"USD": 2.8,  "EUR": 2.8,  "GBP": 2.8,  "JPY": 1.4,
+# Core CPI — GBP Apr=2.5 confirmed (ONS DKO8, ex energy/food/alc/tobacco); others estimated.
+_FB_CCPI   = {"USD": 2.8,  "EUR": 2.8,  "GBP": 2.5,  "JPY": 1.4,
               "AUD": 3.6,  "NZD": 2.7,  "CAD": 2.4,  "CHF": 0.9}
 _FB_GDP    = {"USD": 2.4,  "EUR": 0.4,  "GBP": 0.7,  "JPY": 0.2,
               "AUD": 0.3,  "NZD": -0.2, "CAD": 1.2,  "CHF": 0.3}
@@ -95,9 +97,9 @@ _FB_PREV_RATES = {"USD": 4.00, "EUR": 2.25, "GBP": 4.00, "JPY": 0.50,
 # AUD prev: 4.10 (rate before 5 May 2026 hike to 4.35, not 3.85); CAD prev: 2.50 (before last cut)
 # Previous-month CPI — GBP Mar=3.30 confirmed (ONS); others estimated from trend.
 _FB_PREV_CPI   = {"USD": 2.6,  "EUR": 2.6,  "GBP": 3.3,  "JPY": 1.5,
-                  "AUD": 4.6,  "NZD": 2.5,  "CAD": 2.3,  "CHF": 0.6}
+                  "AUD": 4.6,  "NZD": 3.1,  "CAD": 2.3,  "CHF": 0.6}
 # EUR prev=2.6 (Mar), AUD prev=4.6 (Mar), CHF prev=0.6 (Mar) confirmed Eurostat/ABS
-_FB_PREV_CCPI  = {"USD": 3.0,  "EUR": 2.7,  "GBP": 3.3,  "JPY": 1.6,
+_FB_PREV_CCPI  = {"USD": 3.0,  "EUR": 2.7,  "GBP": 3.1,  "JPY": 1.6,
                   "AUD": 3.6,  "NZD": 2.7,  "CAD": 2.4,  "CHF": 1.0}
 _FB_PREV_GDP   = {"USD": 2.4,  "EUR": 0.4,  "GBP": 0.6,  "JPY": 0.1,
                   "AUD": 0.4,  "NZD": -0.1, "CAD": 1.1,  "CHF": 0.2}
@@ -820,16 +822,18 @@ def fetch_statcan_cpi():
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_ons_core_cpi_yoy():
-    """GBP Core CPI YoY% via ONS public CSV (series D7G7, ex food+energy).
+    """GBP Core CPI YoY% via ONS public CSV (series DKO8, ex energy, food,
+    alcohol & tobacco — the true UK core measure).
 
-    D7G7 is published as a direct YoY % — no index conversion needed.
-    Confirmed working 2026-05-31: April 2026 = 2.8 %, age 31 days.
+    DKO8 is published as a direct YoY % — no index conversion needed.
+    (D7G7, used previously, is the ALL-ITEMS headline annual rate, not core.)
+    Confirmed 2026-05-31: April 2026 = 2.5 %, age 31 days.
     No API key required.  Returns (current_yoy, prev_yoy) or (None, None).
     """
     try:
         r = requests.get(
             "https://www.ons.gov.uk/generator?format=csv"
-            "&uri=/economy/inflationandpriceindices/timeseries/d7g7/mm23",
+            "&uri=/economy/inflationandpriceindices/timeseries/dko8/mm23",
             timeout=12, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code != 200:
             return None, None
@@ -1654,7 +1658,7 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
         if gdp is not None: _gdp_is_live = True
 
     # ── Core CPI ──────────────────────────────────────────────────────────────
-    # GBP: ONS D7G7 (direct YoY%, confirmed Apr 2026 = 2.8 %, 31 d). No key.
+    # GBP: ONS DKO8 core (ex energy/food/alc/tobacco, direct YoY%, Apr 2026 = 2.5 %, 31 d). No key.
     # EUR: ECB ICP core with 45-day gate (currently Dec 2025, 151 d → rejected → static).
     # Others: FRED OECD 659N with 45-day gate — accepts if FRED has current month's data.
     if core_cpi is None and ccy == "GBP":
@@ -2547,6 +2551,16 @@ _CACHE_FUNS = [
     fetch_ons_core_cpi_yoy,
 ]
 
+
+def _clear_caches():
+    """Clear all st.cache_data fetchers. Defensive: only calls .clear() on
+    entries that actually expose it, so a plain wrapper accidentally left in
+    the list can never raise AttributeError and crash the refresh path."""
+    for fn in _CACHE_FUNS:
+        clear = getattr(fn, "clear", None)
+        if callable(clear):
+            clear()
+
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  CSS
 # ╚══════════════════════════════════════════════════════════════════════════════
@@ -2987,8 +3001,7 @@ def _render_header():
     with col_refresh:
         st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
         if st.button("🔄 Refresh", key="m3_refresh", use_container_width=True):
-            for fn in _CACHE_FUNS:
-                fn.clear()
+            _clear_caches()
             st.session_state["last_refresh_ts"] = time.time()
             for ccy in CURRENCIES:
                 st.session_state.pop(f"macro_scores_{ccy}", None)
@@ -3051,8 +3064,7 @@ def main():
     now = time.time()
     last_ts = st.session_state.get("last_refresh_ts", 0.0)
     if (now - last_ts) >= 300:
-        for fn in _CACHE_FUNS:
-            fn.clear()
+        _clear_caches()
         st.session_state["last_refresh_ts"] = now
         for _ccy in CURRENCIES:
             st.session_state.pop(f"macro_scores_{_ccy}", None)
