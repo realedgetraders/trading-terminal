@@ -3,6 +3,7 @@ Trading Analytics Terminal — Module 3: Economic Bias Engine (v2)
 5-dimension macro scoring engine with password gate and auto-refresh.
 """
 
+import csv as _csv
 import io
 import time
 import zipfile
@@ -68,10 +69,14 @@ _FB_DATE  = "2026-05-28"
 _FB_RATES  = {"USD": 3.75, "EUR": 2.00, "GBP": 3.75, "JPY": 0.75,
               "AUD": 4.35, "NZD": 2.25, "CAD": 2.25, "CHF": 0.00}
 # AUD: 4.35 after RBA hike 5 May 2026; CAD: 2.25 = Target Overnight Rate (not Bank Rate)
-_FB_CPI    = {"USD": 2.4,  "EUR": 2.2,  "GBP": 2.6,  "JPY": 2.2,
-              "AUD": 3.2,  "NZD": 2.5,  "CAD": 1.7,  "CHF": 0.0}
-_FB_CCPI   = {"USD": 2.8,  "EUR": 2.7,  "GBP": 3.4,  "JPY": 2.2,
-              "AUD": 3.2,  "NZD": 2.7,  "CAD": 2.3,  "CHF": 1.0}
+# Static CPI fallbacks — last updated 2026-05-31 (used ONLY when all live sources fail).
+# EUR Apr=3.0 (Eurostat flash), GBP Apr=2.82 (ONS D7BT confirmed), JPY Apr=1.4 (MIC),
+# AUD Apr=4.2 (ABS Monthly CPI Indicator), CAD Apr=2.8 (StatCan), CHF Mar=0.2 (BFS).
+_FB_CPI    = {"USD": 2.4,  "EUR": 3.0,  "GBP": 2.8,  "JPY": 1.4,
+              "AUD": 4.2,  "NZD": 2.5,  "CAD": 2.8,  "CHF": 0.2}
+# Core CPI — GBP Apr=2.8 confirmed (ONS D7G7); others estimated.
+_FB_CCPI   = {"USD": 2.8,  "EUR": 2.8,  "GBP": 2.8,  "JPY": 1.4,
+              "AUD": 3.6,  "NZD": 2.7,  "CAD": 2.4,  "CHF": 0.9}
 _FB_GDP    = {"USD": 2.4,  "EUR": 0.4,  "GBP": 0.7,  "JPY": 0.2,
               "AUD": 0.3,  "NZD": -0.2, "CAD": 1.2,  "CHF": 0.3}
 _FB_PMI    = {"USD": 49.0, "EUR": 45.3, "GBP": 45.4, "JPY": 48.7,
@@ -87,10 +92,11 @@ _FB_RETAIL = {"USD": 0.1,  "EUR": 0.1,  "GBP": 0.0,  "JPY": -1.1,
 _FB_PREV_RATES = {"USD": 4.00, "EUR": 2.25, "GBP": 4.00, "JPY": 0.50,
                   "AUD": 4.10, "NZD": 2.50, "CAD": 2.50, "CHF": 0.25}
 # AUD prev: 4.10 (rate before 5 May 2026 hike to 4.35, not 3.85); CAD prev: 2.50 (before last cut)
-_FB_PREV_CPI   = {"USD": 2.6,  "EUR": 2.3,  "GBP": 2.8,  "JPY": 2.8,
-                  "AUD": 3.4,  "NZD": 2.2,  "CAD": 1.9,  "CHF": 0.3}
-_FB_PREV_CCPI  = {"USD": 3.0,  "EUR": 2.8,  "GBP": 3.6,  "JPY": 2.4,
-                  "AUD": 3.3,  "NZD": 2.8,  "CAD": 2.5,  "CHF": 1.1}
+# Previous-month CPI — GBP Mar=3.30 confirmed (ONS); others estimated from trend.
+_FB_PREV_CPI   = {"USD": 2.6,  "EUR": 2.9,  "GBP": 3.3,  "JPY": 1.5,
+                  "AUD": 4.0,  "NZD": 2.5,  "CAD": 2.3,  "CHF": 0.2}
+_FB_PREV_CCPI  = {"USD": 3.0,  "EUR": 2.7,  "GBP": 3.3,  "JPY": 1.6,
+                  "AUD": 3.6,  "NZD": 2.7,  "CAD": 2.4,  "CHF": 1.0}
 _FB_PREV_GDP   = {"USD": 2.4,  "EUR": 0.4,  "GBP": 0.6,  "JPY": 0.1,
                   "AUD": 0.4,  "NZD": -0.1, "CAD": 1.1,  "CHF": 0.2}
 _FB_PREV_UNEMP = {"USD": 4.1,  "EUR": 6.3,  "GBP": 4.4,  "JPY": 2.5,
@@ -571,6 +577,102 @@ def fetch_ecb_series_with_prev(flow: str, key: str):
                 vals[1] if len(vals) >= 2 else None)
     except Exception:
         return None, None
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_ecb_series_dated(flow: str, key: str, n: int = 5):
+    """Fetch ECB series; return [(period_str, value)] sorted ascending.
+    period_str uses ECB's own format, e.g. '2026-04' for April 2026.
+    Enables caller-side freshness checks without a second round-trip.
+    """
+    try:
+        url = (f"https://data-api.ecb.europa.eu/service/data/{flow}/{key}"
+               f"?format=jsondata&lastNObservations={n}")
+        r = requests.get(url, timeout=12)
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        series_dict = data["dataSets"][0]["series"]
+        fk = list(series_dict.keys())[0]
+        obs = series_dict[fk]["observations"]
+        time_dim = data["structure"]["dimensions"]["observation"][0]
+        rows = []
+        for k, v in obs.items():
+            if v[0] is not None:
+                period = time_dim["values"][int(k)]["id"]
+                rows.append((period, float(v[0])))
+        rows.sort(key=lambda x: x[0])
+        return rows
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_ons_cpi_yoy():
+    """GBP CPI All Items YoY% via ONS public CSV (series D7BT, index 2015=100).
+
+    Confirmed working 2026-05-31: April 2026 = 2.82 %, age 31 days.
+    No API key required. ONS releases ~3 weeks after month end.
+    Returns (current_yoy, prev_yoy) or (None, None).
+    """
+    try:
+        r = requests.get(
+            "https://www.ons.gov.uk/generator?format=csv"
+            "&uri=/economy/inflationandpriceindices/timeseries/d7bt/mm23",
+            timeout=12, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return None, None
+        rows = list(_csv.reader(io.StringIO(r.text)))
+        monthly = [
+            (row[0].strip(), float(row[1].strip()))
+            for row in rows
+            if len(row) >= 2
+            and row[0].strip()[:4].isdigit()
+            and " " in row[0].strip()
+            and "Q" not in row[0].strip()
+        ]
+        if len(monthly) < 13:
+            return None, None
+        cur = monthly[-1]; p12 = monthly[-13]
+        p1  = monthly[-2]; p13 = monthly[-14] if len(monthly) >= 14 else None
+        yoy      = (cur[1] / p12[1] - 1.0) * 100.0
+        prev_yoy = (p1[1]  / p13[1] - 1.0) * 100.0 if p13 else None
+        return yoy, prev_yoy
+    except Exception:
+        return None, None
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_ons_core_cpi_yoy():
+    """GBP Core CPI YoY% via ONS public CSV (series D7G7, ex food+energy).
+
+    D7G7 is published as a direct YoY % — no index conversion needed.
+    Confirmed working 2026-05-31: April 2026 = 2.8 %, age 31 days.
+    No API key required.  Returns (current_yoy, prev_yoy) or (None, None).
+    """
+    try:
+        r = requests.get(
+            "https://www.ons.gov.uk/generator?format=csv"
+            "&uri=/economy/inflationandpriceindices/timeseries/d7g7/mm23",
+            timeout=12, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return None, None
+        rows = list(_csv.reader(io.StringIO(r.text)))
+        monthly = [
+            (row[0].strip(), float(row[1].strip()))
+            for row in rows
+            if len(row) >= 2
+            and row[0].strip()[:4].isdigit()
+            and " " in row[0].strip()
+            and "Q" not in row[0].strip()
+        ]
+        if not monthly:
+            return None, None
+        cur  = monthly[-1]
+        prev = monthly[-2] if len(monthly) >= 2 else None
+        return cur[1], (prev[1] if prev else None)
+    except Exception:
+        return None, None
+
 
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  YFINANCE FETCH  (ttl=900)
@@ -1238,87 +1340,143 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
     prev_gdp = None
     _cpi_is_live = False
     _gdp_is_live = False
+    _cpi_src_label = "FRED/ECB"  # overridden below per actual source
 
+    # ── USD: FRED BLS (unchanged) ─────────────────────────────────────────────
     if ccy == "USD":
         cpi, prev_cpi           = _fred_yoy_with_prev("CPIAUCSL")
         core_cpi, prev_core_cpi = _fred_yoy_with_prev("CPILFESL")
-        if cpi is not None: _cpi_is_live = True
+        if cpi is not None: _cpi_is_live = True; _cpi_src_label = "FRED"
         gdp_data = fetch_fred_series("A191RL1Q225SBEA", 5)
         gdp      = gdp_data[-1][1] if gdp_data else None
         prev_gdp = gdp_data[-2][1] if len(gdp_data) >= 2 else None
         if gdp_data:
             _check_freshness("GDP/USD", gdp_data[-1][0], 120)
             _gdp_is_live = True
-    elif ccy == "EUR":
-        cpi,      prev_cpi      = fetch_ecb_series_with_prev("ICP", "M.U2.N.000000.4.ANR")
-        core_cpi, prev_core_cpi = fetch_ecb_series_with_prev("ICP", "M.U2.N.XEF000.4.ANR")
-        if cpi is not None: _cpi_is_live = True
-        # _gdp_qoq_from_fred auto-detects whether NAEXKP01EZQ652S returns a level
-        # (millions of EUR → converts to QoQ %) or already a % (used as-is).
+
+    # ── CPI fetch hierarchy (non-USD) ─────────────────────────────────────────
+    # Priority: ForexFactory → national primary API → FRED/ECB with tight gate → static.
+    # Gates are now a safety net (reject >45 d monthly / >100 d quarterly), not a workaround.
+    # ECB ICP and Eurostat prc_hicp_manr are confirmed to only carry data through Dec 2025
+    # (5 months old) — they will be silently rejected until the APIs catch up.
+    if ccy != "USD":
+        # Step 1 — ForexFactory: carries the latest actual released value.
+        # "CPI y/y" substring matches: EUR "Flash CPI y/y", GBP "CPI y/y",
+        #   JPY "National CPI y/y"/"National Core CPI y/y", AUD "Monthly CPI Indicator y/y".
+        # FF calendar on Streamlit Cloud has thisweek + lastweek + nextweek + month windows;
+        # all April 2026 CPI releases (published May) fall within this rolling window.
+        if ccy in ("EUR", "GBP", "JPY", "AUD") and not ff_df.empty:
+            _ff_c, _ff_cp = _ff_latest_two(ff_df, ccy, "CPI y/y")
+            if _ff_c is not None:
+                cpi = _ff_c; prev_cpi = _ff_cp
+                _cpi_is_live = True; _cpi_src_label = "ForexFactory"
+
+        # Step 2 — ONS (GBP only): public CSV, no key, confirmed April 2026 = 2.82 %, 31 d.
+        if cpi is None and ccy == "GBP":
+            cpi, prev_cpi = fetch_ons_cpi_yoy()
+            if cpi is not None:
+                _cpi_is_live = True; _cpi_src_label = "ONS"
+
+        # Step 3 — FRED / ECB with tight freshness gates.
+        # 45 d monthly: accepts current-month release (~30 d), rejects 2-month-old OECD.
+        # 100 d quarterly: accepts Q1 2026 (61 d from Mar 31); rejects Q4 2025+ (151 d).
+        if cpi is None:
+            if ccy == "EUR":
+                # ECB ICP last confirmed obs = Dec 2025 (151 d) → rejected by 45-day gate.
+                # Passes automatically once ECB updates the dataset.
+                _ecb_hicp = fetch_ecb_series_dated("ICP", "M.U2.N.000000.4.ANR", 3)
+                if _ecb_hicp:
+                    try:
+                        _ym = _ecb_hicp[-1][0][:7]       # "2026-04"
+                        _ey, _em = map(int, _ym.split("-"))
+                        _ecb_age = (datetime.now().date()
+                                    - datetime(_ey, _em, 28).date()).days
+                    except Exception:
+                        _ecb_age = 999
+                    if _ecb_age <= 45:
+                        cpi = _ecb_hicp[-1][1]
+                        prev_cpi = _ecb_hicp[-2][1] if len(_ecb_hicp) >= 2 else None
+                        _cpi_is_live = True; _cpi_src_label = "ECB"
+
+            elif ccy == "GBP":
+                cpi, prev_cpi = _fred_fresh("CPALTT01GBM659N", "CPI/GBP", 45, 10)
+                if cpi is not None: _cpi_is_live = True; _cpi_src_label = "FRED"
+
+            elif ccy == "JPY":
+                # JPNCPIALLMINMEI (MEI monthly index 2010=100) — 12-month YoY comparison.
+                _jpy_raw = fetch_fred_series("JPNCPIALLMINMEI", 20)
+                if _jpy_raw:
+                    try:
+                        _j_age = (datetime.now()
+                                  - datetime.strptime(_jpy_raw[-1][0][:10], "%Y-%m-%d")).days
+                        if _j_age <= 45 and len(_jpy_raw) >= 13:
+                            cpi = (_jpy_raw[-1][1] / _jpy_raw[-13][1] - 1.0) * 100.0
+                            prev_cpi = ((_jpy_raw[-2][1] / _jpy_raw[-14][1] - 1.0) * 100.0
+                                        if len(_jpy_raw) >= 14 else None)
+                            _cpi_is_live = True; _cpi_src_label = "FRED"
+                    except Exception:
+                        pass
+
+            elif ccy == "AUD":
+                # AUSCPIALLQINMEI (quarterly index 2010=100) — 4-quarter YoY, 100-day gate.
+                cpi, prev_cpi = _fred_qoq_yoy_fresh("AUSCPIALLQINMEI", "CPI/AUD", 100)
+                if cpi is not None: _cpi_is_live = True; _cpi_src_label = "FRED"
+
+            elif ccy == "NZD":
+                cpi, prev_cpi = _fred_qoq_yoy_fresh("NZLCPIALLQINMEI", "CPI/NZD", 100)
+                if cpi is not None: _cpi_is_live = True; _cpi_src_label = "FRED"
+
+            elif ccy == "CAD":
+                cpi, prev_cpi = _fred_fresh("CPALTT01CAM659N", "CPI/CAD", 45, 10)
+                if cpi is not None: _cpi_is_live = True; _cpi_src_label = "FRED"
+
+            elif ccy == "CHF":
+                cpi, prev_cpi = _fred_fresh("CPALTT01CHM659N", "CPI/CHF", 45, 10)
+                if cpi is not None: _cpi_is_live = True; _cpi_src_label = "FRED"
+
+    # ── GDP fetch (non-USD) ───────────────────────────────────────────────────
+    if ccy == "EUR":
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01EZQ652S")
         if gdp is not None: _gdp_is_live = True
     elif ccy == "GBP":
-        # CPALTT01GBM659N = OECD CPI YoY% (monthly). OECD publishes ~6 wks after reference
-        # month, so data is typically 45-75 days old → gate raised from 45→90 days.
-        cpi, prev_cpi = _fred_fresh("CPALTT01GBM659N", "CPI/GBP", 90, 10)
-        if cpi is not None: _cpi_is_live = True
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01GBQ652S")
         if gdp is not None: _gdp_is_live = True
     elif ccy == "JPY":
-        # CPALTT01JPM659N (OECD monthly YoY%) was discontinued on FRED around June 2021
-        # and no longer reflects current data. Use JPNCPIALLMINMEI (MEI monthly index,
-        # 2010=100) which is actively maintained; compute YoY from 12-month comparison.
-        _jpy_cpi_raw = fetch_fred_series("JPNCPIALLMINMEI", 20)
-        if _jpy_cpi_raw:
-            try:
-                age = (datetime.now() - datetime.strptime(_jpy_cpi_raw[-1][0][:10], "%Y-%m-%d")).days
-                if age <= 90 and len(_jpy_cpi_raw) >= 13:
-                    cpi      = (_jpy_cpi_raw[-1][1] / _jpy_cpi_raw[-13][1] - 1.0) * 100.0
-                    prev_cpi = (_jpy_cpi_raw[-2][1] / _jpy_cpi_raw[-14][1] - 1.0) * 100.0 \
-                               if len(_jpy_cpi_raw) >= 14 else None
-                    _cpi_is_live = True
-            except Exception:
-                pass
-        # GDP: NAEXKP01JPQ652S does not exist on FRED (wrong suffix).
-        # JPNRGDPEXP = Real GDP Japan, billions of chained 2015 yen, quarterly SA.
         gdp, prev_gdp = _gdp_qoq_from_fred("JPNRGDPEXP")
         if gdp is not None: _gdp_is_live = True
     elif ccy == "AUD":
-        # Australia CPI is quarterly (AUSCPIALLQINMEI = OECD quarterly index 2010=100).
-        # OECD publishes ~1-2 quarters behind: Q3 2025 (Sep 30) is 243 days old by
-        # May 2026, and Q4 2025 (Dec 31) is 151 days old.  Gate 270 days = same
-        # policy as _gdp_qoq_from_fred, covers worst-case Q3 2025 observation date.
-        # CPALTT01AUM659N (monthly YoY%) is sparse/outdated on FRED.
-        cpi, prev_cpi = _fred_qoq_yoy_fresh("AUSCPIALLQINMEI", "CPI/AUD", 270)
-        if cpi is not None: _cpi_is_live = True
-        # GDP: NAEXKP01AUQ652S does not exist; correct suffix is Q657S.
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01AUQ657S")
         if gdp is not None: _gdp_is_live = True
     elif ccy == "NZD":
-        # NZ CPI is quarterly (NZLCPIALLQINMEI = OECD quarterly index 2010=100).
-        # Same 270-day gate as AUD — OECD lag means Q3 2025 observation is ~243 days old.
-        cpi, prev_cpi = _fred_qoq_yoy_fresh("NZLCPIALLQINMEI", "CPI/NZD", 270)
-        if cpi is not None: _cpi_is_live = True
-        # GDP: NAEXKP01NZQ652S does not exist; correct suffix is Q657S.
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01NZQ657S")
         if gdp is not None: _gdp_is_live = True
     elif ccy == "CAD":
-        cpi, prev_cpi = _fred_fresh("CPALTT01CAM659N", "CPI/CAD", 90, 10)  # raised 45→90
-        if cpi is not None: _cpi_is_live = True
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01CAQ652S")
         if gdp is not None: _gdp_is_live = True
     elif ccy == "CHF":
-        cpi, prev_cpi = _fred_fresh("CPALTT01CHM659N", "CPI/CHF", 90, 10)  # raised 45→90
-        if cpi is not None: _cpi_is_live = True
         gdp, prev_gdp = _gdp_qoq_from_fred("NAEXKP01CHQ652S")
         if gdp is not None: _gdp_is_live = True
 
-    # Core CPI live fetch for non-USD/EUR currencies (FRED OECD ex-food-energy series).
-    # 659N series may be discontinued for some countries (same risk as headline CPI).
-    # Gate: 90 days for monthly series — silently discards stale data rather than
-    # showing outdated values as live.
+    # ── Core CPI ──────────────────────────────────────────────────────────────
+    # GBP: ONS D7G7 (direct YoY%, confirmed Apr 2026 = 2.8 %, 31 d). No key.
+    # EUR: ECB ICP core with 45-day gate (currently Dec 2025, 151 d → rejected → static).
+    # Others: FRED OECD 659N with 45-day gate — accepts if FRED has current month's data.
+    if core_cpi is None and ccy == "GBP":
+        core_cpi, prev_core_cpi = fetch_ons_core_cpi_yoy()
+
+    if core_cpi is None and ccy == "EUR":
+        _ecb_core = fetch_ecb_series_dated("ICP", "M.U2.N.XEF000.4.ANR", 3)
+        if _ecb_core:
+            try:
+                _ey2, _em2 = map(int, _ecb_core[-1][0][:7].split("-"))
+                _core_age = (datetime.now().date() - datetime(_ey2, _em2, 28).date()).days
+            except Exception:
+                _core_age = 999
+            if _core_age <= 45:
+                core_cpi = _ecb_core[-1][1]
+                prev_core_cpi = _ecb_core[-2][1] if len(_ecb_core) >= 2 else None
+
     _CORE_CPI_FRED = {
-        "GBP": "CPGRLE01GBM659N",
         "JPY": "CPGRLE01JPM659N",
         "AUD": "CPGRLE01AUM659N",
         "NZD": "CPGRLE01NZM659N",
@@ -1329,28 +1487,13 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
         _cc_data = fetch_fred_series(_CORE_CPI_FRED[ccy], 10)
         if _cc_data:
             try:
-                _cc_age = (datetime.now() - datetime.strptime(_cc_data[-1][0][:10], "%Y-%m-%d")).days
+                _cc_age = (datetime.now()
+                           - datetime.strptime(_cc_data[-1][0][:10], "%Y-%m-%d")).days
             except Exception:
-                _cc_age = 0
-            if _cc_age <= 90:
+                _cc_age = 999
+            if _cc_age <= 45:
                 core_cpi = _cc_data[-1][1]
                 prev_core_cpi = _cc_data[-2][1] if len(_cc_data) >= 2 else None
-            else:
-                print(f"[MACRO FRESHNESS] CoreCPI/{ccy}: {_cc_data[-1][0]} is {_cc_age}d old (>90d), discarding")
-
-    # CPI FF calendar fallback — fills in when FRED is unavailable or rejected as stale.
-    # FF "CPI y/y" events carry the latest actual headline CPI YoY % for most currencies.
-    # Applied before static fallback so live-released values are preferred over static constants.
-    if cpi is None and not ff_df.empty:
-        try:
-            _ff_c, _ff_cp = _ff_latest_two(ff_df, ccy, "CPI y/y")
-            if _ff_c is not None:
-                cpi = _ff_c
-                _cpi_is_live = True  # FF is a live source
-                if prev_cpi is None and _ff_cp is not None:
-                    prev_cpi = _ff_cp
-        except Exception:
-            pass
 
     # Fallback — current values (static constants, updated periodically)
     if cpi is None:
@@ -1432,8 +1575,8 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
         s_gdp = _score(gdp, -0.2, 0.0, 0.3, 0.6)
     s_pmi  = _score(pmi, 47.0, 49.0, 51.0, 53.0)
     d2 = _mean(s_cpi, s_ccpi, s_gdp, s_pmi)
-    _cpi_src = _src("FRED/ECB", _cpi_is_live)
-    _gdp_src = _src("FRED",     _gdp_is_live)
+    _cpi_src = _src(_cpi_src_label, _cpi_is_live)
+    _gdp_src = _src("FRED",        _gdp_is_live)
     rows = [
         ("CPI YoY %",         cpi,      prev_cpi,      None,     None,   s_cpi,  _cpi_src),
         ("Core CPI YoY %",    core_cpi, prev_core_cpi, None,     None,   s_ccpi, _cpi_src),
