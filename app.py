@@ -206,6 +206,42 @@ def main():
           margin: 0 !important;
           display: block !important;
       }}
+      /* ── Hero banner clickable overlay (full-width premium flagship) ── */
+      .ret-module-hero {{
+          cursor: pointer;
+          transition: box-shadow 0.25s ease, border-color 0.25s ease;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-module-hero):has(+ div[data-testid="stElementContainer"]:hover) .ret-module-hero {{
+          box-shadow:
+              0 0 0 1px rgba(240,180,41,0.5),
+              0 0 22px rgba(240,180,41,0.26),
+              0 0 48px rgba(240,180,41,0.10) !important;
+          border-color: rgba(240,180,41,0.95) !important;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-module-hero) {{
+          position: relative;
+          z-index: 1;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-module-hero)
+        + div[data-testid="stElementContainer"] {{
+          margin-top: -220px;
+          margin-bottom: 20px;
+          height: 220px;
+          position: relative;
+          z-index: 10;
+      }}
+      div[data-testid="stElementContainer"]:has(.ret-module-hero)
+        + div[data-testid="stElementContainer"] button {{
+          width: 100% !important;
+          height: 220px !important;
+          min-height: 0 !important;
+          opacity: 0 !important;
+          cursor: pointer !important;
+          border-radius: 14px !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          display: block !important;
+      }}
       /* ── WIP module clickable overlay (muted grey, no accent glow) ──── */
       .ret-module-wip {{
           cursor: pointer;
@@ -519,9 +555,9 @@ def _render_analysis():
     hero = next((m for m in visible if m.get("hero")), None)
     rest = [m for m in visible if not m.get("hero")]
 
-    # Hero banner — spans the full width (two card slots)
+    # Hero banner — spans the full width (two card slots), centered premium layout
     if hero:
-        _render_module_card(st.container(), hero)
+        _render_hero_card(hero)
 
     # Remaining modules — standard 2-column grid
     for row_start in range(0, len(rest), 2):
@@ -640,6 +676,49 @@ def _render_journal_section():
       }}
     </style>
     """, unsafe_allow_html=True)
+
+
+# ── Hero banner renderer (flagship, full-width, centered) ──────────────────────
+
+def _render_hero_card(mod: dict):
+    """Full-width centered premium banner for the flagship module."""
+    _AMBER = C["yellow"]
+    st.markdown(
+        f"""
+<div class="ret-module-hero"
+     style="background:linear-gradient(170deg, #1a1813 0%, #161410 60%, #131313 100%);
+            border:1.5px solid {_AMBER};border-radius:14px;padding:30px 40px;
+            height:220px;overflow:hidden;text-align:center;
+            display:flex;flex-direction:column;align-items:center;justify-content:center;
+            box-shadow:inset 0 0 90px rgba(0,0,0,0.45),0 0 18px rgba(240,180,41,0.07);">
+  <div style="margin-bottom:14px;">
+    <span style="background:{_AMBER};color:{C['bg']};font-size:9px;
+                 font-family:monospace;font-weight:800;letter-spacing:2.5px;
+                 padding:4px 16px;border-radius:20px;text-transform:uppercase;">PRO · All-in-One</span>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:6px;">
+    <span style="font-size:26px;">{mod['icon']}</span>
+    <span style="font-size:23px;font-weight:800;color:{C['text']};
+                 font-family:monospace;letter-spacing:2px;">{mod['title']}</span>
+  </div>
+  <div style="font-size:9px;color:{_AMBER};font-family:monospace;
+              letter-spacing:3px;text-transform:uppercase;margin-bottom:14px;">
+    Every Module · One View
+  </div>
+  <div style="font-size:13px;color:{C['muted']};line-height:1.7;
+              font-family:sans-serif;max-width:700px;">
+    The premium flagship that fuses every module into a single screen — COT positioning,
+    seasonality, macro bias and the economic calendar for any forex pair, all evaluated
+    at one glance. Your complete edge, fully assembled in one absolutely insane terminal.
+  </div>
+</div>
+        """,
+        unsafe_allow_html=True,
+    )
+    # Invisible full-card nav button — overlaid via CSS
+    if mod.get("page"):
+        if st.button(" ", key=f"open_{mod['title']}", use_container_width=True):
+            st.switch_page(mod["page"])
 
 
 # ── Module card renderer ───────────────────────────────────────────────────────
