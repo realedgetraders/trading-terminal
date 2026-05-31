@@ -1036,6 +1036,23 @@ def _d1_monetary(ccy: str, ff_df: pd.DataFrame):
             _r_data = [(_d, _estr_to_dfr(_v)) for _d, _v in _estr_data]
             _check_freshness("PolicyRate/EUR", _r_data[-1][0], 5)
             rate, prev_rate, rate_delta, prev_rate_delta = _last_rate_changes(_r_data)
+            # €STR can dip a few bps on individual days, causing _estr_to_dfr() to round
+            # to a different 25-bps step (e.g. 1.874% → 1.75 instead of 2.00).
+            # A single such outlier in the -(lookback+1) position produces a false ±25 bps
+            # delta even when the ECB has been holding for months.
+            # Fix: replace single-point lookback with a consensus (mode) over two windows.
+            # • recent  = last 20 obs  (~4 calendar weeks)
+            # • older   = obs [-90:-40] (~2–3 months ago, well past the last meeting)
+            # Delta registers only when the two consensus levels genuinely differ.
+            _n = len(_r_data)
+            _recent_vals = [v for _, v in _r_data[max(0, _n - 20)          :      ]]
+            _older_vals  = [v for _, v in _r_data[max(0, _n - 90): max(1, _n - 40)]]
+            if _recent_vals:
+                _mode_recent = max(set(_recent_vals), key=_recent_vals.count)
+                rate = _mode_recent
+                if _older_vals:
+                    _mode_older = max(set(_older_vals), key=_older_vals.count)
+                    rate_delta  = (_mode_recent - _mode_older) * 100.0
             _rate_is_live = True
         else:
             # Tier 2: FRED ECBDFR daily (requires key) — fallback if ECB API down
