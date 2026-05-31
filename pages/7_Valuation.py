@@ -84,14 +84,15 @@ ANCHORS = [
     {"label": "World Equities",  "kind": "single", "primary": "ACWI",     "fallback": "VT",   "color": "#c25cff"},  # magenta
 ]
 
-# Lookback → rolling-window length and displayed trailing span (trading days)
+# Lookback → rolling-window length and displayed trailing span (trading days).
+# Quarterly steps + short windows so the 0–100 swings stay clearly visible.
 LOOKBACKS = {
-    "6M": dict(window=126,  disp=126),
-    "1Y": dict(window=252,  disp=252),
-    "2Y": dict(window=504,  disp=504),
-    "5Y": dict(window=1260, disp=1260),
+    "3M":  dict(window=63,  disp=63),
+    "6M":  dict(window=126, disp=126),
+    "9M":  dict(window=189, disp=189),
+    "12M": dict(window=252, disp=252),
 }
-_DEFAULT_LOOKBACK = "2Y"
+_DEFAULT_LOOKBACK = "6M"
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════
