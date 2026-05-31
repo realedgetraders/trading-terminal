@@ -30,44 +30,61 @@ C = {
 
 _PASSWORD = "12345"
 
-# Tradable futures only — currencies, energy, metals, agriculture, crypto.
+# Tradable futures only, grouped by screener category.
 # Label → yfinance continuous-future ticker. (No FX cross-pairs.)
-FUTURES = {
-    # ── Currencies ──
-    "Euro FX":            "6E=F",
-    "British Pound":      "6B=F",
-    "Japanese Yen":       "6J=F",
-    "Australian Dollar":  "6A=F",
-    "Canadian Dollar":    "6C=F",
-    "Swiss Franc":        "6S=F",
-    "New Zealand Dollar": "6N=F",
-    "Mexican Peso":       "6M=F",
-    # ── Energy ──
-    "Crude Oil (WTI)":    "CL=F",
-    "Brent Crude":        "BZ=F",
-    "Natural Gas":        "NG=F",
-    "RBOB Gasoline":      "RB=F",
-    "Heating Oil":        "HO=F",
-    # ── Metals ──
-    "Gold":               "GC=F",
-    "Silver":             "SI=F",
-    "Platinum":           "PL=F",
-    "Palladium":          "PA=F",
-    "Copper":             "HG=F",
-    # ── Agriculture ──
-    "Corn":               "ZC=F",
-    "Wheat":              "ZW=F",
-    "Soybeans":           "ZS=F",
-    "Coffee":             "KC=F",
-    "Cocoa":              "CC=F",
-    "Cotton":             "CT=F",
-    "Sugar":              "SB=F",
-    "Live Cattle":        "LE=F",
-    "Lean Hogs":          "HE=F",
-    # ── Crypto ──
-    "Bitcoin":            "BTC=F",
-    "Ethereum":           "ETH=F",
+FUTURES_BY_CAT = {
+    "Forex": {
+        "Euro FX":            "6E=F",
+        "British Pound":      "6B=F",
+        "Japanese Yen":       "6J=F",
+        "Australian Dollar":  "6A=F",
+        "Canadian Dollar":    "6C=F",
+        "Swiss Franc":        "6S=F",
+        "New Zealand Dollar": "6N=F",
+        "Mexican Peso":       "6M=F",
+    },
+    "Commodities": {
+        "Crude Oil (WTI)":    "CL=F",
+        "Brent Crude":        "BZ=F",
+        "Natural Gas":        "NG=F",
+        "RBOB Gasoline":      "RB=F",
+        "Heating Oil":        "HO=F",
+        "Gold":               "GC=F",
+        "Silver":             "SI=F",
+        "Platinum":           "PL=F",
+        "Palladium":          "PA=F",
+        "Copper":             "HG=F",
+    },
+    "Agriculture": {
+        "Corn":               "ZC=F",
+        "Wheat":              "ZW=F",
+        "Soybeans":           "ZS=F",
+        "Soybean Oil":        "ZL=F",
+        "Soybean Meal":       "ZM=F",
+        "Coffee":             "KC=F",
+        "Cocoa":              "CC=F",
+        "Cotton":             "CT=F",
+        "Sugar":              "SB=F",
+        "Orange Juice":       "OJ=F",
+        "Live Cattle":        "LE=F",
+        "Feeder Cattle":      "GF=F",
+        "Lean Hogs":          "HE=F",
+    },
+    "Indices": {
+        "S&P 500":            "ES=F",
+        "Nasdaq 100":         "NQ=F",
+        "Dow Jones":          "YM=F",
+        "Russell 2000":       "RTY=F",
+        "Nikkei 225":         "NKD=F",
+    },
+    "Crypto": {
+        "Bitcoin":            "BTC=F",
+        "Ethereum":           "ETH=F",
+    },
 }
+
+# Flat label → ticker (asset dropdown + resolution)
+FUTURES = {label: tk for cat in FUTURES_BY_CAT.values() for label, tk in cat.items()}
 
 # Highlight colour for the selected asset (electric blue, foreground line)
 ASSET_COLOR = "#2f9bff"
@@ -157,6 +174,20 @@ def stochastic_norm(s: pd.Series, window: int) -> pd.Series:
     mx = s.rolling(window, min_periods=mp).max()
     rng = (mx - mn).replace(0, np.nan)
     return ((s - mn) / rng * 100).clip(0, 100)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def screen_valuations(tickers: tuple[str, ...], window: int) -> dict[str, float]:
+    """Current 0–100 valuation for each ticker (used by the futures screener)."""
+    out: dict[str, float] = {}
+    for tk in tickers:
+        s = fetch_one(tk)
+        if s is None or len(s) < 60:
+            continue
+        norm = stochastic_norm(s, window).dropna()
+        if not norm.empty:
+            out[tk] = float(norm.iloc[-1])
+    return out
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════
@@ -275,6 +306,48 @@ def _metric_card(label: str, value: str, sub: str = "", color: str = "") -> str:
         f"<div style='font-size:26px;font-weight:800;color:{val_color};"
         f"font-family:monospace;letter-spacing:-0.5px;'>{value}</div>"
         f"{sub_html}</div>"
+    )
+
+
+def _screener_table_html(rows: list[tuple[str, str, float]], top: int = 15) -> str:
+    """Render the futures screener table (rows pre-sorted by extremeness)."""
+    def _th(text, align="left"):
+        return (f"<th style='padding:9px 12px;font-size:9px;color:{C['muted']};"
+                f"font-family:monospace;letter-spacing:1px;text-transform:uppercase;"
+                f"text-align:{align};'>{text}</th>")
+
+    header = (f"<tr>{_th('#', 'center')}{_th('Asset')}{_th('Value', 'right')}"
+              f"{_th('0–100', 'left')}{_th('Status', 'right')}</tr>")
+
+    body = ""
+    for i, (label, tk, val) in enumerate(rows[:top]):
+        status, color = val_label(val)
+        bg  = C["dim"] if i % 2 == 0 else "transparent"
+        bar = (f"<div style='position:relative;height:7px;width:130px;"
+               f"background:#1e1e1e;border-radius:4px;'>"
+               f"<div style='position:absolute;left:0;top:0;height:7px;"
+               f"width:{val:.0f}%;background:{color};border-radius:4px;'></div></div>")
+        body += (
+            f"<tr style='background:{bg};'>"
+            f"<td style='padding:8px 12px;font-size:11px;color:{C['muted']};"
+            f"font-family:monospace;text-align:center;'>{i + 1}</td>"
+            f"<td style='padding:8px 12px;font-size:12px;color:{C['text']};"
+            f"font-family:monospace;'>{label}"
+            f"<span style='color:#555;font-size:10px;'> · {tk}</span></td>"
+            f"<td style='padding:8px 12px;font-size:14px;color:{C['text']};"
+            f"font-family:monospace;font-weight:700;text-align:right;'>{val:.0f}</td>"
+            f"<td style='padding:8px 12px;'>{bar}</td>"
+            f"<td style='padding:8px 12px;font-size:11px;color:{color};"
+            f"font-family:monospace;font-weight:700;text-align:right;'>{status}</td>"
+            f"</tr>"
+        )
+
+    return (
+        f"<div style='background:{C['card']};border:1px solid {C['border']};"
+        f"border-radius:12px;overflow:hidden;'>"
+        f"<table style='width:100%;border-collapse:collapse;'>"
+        f"<thead style='border-bottom:1px solid {C['border']};'>{header}</thead>"
+        f"<tbody>{body}</tbody></table></div>"
     )
 
 
@@ -551,6 +624,45 @@ def main() -> None:
         f"</div>",
         unsafe_allow_html=True,
     )
+
+    # ── Futures screener ─────────────────────────────────────────────────────
+    st.markdown("<div style='height:30px;'></div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='font-size:14px;font-weight:800;color:{C['text']};"
+        f"font-family:monospace;letter-spacing:0.5px;'>▸ FUTURES SCREENER</div>"
+        f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;"
+        f"margin-top:3px;margin-bottom:10px;'>"
+        f"Most under-/overvalued futures over the {lookback_label} window</div>",
+        unsafe_allow_html=True,
+    )
+
+    screen_cat = st.radio(
+        "Screener category",
+        options=["All", "Forex", "Commodities", "Agriculture", "Indices", "Crypto"],
+        index=0, horizontal=True, key="val_screen_cat", label_visibility="collapsed",
+    )
+    screen_items = (list(FUTURES.items()) if screen_cat == "All"
+                    else list(FUTURES_BY_CAT[screen_cat].items()))
+    screen_tickers = tuple(tk for _, tk in screen_items)
+
+    with st.spinner("Scanning futures…"):
+        screen_vals = screen_valuations(screen_tickers, window)
+
+    screen_rows = [(label, tk, screen_vals[tk])
+                   for label, tk in screen_items if tk in screen_vals]
+    screen_rows.sort(key=lambda r: abs(r[2] - 50), reverse=True)
+
+    if not screen_rows:
+        st.info("No screener data available for this category right now.")
+    else:
+        st.markdown(_screener_table_html(screen_rows, top=15), unsafe_allow_html=True)
+        if len(screen_rows) > 15:
+            st.markdown(
+                f"<div style='font-size:10px;color:{C['muted']};font-family:monospace;"
+                f"margin-top:8px;'>Top 15 of {len(screen_rows)} scanned · "
+                f"sorted by distance from fair value (50)</div>",
+                unsafe_allow_html=True,
+            )
 
     _render_footer()
 
