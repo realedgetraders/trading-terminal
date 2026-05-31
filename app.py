@@ -63,6 +63,7 @@ MODULES = [
         "desc":     "PRO aggregator for any forex pair — COT positioning, seasonal pattern, macro bias, and upcoming events in one unified view.",
         "active":   True,
         "pro":      True,
+        "hero":     True,
         "page":     "pages/7_Pair_Intelligence.py",
     },
     {
@@ -513,11 +514,19 @@ def _render_landing():
 
 
 def _render_analysis():
-    """Analysis module card grid — active + teaser modules."""
+    """Analysis module card grid — hero banner on top, then symmetric 2-col grid."""
     visible = [m for m in MODULES if m["active"] or m.get("teaser") or m.get("wip")]
-    for row_start in range(0, len(visible), 2):
+    hero = next((m for m in visible if m.get("hero")), None)
+    rest = [m for m in visible if not m.get("hero")]
+
+    # Hero banner — spans the full width (two card slots)
+    if hero:
+        _render_module_card(st.container(), hero)
+
+    # Remaining modules — standard 2-column grid
+    for row_start in range(0, len(rest), 2):
         col_l, col_r = st.columns(2, gap="large")
-        for col, mod in zip([col_l, col_r], visible[row_start:row_start + 2]):
+        for col, mod in zip([col_l, col_r], rest[row_start:row_start + 2]):
             _render_module_card(col, mod)
 
 
