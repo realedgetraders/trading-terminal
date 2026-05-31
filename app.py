@@ -69,9 +69,9 @@ MODULES = [
     {
         "title":    "Valuation Tool",
         "icon":     "⚖️",
-        "desc":     "Detect whether the currently selected asset is under- or overvalued relative to other assets. Engine still in development.",
-        "active":   False,
-        "wip":      True,
+        "desc":     "Measure any asset against four macro anchors — Gold, USD, Bonds and World Equities — to see whether it is currently under- or overvalued.",
+        "active":   True,
+        "pro":      True,
         "page":     "pages/7_Valuation.py",
     },
     {
