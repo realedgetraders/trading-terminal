@@ -195,16 +195,12 @@ def screen_valuations(tickers: tuple[str, ...], window: int) -> dict[str, float]
 # ╚══════════════════════════════════════════════════════════════════════════════
 
 def val_label(v: float) -> tuple[str, str]:
-    """0–100 value → (label, colour)."""
-    if v >= 80:
-        return "Strongly Overvalued", C["red"]
-    if v >= 60:
+    """0–100 value → (label, colour). 0–25 under · 26–74 neutral · 75–100 over."""
+    if v >= 75:
         return "Overvalued", C["red"]
-    if v > 40:
-        return "Fair Value", C["teal"]
-    if v > 20:
+    if v <= 25:
         return "Undervalued", C["green"]
-    return "Strongly Undervalued", C["green"]
+    return "Neutral", C["text"]
 
 
 def relative_label(diff: float) -> tuple[str, str]:
