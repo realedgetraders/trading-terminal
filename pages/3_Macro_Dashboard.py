@@ -73,7 +73,8 @@ _FB_RATES  = {"USD": 3.75, "EUR": 2.00, "GBP": 3.75, "JPY": 0.75,
 # EUR Apr=3.0 (Eurostat flash), GBP Apr=2.82 (ONS D7BT confirmed), JPY Apr=1.4 (MIC),
 # AUD Apr=4.2 (ABS Monthly CPI Indicator), CAD Apr=2.8 (StatCan), CHF Mar=0.2 (BFS).
 _FB_CPI    = {"USD": 2.4,  "EUR": 3.0,  "GBP": 2.8,  "JPY": 1.4,
-              "AUD": 4.2,  "NZD": 2.5,  "CAD": 2.8,  "CHF": 0.2}
+              "AUD": 4.2,  "NZD": 2.5,  "CAD": 2.8,  "CHF": 0.5}
+# CHF Apr=0.50 confirmed Eurostat ei_cphi_m 2026-05-31
 # Core CPI — GBP Apr=2.8 confirmed (ONS D7G7); others estimated.
 _FB_CCPI   = {"USD": 2.8,  "EUR": 2.8,  "GBP": 2.8,  "JPY": 1.4,
               "AUD": 3.6,  "NZD": 2.7,  "CAD": 2.4,  "CHF": 0.9}
@@ -93,8 +94,9 @@ _FB_PREV_RATES = {"USD": 4.00, "EUR": 2.25, "GBP": 4.00, "JPY": 0.50,
                   "AUD": 4.10, "NZD": 2.50, "CAD": 2.50, "CHF": 0.25}
 # AUD prev: 4.10 (rate before 5 May 2026 hike to 4.35, not 3.85); CAD prev: 2.50 (before last cut)
 # Previous-month CPI — GBP Mar=3.30 confirmed (ONS); others estimated from trend.
-_FB_PREV_CPI   = {"USD": 2.6,  "EUR": 2.9,  "GBP": 3.3,  "JPY": 1.5,
-                  "AUD": 4.0,  "NZD": 2.5,  "CAD": 2.3,  "CHF": 0.2}
+_FB_PREV_CPI   = {"USD": 2.6,  "EUR": 2.6,  "GBP": 3.3,  "JPY": 1.5,
+                  "AUD": 4.6,  "NZD": 2.5,  "CAD": 2.3,  "CHF": 0.6}
+# EUR prev=2.6 (Mar), AUD prev=4.6 (Mar), CHF prev=0.6 (Mar) confirmed Eurostat/ABS
 _FB_PREV_CCPI  = {"USD": 3.0,  "EUR": 2.7,  "GBP": 3.3,  "JPY": 1.6,
                   "AUD": 3.6,  "NZD": 2.7,  "CAD": 2.4,  "CHF": 1.0}
 _FB_PREV_GDP   = {"USD": 2.4,  "EUR": 0.4,  "GBP": 0.6,  "JPY": 0.1,
@@ -713,6 +715,107 @@ def fetch_abs_cpi():
         return h_val, h_prev, c_val, c_prev
     except Exception:
         return None, None, None, None
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_eurostat_hicp(geo: str):
+    """HICP annual rate of change (YoY%) via Eurostat ei_cphi_m dataset.
+
+    Works for any EEA geo code, confirmed locally:
+      geo='EA' → Euro Area,   April 2026 = 3.00% / core 2.20%  (age 31 d)
+      geo='CH' → Switzerland, April 2026 = 0.50% / core 0.30%  (age 31 d)
+
+    Query filtered to RT12 unit + since 2025-01 → ~10 KB payload.
+    Freshness gate: 45 days.
+    Returns (headline_yoy, headline_prev, core_yoy, core_prev) or (None,None,None,None).
+    """
+    try:
+        r = requests.get(
+            f"https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/"
+            f"ei_cphi_m?geo={geo}&unit=RT12&sinceTimePeriod=2025-01&format=JSON&lang=EN",
+            timeout=15)
+        if r.status_code != 200:
+            return None, None, None, None
+        d = r.json()
+        ids  = d.get("id", [])
+        sizes= d.get("size", [])
+        vals = d.get("value", {})
+        time_labels = list(d["dimension"]["time"]["category"]["label"].values())
+        indic_index = {k: i for i, k in enumerate(
+            d["dimension"]["indic"]["category"]["label"].keys())}
+        n_time  = sizes[ids.index("time")]  if "time"  in ids else len(time_labels)
+        # With unit=RT12 filtered, flat index = indic_i * n_time + time_i
+        def _val(indic_key, t_off):
+            i = indic_index.get(indic_key)
+            t = n_time + t_off        # t_off=-1 → latest, -2 → prev
+            return float(vals[str(i * n_time + t)]) if i is not None and 0 <= t < n_time and str(i * n_time + t) in vals else None
+        h_val  = _val("TOTAL",      -1);  h_prev = _val("TOTAL",      -2)
+        c_val  = _val("CP-HI00XEF", -1);  c_prev = _val("CP-HI00XEF", -2)
+        if h_val is None:
+            return None, None, None, None
+        # Freshness gate: 45 days
+        last_period = time_labels[-1] if time_labels else ""
+        try:
+            _ey, _em = map(int, last_period.split("-"))
+            import calendar as _cal2
+            _ld = _cal2.monthrange(_ey, _em)[1]
+            _age = (datetime.now().date() - datetime(_ey, _em, _ld).date()).days
+            if _age > 45:
+                print(f"[MACRO FRESHNESS] HICP/{geo}: {last_period} is {_age}d old (>45d), discarding")
+                return None, None, None, None
+        except Exception:
+            pass
+        return h_val, h_prev, c_val, c_prev
+    except Exception:
+        return None, None, None, None
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_statcan_cpi():
+    """CAD CPI All-items via Statistics Canada WDS API.
+
+    Table 18-10-0004-01, coordinate 1.1 (All items, Canada, NSA, 2002=100).
+    YoY% computed from 14-month window of monthly index values.
+    Timeout 25 s + 1 retry. Times out from some networks (incl. local dev)
+    but expected to succeed from Streamlit Cloud's server IP.
+    Freshness gate: 60 days.
+    Returns (cpi_yoy, prev_yoy) or (None, None).
+    """
+    url = ("https://www150.statcan.gc.ca/t1/tbl1/en/tv.action/"
+           "getDataFromCubePidCoordAndLatestNPeriods/1810000401/1.1/14")
+    for _attempt in range(2):
+        try:
+            r = requests.get(url, timeout=25, headers={"User-Agent": "Mozilla/5.0"})
+            if r.status_code != 200:
+                break
+            data = r.json()
+            obs  = data if isinstance(data, list) else data.get("object", data.get("data", []))
+            obs  = sorted([o for o in obs if o.get("value") is not None],
+                          key=lambda x: x.get("refPer", ""))
+            if len(obs) < 13:
+                break
+            curr   = float(obs[-1]["value"]);  y12  = float(obs[-13]["value"])
+            prev1  = float(obs[-2]["value"]);   y13  = float(obs[-14]["value"]) if len(obs) >= 14 else None
+            yoy      = (curr  / y12  - 1.0) * 100.0
+            prev_yoy = (prev1 / y13  - 1.0) * 100.0 if y13 else None
+            # Freshness gate: 60 days
+            ref = obs[-1].get("refPer", "")
+            try:
+                _cy, _cm = map(int, ref[:7].split("-"))
+                import calendar as _cal3
+                _cld = _cal3.monthrange(_cy, _cm)[1]
+                if (datetime.now().date() - datetime(_cy, _cm, _cld).date()).days > 60:
+                    return None, None
+            except Exception:
+                pass
+            return yoy, prev_yoy
+        except requests.Timeout:
+            if _attempt == 0:
+                continue
+            break
+        except Exception:
+            break
+    return None, None
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -1456,21 +1559,15 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
         # 100 d quarterly: accepts Q1 2026 (61 d from Mar 31); rejects Q4 2025+ (151 d).
         if cpi is None:
             if ccy == "EUR":
-                # ECB ICP last confirmed obs = Dec 2025 (151 d) → rejected by 45-day gate.
-                # Passes automatically once ECB updates the dataset.
-                _ecb_hicp = fetch_ecb_series_dated("ICP", "M.U2.N.000000.4.ANR", 3)
-                if _ecb_hicp:
-                    try:
-                        _ym = _ecb_hicp[-1][0][:7]       # "2026-04"
-                        _ey, _em = map(int, _ym.split("-"))
-                        _ecb_age = (datetime.now().date()
-                                    - datetime(_ey, _em, 28).date()).days
-                    except Exception:
-                        _ecb_age = 999
-                    if _ecb_age <= 45:
-                        cpi = _ecb_hicp[-1][1]
-                        prev_cpi = _ecb_hicp[-2][1] if len(_ecb_hicp) >= 2 else None
-                        _cpi_is_live = True; _cpi_src_label = "ECB"
+                # Eurostat ei_cphi_m: correct dataset, confirmed April 2026 = 3.00%.
+                # prc_hicp_manr was the wrong dataset (frozen at Dec 2025); ei_cphi_m
+                # is Eurostat's Euro Indicators series, updated same day as the press release.
+                _eur_h, _eur_hp, _eur_c, _eur_cp = fetch_eurostat_hicp("EA")
+                if _eur_h is not None:
+                    cpi = _eur_h; prev_cpi = _eur_hp
+                    _cpi_is_live = True; _cpi_src_label = "Eurostat"
+                    if core_cpi is None and _eur_c is not None:
+                        core_cpi = _eur_c; prev_core_cpi = _eur_cp
 
             elif ccy == "GBP":
                 cpi, prev_cpi = _fred_fresh("CPALTT01GBM659N", "CPI/GBP", 45, 10)
@@ -1497,25 +1594,41 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
                 if _abs_h is not None:
                     cpi = _abs_h; prev_cpi = _abs_hp
                     _cpi_is_live = True; _cpi_src_label = "ABS"
-                    # Core CPI from same API call — propagate if not yet set
                     if core_cpi is None and _abs_c is not None:
                         core_cpi = _abs_c; prev_core_cpi = _abs_cp
                 else:
-                    # Fallback: OECD quarterly index via FRED (100-day gate)
                     cpi, prev_cpi = _fred_qoq_yoy_fresh("AUSCPIALLQINMEI", "CPI/AUD", 100)
                     if cpi is not None: _cpi_is_live = True; _cpi_src_label = "FRED"
 
             elif ccy == "NZD":
+                # FRED OECD quarterly CPI index (100-day gate, 4-quarter YoY).
+                # Stats NZ API returns 502 from some networks; FRED is the reliable fallback.
                 cpi, prev_cpi = _fred_qoq_yoy_fresh("NZLCPIALLQINMEI", "CPI/NZD", 100)
                 if cpi is not None: _cpi_is_live = True; _cpi_src_label = "FRED"
 
             elif ccy == "CAD":
-                cpi, prev_cpi = _fred_fresh("CPALTT01CAM659N", "CPI/CAD", 45, 10)
-                if cpi is not None: _cpi_is_live = True; _cpi_src_label = "FRED"
+                # Statistics Canada WDS: 25 s timeout + 1 retry. Times out from some
+                # networks (incl. local dev) but expected to work from Streamlit Cloud.
+                _cad_h, _cad_hp = fetch_statcan_cpi()
+                if _cad_h is not None:
+                    cpi = _cad_h; prev_cpi = _cad_hp
+                    _cpi_is_live = True; _cpi_src_label = "StatCan"
+                else:
+                    # FRED fallback with 45-day gate
+                    cpi, prev_cpi = _fred_fresh("CPALTT01CAM659N", "CPI/CAD", 45, 10)
+                    if cpi is not None: _cpi_is_live = True; _cpi_src_label = "FRED"
 
             elif ccy == "CHF":
-                cpi, prev_cpi = _fred_fresh("CPALTT01CHM659N", "CPI/CHF", 45, 10)
-                if cpi is not None: _cpi_is_live = True; _cpi_src_label = "FRED"
+                # Eurostat ei_cphi_m with geo=CH: confirmed April 2026 = 0.50%, 31 d old.
+                _chf_h, _chf_hp, _chf_c, _chf_cp = fetch_eurostat_hicp("CH")
+                if _chf_h is not None:
+                    cpi = _chf_h; prev_cpi = _chf_hp
+                    _cpi_is_live = True; _cpi_src_label = "Eurostat"
+                    if core_cpi is None and _chf_c is not None:
+                        core_cpi = _chf_c; prev_core_cpi = _chf_cp
+                else:
+                    cpi, prev_cpi = _fred_fresh("CPALTT01CHM659N", "CPI/CHF", 45, 10)
+                    if cpi is not None: _cpi_is_live = True; _cpi_src_label = "FRED"
 
     # ── GDP fetch (non-USD) ───────────────────────────────────────────────────
     if ccy == "EUR":
@@ -1548,16 +1661,12 @@ def _d2_inflation_growth(ccy: str, ff_df: pd.DataFrame):
         core_cpi, prev_core_cpi = fetch_ons_core_cpi_yoy()
 
     if core_cpi is None and ccy == "EUR":
-        _ecb_core = fetch_ecb_series_dated("ICP", "M.U2.N.XEF000.4.ANR", 3)
-        if _ecb_core:
-            try:
-                _ey2, _em2 = map(int, _ecb_core[-1][0][:7].split("-"))
-                _core_age = (datetime.now().date() - datetime(_ey2, _em2, 28).date()).days
-            except Exception:
-                _core_age = 999
-            if _core_age <= 45:
-                core_cpi = _ecb_core[-1][1]
-                prev_core_cpi = _ecb_core[-2][1] if len(_ecb_core) >= 2 else None
+        # Eurostat ei_cphi_m CP-HI00XEF (ex energy, food, alcohol, tobacco).
+        # Populated from the same call as headline CPI above; this is a safety net
+        # if that path was skipped (e.g. FF provided headline but not core).
+        _, _, _eur_c2, _eur_cp2 = fetch_eurostat_hicp("EA")
+        if _eur_c2 is not None:
+            core_cpi = _eur_c2; prev_core_cpi = _eur_cp2
 
     _CORE_CPI_FRED = {
         "JPY": "CPGRLE01JPM659N",
