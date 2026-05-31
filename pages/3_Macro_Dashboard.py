@@ -1206,8 +1206,12 @@ _FF_PATTERNS = {
 
 def _ff_beat_miss(ff_df: pd.DataFrame, ccy: str, pattern: str):
     """Find latest FF event matching pattern that has both actual+forecast populated.
-    Iterates newest-first so a future event (actual=None) doesn't shadow a past release.
-    Returns (actual, forecast, surprise_score) — score is None when data is missing."""
+    Iterates newest-first so a future event (no actual yet) doesn't shadow a past
+    release. NaN (pandas' missing-value marker, which `is not None` does NOT catch)
+    is treated as absent, so an unreleased event or one with no published forecast
+    can never produce a spurious surprise.
+    Returns (actual, forecast, surprise_score) — forecast/score are None when no
+    genuine actual-vs-consensus comparison is available."""
     try:
         sub = ff_df[
             (ff_df["currency"] == ccy) &
@@ -1217,12 +1221,13 @@ def _ff_beat_miss(ff_df: pd.DataFrame, ccy: str, pattern: str):
             return None, None, None
         # Best: most recent event where both actual AND forecast are present
         for _, row in sub.iterrows():
-            if row["actual"] is not None and row["forecast"] is not None:
-                return row["actual"], row["forecast"], _score_surprise(row["actual"], row["forecast"])
-        # Fallback: most recent event with at least an actual value
+            if pd.notna(row["actual"]) and pd.notna(row["forecast"]):
+                return (float(row["actual"]), float(row["forecast"]),
+                        _score_surprise(row["actual"], row["forecast"]))
+        # Released but no published forecast: surface the actual, no score
         for _, row in sub.iterrows():
-            if row["actual"] is not None:
-                return row["actual"], row["forecast"], _score_surprise(row["actual"], row["forecast"])
+            if pd.notna(row["actual"]):
+                return float(row["actual"]), None, None
         return None, None, None
     except Exception:
         return None, None, None
@@ -1925,152 +1930,67 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
     return d3, rows
 
 
+# ForexFactory event title substrings used to source each D4 surprise component.
+# D4 scores ONLY genuine surprises — released ACTUAL vs published CONSENSUS forecast —
+# so each component is matched to the FF release that carries a real forecast. A pattern
+# that doesn't match (or a release with no published forecast) degrades safely: the
+# component is dropped from the average and flagged, never back-filled with the prior
+# reading. Strings follow ForexFactory's own event titles (e.g. "Non-Farm Employment
+# Change", not "Nonfarm Payrolls").
+_D4_SURPRISE_FF = {
+    "USD": ("CPI m/m",                "GDP q/q", "Non-Farm Employment Change"),
+    "EUR": ("CPI Flash Estimate y/y", "GDP q/q", "Employment Change q/q"),
+    "GBP": ("CPI y/y",                "GDP m/m", "Employment Change"),
+    "JPY": ("National Core CPI y/y",  "GDP q/q", "Employment Change"),
+    "AUD": ("CPI q/q",                "GDP q/q", "Employment Change"),
+    "NZD": ("CPI q/q",                "GDP q/q", "Employment Change q/q"),
+    "CAD": ("CPI m/m",                "GDP m/m", "Employment Change"),
+    "CHF": ("CPI m/m",                "GDP q/q", "Employment Change"),
+}
+
+
 def _d4_surprises(ccy: str, ff_df: pd.DataFrame):
-    """D4: Economic Surprises.
-    USD — FRED two-observation approach: compare current release vs prior release as
-          implicit forecast baseline. Falls back to FF when FRED unavailable.
-    Others — ForexFactory beat/miss vs published consensus forecast.
+    """D4: Economic Surprises — released ACTUAL vs published CONSENSUS forecast.
+
+    A surprise only exists relative to a genuine market expectation, so every
+    component (CPI, GDP, Employment) for every currency is scored exclusively
+    from ForexFactory releases that carry BOTH an actual and a consensus
+    forecast. When no published forecast is available the component is removed
+    from the D4 average entirely — never back-filled with the prior reading
+    (which would merely re-measure the change already scored in D2) — and
+    flagged '⚠ no consensus' so the gap is visible, like the static-data flags.
     """
-    if ccy == "USD":
-        # ── CPI: current YoY vs prior month YoY ───────────────────────────────
-        cpi_curr, cpi_prev = _fred_yoy_with_prev("CPIAUCSL")
-        cpi_act  = cpi_curr
-        cpi_fore = cpi_prev      # prior YoY = implicit forecast baseline
-        s_cpi    = _score_surprise(cpi_curr, cpi_prev)
+    cpi_pat, gdp_pat, emp_pat = _D4_SURPRISE_FF.get(ccy, ("CPI", "GDP", "Employment"))
 
-        # ── GDP: current QoQ vs prior quarter QoQ ────────────────────────────
-        _gdp_data  = fetch_fred_series("A191RL1Q225SBEA", 5)
-        gdp_act    = _gdp_data[-1][1] if _gdp_data else None
-        _gdp_prev  = _gdp_data[-2][1] if len(_gdp_data) >= 2 else None
-        gdp_fore   = _gdp_prev
-        s_gdp      = _score_surprise(gdp_act, _gdp_prev)
+    cpi_act, cpi_fore, s_cpi = _ff_beat_miss(ff_df, ccy, cpi_pat)
+    gdp_act, gdp_fore, s_gdp = _ff_beat_miss(ff_df, ccy, gdp_pat)
+    emp_act, emp_fore, s_emp = _ff_beat_miss(ff_df, ccy, emp_pat)
 
-        # ── Employment: current MoM change vs prior MoM change ───────────────
-        _pems  = fetch_fred_series("PAYEMS", 5)
-        emp_act  = (_pems[-1][1] - _pems[-2][1]) if len(_pems) >= 2 else None
-        _emp_prev = (_pems[-2][1] - _pems[-3][1]) if len(_pems) >= 3 else None
-        emp_fore = _emp_prev
-        s_emp    = _score_surprise(emp_act, _emp_prev)
+    # Employment is reported in thousands of persons for most currencies; scale the
+    # DISPLAYED actual/forecast down so the value column stays readable (the surprise
+    # score is scale-invariant). EUR/NZD/CHF report % q/q → leave untouched.
+    if ccy not in _EMPLOY_IS_PCT:
+        if emp_act  is not None and abs(emp_act)  > 1000: emp_act  /= 1000.0
+        if emp_fore is not None and abs(emp_fore) > 1000: emp_fore /= 1000.0
 
-        # ── FF fallback: when FRED series unavailable ─────────────────────────
-        if s_cpi is None:
-            cpi_act, cpi_fore, s_cpi = _ff_beat_miss(ff_df, ccy, "CPI m/m")
-        if s_gdp is None:
-            gdp_act, gdp_fore, s_gdp = _ff_beat_miss(ff_df, ccy, "GDP q/q")
-        if s_emp is None:
-            emp_act, emp_fore, s_emp = _ff_beat_miss(ff_df, ccy, "Nonfarm Payrolls")
-
-        # ── Static fallback: compare current vs previous period FB values ──────
-        # Ensures D4 always shows direction even when all live sources fail.
-        if s_cpi is None:
-            cpi_act  = _FB_CPI.get(ccy)
-            cpi_fore = _FB_PREV_CPI.get(ccy)
-            s_cpi    = _score_surprise(cpi_act, cpi_fore)
-        if s_gdp is None:
-            gdp_act  = _FB_GDP.get(ccy)
-            gdp_fore = _FB_PREV_GDP.get(ccy)
-            s_gdp    = _score_surprise(gdp_act, gdp_fore)
-        if s_emp is None:
-            emp_act  = _FB_EMPLOY.get(ccy)
-            emp_fore = _FB_PREV_EMPLOY.get(ccy)
-            s_emp    = _score_surprise(emp_act, emp_fore)
-
-        src = "FRED"
-
-    else:
-        # ── Non-USD: same two-consecutive-releases approach as USD ────────────
-        # Tier 1: FRED/ECB — compare current release vs prior release as baseline
-        # Tier 2: FF beat/miss (when FRED unavailable)
-        # Tier 3: static fallback comparison
-        # CPI series for D4 surprise (current vs prior release).
-        # JPY: CPALTT01JPM659N discontinued 2021 → JPNCPIALLMINMEI (index, compute YoY).
-        # AUD/NZD: quarterly CPI → quarterly YoY via _fred_qoq_yoy_fresh.
-        # GBP/CAD/CHF: existing OECD YoY% series (no freshness gate in D4 — surprise
-        #              comparison is valid even with slightly older data).
-        _CPI_FRED_MONTHLY = {
-            "GBP": "CPALTT01GBM659N",
-            "CAD": "CPALTT01CAM659N",
-            "CHF": "CPALTT01CHM659N",
-        }
-        _GDP_FRED = {
-            "EUR": "NAEXKP01EZQ652S", "GBP": "NAEXKP01GBQ652S",
-            "JPY": "JPNRGDPEXP",       "AUD": "NAEXKP01AUQ657S",
-            "NZD": "NAEXKP01NZQ657S",  "CAD": "NAEXKP01CAQ652S",
-            "CHF": "NAEXKP01CHQ652S",
-        }
-
-        # ── CPI: current YoY vs prior YoY ────────────────────────────────────
-        if ccy == "EUR":
-            cpi_act, cpi_fore = fetch_ecb_series_with_prev("ICP", "M.U2.N.000000.4.ANR")
-        elif ccy == "JPY":
-            # Index series → compute YoY for current and prior month
-            cpi_act, cpi_fore = _fred_yoy_with_prev("JPNCPIALLMINMEI")
-        elif ccy in ("AUD", "NZD"):
-            # Quarterly index → 4-quarter YoY comparison (no freshness gate in D4)
-            _qsid = "AUSCPIALLQINMEI" if ccy == "AUD" else "NZLCPIALLQINMEI"
-            _qd = fetch_fred_series(_qsid, 8)
-            cpi_act = cpi_fore = None
-            if len(_qd) >= 5:
-                try:
-                    cpi_act  = (_qd[-1][1] / _qd[-5][1] - 1.0) * 100.0
-                    cpi_fore = (_qd[-2][1] / _qd[-6][1] - 1.0) * 100.0 if len(_qd) >= 6 else None
-                except (ZeroDivisionError, TypeError):
-                    pass
-        else:
-            cpi_act, cpi_fore = _fred_latest_with_prev(_CPI_FRED_MONTHLY[ccy], 10)
-        s_cpi = _score_surprise(cpi_act, cpi_fore)
-
-        # ── GDP: current QoQ% vs prior quarter QoQ% ──────────────────────────
-        # _gdp_qoq_from_fred handles both level and % series and applies a 180-day gate.
-        _gdp_s = _GDP_FRED.get(ccy)
-        gdp_act, gdp_fore = _gdp_qoq_from_fred(_gdp_s) if _gdp_s else (None, None)
-        s_gdp  = _score_surprise(gdp_act, gdp_fore)
-
-        # ── Employment: last two actual releases via FF ───────────────────────
-        emp_act, emp_fore = _ff_latest_two(ff_df, ccy, "Employment Change")
-        # Normalise K-unit currencies (EUR/NZD/CHF report % so skip)
-        if ccy not in _EMPLOY_IS_PCT:
-            if emp_act  is not None and abs(emp_act)  > 1000: emp_act  /= 1000.0
-            if emp_fore is not None and abs(emp_fore) > 1000: emp_fore /= 1000.0
-        s_emp = _score_surprise(emp_act, emp_fore)
-
-        # ── Tier 2: FF beat/miss when FRED/ECB unavailable ───────────────────
-        if s_cpi is None:
-            _cp = _FF_PATTERNS.get(ccy, ["CPI"])[0]
-            cpi_act, cpi_fore, s_cpi = _ff_beat_miss(ff_df, ccy, _cp)
-        if s_gdp is None:
-            _gpats = _FF_PATTERNS.get(ccy, [])
-            _gp = _gpats[3] if len(_gpats) > 3 else "GDP"
-            gdp_act, gdp_fore, s_gdp = _ff_beat_miss(ff_df, ccy, _gp)
-        if s_emp is None:
-            _epats = _FF_PATTERNS.get(ccy, [])
-            _ep = _epats[2] if len(_epats) > 2 else "Employment"
-            emp_act, emp_fore, s_emp = _ff_beat_miss(ff_df, ccy, _ep)
-
-        # ── Tier 3: static fallback — always produces a score ────────────────
-        if s_cpi is None:
-            cpi_act = _FB_CPI.get(ccy);  cpi_fore = _FB_PREV_CPI.get(ccy)
-            s_cpi = _score_surprise(cpi_act, cpi_fore)
-        if s_gdp is None:
-            gdp_act = _FB_GDP.get(ccy);  gdp_fore = _FB_PREV_GDP.get(ccy)
-            s_gdp = _score_surprise(gdp_act, gdp_fore)
-        if s_emp is None:
-            emp_act = _FB_EMPLOY.get(ccy); emp_fore = _FB_PREV_EMPLOY.get(ccy)
-            s_emp = _score_surprise(emp_act, emp_fore)
-
-        src = "FRED/ECB"
-
-    # Only average non-None scores — None means "no data", not "neutral (0.0)"
+    # Average only components that produced a real surprise (score not None);
+    # 'Surprise Momentum' and the D4 score follow the same rule automatically.
     _subs = [s for s in (s_cpi, s_gdp, s_emp) if s is not None]
     momentum = (sum(_subs) / len(_subs)) if _subs else None
     _all  = [s for s in (s_cpi, s_gdp, s_emp, momentum) if s is not None]
     d4 = (sum(_all) / len(_all)) if _all else 0.0
 
+    def _surprise_src(score, actual):
+        # ⚠-prefixed sources render amber in the table, like the static-data flags.
+        if score is not None:
+            return "ForexFactory"
+        return "⚠ no consensus" if actual is not None else "⚠ no data"
+
     rows = [
-        ("CPI Surprise",       cpi_act,  None, cpi_fore, _beat_miss_label(s_cpi), s_cpi, src),
-        ("GDP Surprise",       gdp_act,  None, gdp_fore, _beat_miss_label(s_gdp), s_gdp, src),
-        ("Employment Surprise", emp_act, None, emp_fore, _beat_miss_label(s_emp), s_emp, src),
-        ("Surprise Momentum",  momentum, None, None,     None, momentum, "Composite"),
+        ("CPI Surprise",        cpi_act,  None, cpi_fore, _beat_miss_label(s_cpi), s_cpi, _surprise_src(s_cpi, cpi_act)),
+        ("GDP Surprise",        gdp_act,  None, gdp_fore, _beat_miss_label(s_gdp), s_gdp, _surprise_src(s_gdp, gdp_act)),
+        ("Employment Surprise", emp_act,  None, emp_fore, _beat_miss_label(s_emp), s_emp, _surprise_src(s_emp, emp_act)),
+        ("Surprise Momentum",   momentum, None, None,     None, momentum, "Composite"),
     ]
     return d4, rows
 
