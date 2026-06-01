@@ -196,20 +196,34 @@ pages/1_Seasonality.py — DO NOT MODIFY unless explicitly asked
 ### Layout
 - Title row: `st.columns([2,5,2])` — "← Back to Hub" left | "Seasonality Tracker" centered
 - Controls: ASSET dropdown | HISTORICAL DATA radio (5y/10y/15y/20y/25y) | PATTERN WINDOW date pickers
-- Main chart: seasonal trend line (blue), mean-normalized to 100, rolling(3) smooth
+- Main chart: seasonal trend line (blue), Seasonax return-cumulation curve — starts at 100, raw daily texture (no smoothing). See **Seasonal Curve Method**.
 - Pattern Analysis: donut (Long % green / Short % red), stats cards, year-by-year table
 - Seasonality Radar: "Top 10 Seasonal Setups — Next 30 Days"
 
+### Seasonal Curve Method (calc_seasonal_curve) — real Seasonax method
+- Average daily **log returns** `log(Close / Close.shift(1))` per `(month, day)` across the available years (≥2 obs/DOY); first trading day per year = anchor (return 0).
+- Cumulate in chronological DOY order and index from 100: `index(t) = 100 * exp(cumsum(mean log return))` → curve **starts at 100** at the window start.
+- **NO** full-year re-centering to the curve mean (old bug — removed; it made the curve not start at 100).
+- **NO** smoothing of the averaged curve (3-day rolling removed) — raw daily texture = Seasonax look; the ~10Y per-DOY average is the only noise control.
+- `year_paths` (per-year normalized price LEVELS, 100 at each year's first trading day) unchanged — for a single year identical to the cumulated return curve.
+
+### Asset Categories (shared `SCREENER_CATEGORIES` config — screener + detail selector)
+- Forex (28 pairs + Custom in the detail selector) · Commodities · Agriculture · Indices · Bonds · **Crypto** (BTC-USD, ETH-USD)
+- One shared mapping/config drives BOTH the radar screener and the top detail selector — no duplicate list. Default category = Forex.
+- Crypto trades 7 days/week — handled correctly (per-DOY averaging over available years; weekends contribute naturally, no distortion).
+
 ### Radar Logic
-- Scans all 13 forex pairs (7 majors + 6 crosses), 10Y history
+- Category filter (pill row, default Forex): Forex scans 13 pairs (7 majors + 6 crosses); other categories scan their `SCREENER_CATEGORIES` tickers — 10Y history
 - Top 10 by distance from 50% (strongest seasonal bias), sorted _qualified first
 - Extreme (⚡): Long % ≥70 or ≤30, ≥7 years data → green/red row
 - Watch (⚠): directional bias, below threshold → amber row
-- Indices & Commodities: collapsed `st.expander` with amber disclaimer (structural trend bias)
+- Non-Forex categories: amber "interpret with caution" banner above the table (structural trend bias)
 
 ### Data Layer
 - Forex cross-pairs: synthetic via USD legs (GBPAUD = GBPUSD / AUDUSD)
 - yfinance -1 day index shift for forex tickers (=X suffix) to correct UTC offset
+- **Guard:** `fetch_data` drops rows with `Close <= 0` before any calc (instrument-agnostic; protects normalization/returns). Triggered by WTI Crude's negative 2020-04-20 print — affects only Crude; Forex untouched.
+- Data caveats: Platinum (PL=F) has gaps before ~2010 → only relevant at lookback >16Y; Natural Gas (NG=F) inherently volatile (continuous-contract roll noise) — accepted caveat.
 - `@st.cache_data(ttl=3600)`
 
 ---
