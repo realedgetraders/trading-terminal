@@ -3067,9 +3067,7 @@ def _render_maintenance():
             f"letter-spacing:2px;text-transform:uppercase;margin-bottom:16px;'>"
             f"Module 3 &nbsp;·&nbsp; Real Edge Terminal</div>"
             f"<div style='font-size:13px;color:{C['muted']};font-family:monospace;"
-            f"line-height:1.7;'>Temporarily under maintenance.<br>"
-            f"We're integrating dedicated live macro-data providers for accurate, "
-            f"real-time economic bias.<br>Back online soon.</div>"
+            f"line-height:1.7;'>Temporarily under maintenance.<br>Back online soon.</div>"
             f"</div>",
             unsafe_allow_html=True,
         )
