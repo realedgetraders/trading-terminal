@@ -288,16 +288,23 @@ def calc_overall_stats(df: pd.DataFrame) -> dict:
 
 def calc_seasonal_curve(df: pd.DataFrame):
     """
-    Month/Day methodology — matches Seasonax exactly:
+    Seasonax return-based methodology:
     1. Exclude the current (incomplete) calendar year.
-    2. Normalize each year's Close to 100 at the first trading day.
-    3. Forward-fill each year's prices to ALL calendar dates (weekends included).
-    4. Group by (month, day) and average across years (≥2 observations).
+    2. Per year compute daily log returns log(Close / Close.shift(1)); the first
+       trading day is the anchor (return 0 — defines the 100 starting level).
+    3. Map each log return to its (month, day) and average across the available
+       years per day-of-year (≥2 observations).
+    4. Cumulate the mean log returns in chronological DOY order and index from
+       100: index(t) = 100 * exp(cumsum(mean_log_return)). The curve therefore
+       starts at ~100 at the window start — no full-year re-centering.
     5. Map results to _REF_YEAR (2023, non-leap) for the x-axis.
+    Weekend handling is automatic: each DOY is averaged only over the years that
+    actually traded that day (crypto contributes weekends, forex/futures do not).
     Returns (mean_df, year_paths) where:
       mean_df    — DataFrame with columns: date (Timestamp), index, n
       year_paths — dict {year: {"dates": [Timestamp,...], "vals": [float,...]}}
-                   (trading days only, mapped to _REF_YEAR month/day)
+                   of per-year normalized price LEVELS (100 at each year's first
+                   trading day) — unchanged from the level method.
     """
     current_year = dt_date.today().year
     by_md: dict[tuple, list[float]] = {}
@@ -313,19 +320,17 @@ def calc_seasonal_curve(df: pd.DataFrame):
         if base == 0:
             continue
 
-        # Normalize to 100 at first trading day
-        norm = grp["Close"] / base * 100.0
-
-        # Forward-fill to every calendar date in this year (for the mean)
-        full_idx = pd.date_range(f"{int(year)}-01-01", f"{int(year)}-12-31", freq="D")
-        norm_full = norm.reindex(full_idx).ffill().dropna()
-        for ts, val in norm_full.items():
+        # Daily log returns; first trading day = anchor (no within-year move)
+        logret = np.log(grp["Close"] / grp["Close"].shift(1))
+        logret.iloc[0] = 0.0
+        for ts, val in logret.items():
             m, d = ts.month, ts.day
             if m == 2 and d == 29:
                 continue  # skip leap day — _REF_YEAR has no Feb 29
             by_md.setdefault((m, d), []).append(float(val))
 
-        # Individual year path: trading days only, mapped to _REF_YEAR
+        # Individual year path: normalized price levels (unchanged)
+        norm = grp["Close"] / base * 100.0
         yr_dates, yr_vals = [], []
         for ts, val in norm.items():
             m, d = ts.month, ts.day
@@ -349,16 +354,16 @@ def calc_seasonal_curve(df: pd.DataFrame):
             ref_date = pd.Timestamp(_REF_YEAR, m, d)
         except Exception:
             continue
-        rows.append({"date": ref_date, "index": float(np.mean(vals)), "n": len(vals)})
+        rows.append({"date": ref_date, "ret": float(np.mean(vals)), "n": len(vals)})
 
     if not rows:
         return pd.DataFrame(), {}
 
     mean_df = pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
 
-    # Re-normalize so the mean of the entire curve = 100 (Seasonax methodology)
-    curve_mean = mean_df["index"].mean()
-    mean_df["index"] = (mean_df["index"] / curve_mean) * 100.0
+    # Seasonax: cumulate mean daily log returns and index from 100
+    mean_df["index"] = 100.0 * np.exp(mean_df["ret"].cumsum())
+    mean_df = mean_df.drop(columns=["ret"])
 
     # Smooth with a 3-day centered rolling average
     mean_df["index"] = (
