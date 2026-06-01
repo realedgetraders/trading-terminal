@@ -1827,7 +1827,11 @@ def _d3_labour_activity(ccy: str, ff_df: pd.DataFrame):
     unemp_is_live = False
     fred_key = fred_unemp_map.get(ccy)
     if fred_key:
-        unemp, prev_unemp = _fred_fresh(fred_key, f"Unemployment/{ccy}", 45, 10)
+        # 75-day gate: FRED dates monthly series at the PERIOD START, so a freshly
+        # released figure is already ~30-65 days old by this measure. 45 wrongly
+        # rejected the current release (e.g. USD UNRATE 61d) → static. 75 accepts the
+        # latest monthly print while still rejecting genuinely stale (>2.5 month) data.
+        unemp, prev_unemp = _fred_fresh(fred_key, f"Unemployment/{ccy}", 75, 10)
         if unemp is not None:
             unemp_is_live = True
     if unemp is None:
