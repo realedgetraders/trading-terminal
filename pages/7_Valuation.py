@@ -318,6 +318,7 @@ def _screener_table_html(rows: list[tuple[str, str, float]], top: int | None = N
     body = ""
     for i, (label, tk, val) in enumerate(rows if top is None else rows[:top]):
         status, color = val_label(val)
+        tk_disp = tk.replace("=F", "")
         bg  = C["dim"] if i % 2 == 0 else "transparent"
         bar = (f"<div style='position:relative;height:7px;width:130px;"
                f"background:#1e1e1e;border-radius:4px;'>"
@@ -329,7 +330,7 @@ def _screener_table_html(rows: list[tuple[str, str, float]], top: int | None = N
             f"font-family:monospace;text-align:center;'>{i + 1}</td>"
             f"<td style='padding:8px 12px;font-size:12px;color:{C['text']};"
             f"font-family:monospace;'>{label}"
-            f"<span style='color:#555;font-size:10px;'> · {tk}</span></td>"
+            f"<span style='color:#555;font-size:10px;'> · {tk_disp}</span></td>"
             f"<td style='padding:8px 12px;font-size:14px;color:{C['text']};"
             f"font-family:monospace;font-weight:700;text-align:right;'>{val:.0f}</td>"
             f"<td style='padding:8px 12px;'>{bar}</td>"
