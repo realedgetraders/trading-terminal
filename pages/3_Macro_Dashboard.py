@@ -3034,6 +3034,47 @@ def _render_currency_pills(selected: str):
 # ║  MAIN
 # ╚══════════════════════════════════════════════════════════════════════════════
 
+# ── Maintenance switch ─────────────────────────────────────────────────────────
+# Set to False to re-enable the live Economic Bias Engine. While True the module
+# shows a maintenance screen and ALL live data/scoring below is bypassed (left
+# fully intact). Reason: dedicated live macro-data providers (calendar/consensus)
+# to be purchased + deployed; free sources can't supply them reliably.
+_MAINTENANCE = True
+
+
+def _render_maintenance():
+    """Maintenance placeholder — blue theme, matches the module's look."""
+    _back, _ = st.columns([1, 6])
+    with _back:
+        if st.button("← Back to Hub", key="m3_back_maint"):
+            st.switch_page("app.py")
+    st.markdown("<div style='height:6vh;'></div>", unsafe_allow_html=True)
+    _, col, _ = st.columns([1, 3, 1])
+    with col:
+        st.markdown(
+            f"<div style='background:{C['card']};border:1px solid rgba(79,142,247,0.22);"
+            f"border-radius:16px;padding:48px 48px 40px;text-align:center;"
+            f"box-shadow:0 0 48px rgba(79,142,247,0.08),0 6px 32px rgba(0,0,0,0.35);'>"
+            f"<div style='margin-bottom:22px;'>"
+            f"<span style='background:{C['yellow']};color:#0a0c10;font-size:10px;"
+            f"font-family:monospace;font-weight:800;letter-spacing:3px;padding:4px 14px;"
+            f"border-radius:20px;text-transform:uppercase;'>Maintenance</span></div>"
+            f"<div style='font-size:40px;line-height:1;margin-bottom:20px;'>🔧</div>"
+            f"<div style='font-size:24px;font-weight:800;color:{C['text']};"
+            f"font-family:monospace;letter-spacing:-0.5px;margin-bottom:8px;'>"
+            f"Economic Bias Engine</div>"
+            f"<div style='font-size:10px;color:{C['teal']};font-family:monospace;"
+            f"letter-spacing:2px;text-transform:uppercase;margin-bottom:16px;'>"
+            f"Module 3 &nbsp;·&nbsp; Real Edge Terminal</div>"
+            f"<div style='font-size:13px;color:{C['muted']};font-family:monospace;"
+            f"line-height:1.7;'>Temporarily under maintenance.<br>"
+            f"We're integrating dedicated live macro-data providers for accurate, "
+            f"real-time economic bias.<br>Back online soon.</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+
 def main():
     st.set_page_config(
         page_title="Economic Bias Engine — EdgeLab",
@@ -3042,6 +3083,12 @@ def main():
         initial_sidebar_state="collapsed",
     )
     _inject_css()
+
+    # ── Maintenance mode ──────────────────────────────────────────────────────
+    if _MAINTENANCE:
+        _render_maintenance()
+        _render_footer()
+        return
 
     # ── Password gate ─────────────────────────────────────────────────────────
     if not st.session_state.get("m3_auth", False):
