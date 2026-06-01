@@ -120,10 +120,14 @@ SCREENER_CATEGORIES: dict[str, dict[str, str]] = {
         "2Y T-Note":    "ZT=F",
         "Ultra T-Bond": "UB=F",
     },
+    "Crypto": {
+        "Bitcoin":  "BTC-USD",
+        "Ethereum": "ETH-USD",
+    },
 }
 
 # Pill-row order for the screener filter (Forex first → default preserves behaviour)
-SCREENER_CATEGORY_ORDER = ["Forex", "Commodities", "Agriculture", "Indices", "Bonds"]
+SCREENER_CATEGORY_ORDER = ["Forex", "Commodities", "Agriculture", "Indices", "Bonds", "Crypto"]
 
 # DOY tick positions for each month (non-leap reference year 2001)
 MONTH_DOYS   = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335]
