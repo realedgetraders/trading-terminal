@@ -1304,10 +1304,31 @@ def main():
     pat_end    = dt_date(ref_year, _er.month, _er.day)
     pat_active = _s_doy != _e_doy
 
+    # ── Category filter (shared source with the screener · default Forex) ──────
+    st.markdown(
+        f"<div style='font-size:11px;color:{C['muted']};text-transform:uppercase;"
+        f"letter-spacing:1px;font-family:monospace;margin-bottom:4px;'>Category</div>",
+        unsafe_allow_html=True,
+    )
+    detail_cat = st.radio(
+        "Category",
+        SCREENER_CATEGORY_ORDER,
+        index=0,
+        horizontal=True,
+        label_visibility="collapsed",
+        key="detail_category",
+    )
+    st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+
     # ── Controls row (asset · history · pattern window) ──────────────────────
     _cal_min = dt_date(ref_year, 1, 1)
     _cal_max = dt_date(ref_year, 12, 31)
-    pair_options = list(FOREX_PAIRS.keys()) + ["── Custom ──"]
+    # Forex keeps its exact option list (28 pairs + Custom); other categories
+    # reuse the screener's SCREENER_CATEGORIES config — no duplicate list.
+    if detail_cat == "Forex":
+        pair_options = list(FOREX_PAIRS.keys()) + ["── Custom ──"]
+    else:
+        pair_options = list(SCREENER_CATEGORIES[detail_cat].keys())
     col_asset, col_hist, col_pat = st.columns([4, 4, 4], gap="small")
 
     with col_asset:
@@ -1319,7 +1340,7 @@ def main():
         selected_pair = st.selectbox(
             "Asset",
             pair_options,
-            key="asset_search",
+            key=f"asset_sel_{detail_cat}",
             label_visibility="collapsed",
         )
 
@@ -1365,17 +1386,21 @@ def main():
                 key="pat_end_cal",
             )
 
-    if selected_pair == "── Custom ──":
-        custom_ticker = st.text_input(
-            "Custom ticker",
-            value="AAPL",
-            placeholder="e.g. AAPL, ^GSPC, GC=F, BTC-USD",
-            key="custom_ticker",
-        )
-        ticker       = custom_ticker.strip().upper()
-        display_name = ticker
+    if detail_cat == "Forex":
+        if selected_pair == "── Custom ──":
+            custom_ticker = st.text_input(
+                "Custom ticker",
+                value="AAPL",
+                placeholder="e.g. AAPL, ^GSPC, GC=F, BTC-USD",
+                key="custom_ticker",
+            )
+            ticker       = custom_ticker.strip().upper()
+            display_name = ticker
+        else:
+            ticker       = FOREX_PAIRS[selected_pair]
+            display_name = selected_pair
     else:
-        ticker       = FOREX_PAIRS[selected_pair]
+        ticker       = SCREENER_CATEGORIES[detail_cat][selected_pair]
         display_name = selected_pair
 
     # ── Fetch Data ────────────────────────────────────────────────────────────
