@@ -361,14 +361,11 @@ def calc_seasonal_curve(df: pd.DataFrame):
 
     mean_df = pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
 
-    # Seasonax: cumulate mean daily log returns and index from 100
+    # Seasonax: cumulate mean daily log returns and index from 100.
+    # No post-smoothing — the ~10-year average per DOY is the noise control;
+    # the natural day-to-day texture is kept (Seasonax look).
     mean_df["index"] = 100.0 * np.exp(mean_df["ret"].cumsum())
     mean_df = mean_df.drop(columns=["ret"])
-
-    # Smooth with a 3-day centered rolling average
-    mean_df["index"] = (
-        mean_df["index"].rolling(window=3, center=True, min_periods=1).mean()
-    )
 
     return mean_df, year_paths
 
