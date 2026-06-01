@@ -80,6 +80,51 @@ RADAR_ASSETS: dict[str, tuple[str, str]] = {
     "Dow":     ("^DJI",   "Index"),
 }
 
+# ─── Screener category universe ───────────────────────────────────────────────
+# Additive config for the Seasonality Radar category filter. Kept fully separate
+# from FOREX_PAIRS and the forex codepath. Forex is NOT listed here — the Forex
+# category reuses the existing RADAR_ASSETS forex entries unchanged.
+# Most-liquid, yfinance-available instrument per asset class (all verified ~10y+).
+SCREENER_CATEGORIES: dict[str, dict[str, str]] = {
+    "Commodities": {
+        "Gold":          "GC=F",
+        "Silver":        "SI=F",
+        "Copper":        "HG=F",
+        "Platinum":      "PL=F",
+        "Crude Oil WTI": "CL=F",
+        "Brent Crude":   "BZ=F",
+        "Natural Gas":   "NG=F",
+    },
+    "Agriculture": {
+        "Corn":        "ZC=F",
+        "Wheat":       "ZW=F",
+        "Soybeans":    "ZS=F",
+        "Coffee":      "KC=F",
+        "Sugar":       "SB=F",
+        "Cotton":      "CT=F",
+        "Live Cattle": "LE=F",
+    },
+    "Indices": {
+        "S&P 500":      "^GSPC",
+        "Nasdaq 100":   "^NDX",
+        "Dow Jones":    "^DJI",
+        "Russell 2000": "^RUT",
+        "DAX":          "^GDAXI",
+        "FTSE 100":     "^FTSE",
+        "Nikkei 225":   "^N225",
+    },
+    "Bonds": {
+        "10Y T-Note":   "ZN=F",
+        "30Y T-Bond":   "ZB=F",
+        "5Y T-Note":    "ZF=F",
+        "2Y T-Note":    "ZT=F",
+        "Ultra T-Bond": "UB=F",
+    },
+}
+
+# Pill-row order for the screener filter (Forex first → default preserves behaviour)
+SCREENER_CATEGORY_ORDER = ["Forex", "Commodities", "Agriculture", "Indices", "Bonds"]
+
 # DOY tick positions for each month (non-leap reference year 2001)
 MONTH_DOYS   = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335]
 MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -467,13 +512,23 @@ def calc_pattern_analysis(df: pd.DataFrame,
     return stats, display_table
 
 
+def _screener_instruments(category: str) -> dict[str, tuple[str, str]]:
+    """Return {display: (ticker, category)} for one screener category.
+    Forex reuses the existing RADAR_ASSETS forex entries (unchanged); all other
+    categories come from the additive SCREENER_CATEGORIES config.
+    """
+    if category == "Forex":
+        return {d: (tk, c) for d, (tk, c) in RADAR_ASSETS.items() if c == "Forex"}
+    return {d: (tk, category) for d, tk in SCREENER_CATEGORIES.get(category, {}).items()}
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
-def calc_radar(today_str: str) -> pd.DataFrame:
+def calc_radar(today_str: str, category: str = "Forex") -> pd.DataFrame:
     today    = datetime.strptime(today_str, "%Y-%m-%d")
     fallback = today + timedelta(days=31)   # fixed 30d window used when no pattern qualifies
 
     rows = []
-    for display, (ticker, cat) in RADAR_ASSETS.items():
+    for display, (ticker, cat) in _screener_instruments(category).items():
         df = fetch_data(ticker, 10)
         if df.empty:
             continue
@@ -1509,24 +1564,28 @@ def main():
         unsafe_allow_html=True,
     )
 
-    with st.spinner("Scanning seasonality across all pairs..."):
-        radar_df = calc_radar(_today_str)
+    # ── Asset-class filter (additive · default Forex preserves prior behaviour) ─
+    screener_cat = st.radio(
+        "Asset class",
+        SCREENER_CATEGORY_ORDER,
+        index=0,
+        horizontal=True,
+        label_visibility="collapsed",
+        key="screener_category",
+    )
+
+    with st.spinner(f"Scanning {screener_cat} seasonality…"):
+        radar_df = calc_radar(_today_str, screener_cat)
 
     if not radar_df.empty:
-        # ── Split Forex vs Index/Commodity ────────────────────────────────────
-        forex_mask = radar_df["Category"] == "Forex"
-        forex_df   = radar_df[forex_mask].copy()
-        bias_df    = radar_df[~forex_mask].sort_values("Sharpe", ascending=False).reset_index(drop=True)
-        bias_df["_signal"] = "Bias"
-
-        # ── Assign signal labels ───────────────────────────────────────────────
-        forex_df["_signal"] = forex_df["_qualified"].map(
+        radar_df = radar_df.copy()
+        radar_df["_signal"] = radar_df["_qualified"].map(
             lambda q: "Extreme" if q else "Watch"
         )
 
         # ── Top 10 by signal strength (distance from 50%) ─────────────────────
         display_df = (
-            forex_df
+            radar_df
             .sort_values(["_qualified", "_dist50"], ascending=[False, False])
             .head(10)
             .reset_index(drop=True)
@@ -1535,7 +1594,7 @@ def main():
         n_long  = int((display_df["Long %"] >= 70).sum())
         n_short = int((display_df["Long %"] <= 30).sum())
         n_watch = int((~display_df["_qualified"].fillna(False)).sum())
-        n_bias  = len(bias_df)
+        _unit   = "pairs" if screener_cat == "Forex" else "instruments"
 
         st.markdown(
             f"<div style='font-size:11px;color:{C['muted']};font-family:monospace;margin:0 0 10px;'>"
@@ -1544,34 +1603,32 @@ def main():
             f"<span style='color:{C['red']};font-weight:700;'>{n_short} Short</span>"
             f" &nbsp;·&nbsp; "
             f"<span style='color:{C['yellow']};font-weight:700;'>{n_watch} Watch</span>"
-            f" &nbsp;·&nbsp; showing top 10 of {len(forex_df)} pairs scanned</div>",
+            f" &nbsp;·&nbsp; showing top 10 of {len(radar_df)} {_unit} scanned</div>",
             unsafe_allow_html=True,
         )
-        st.markdown(_radar_html(display_df), unsafe_allow_html=True)
 
-        # ── Indices & Commodities sub-section ─────────────────────────────────
-        if not bias_df.empty:
-            st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
-            with st.expander("📊 Indices & Commodities — structural long bias", expanded=False):
-                st.markdown(
-                    f"""
-                    <div style="background:rgba(240,180,41,0.06);border:1px solid rgba(240,180,41,0.22);
-                                border-radius:8px;padding:11px 16px;margin-bottom:14px;
-                                font-family:monospace;font-size:11px;line-height:1.7;color:{C['muted']};">
-                      <span style="color:{C['yellow']};font-weight:700;">⚠ Interpret with caution</span>
-                      &nbsp;·&nbsp;
-                      Seasonal patterns on indices and commodities carry far less edge than on forex pairs.
-                      These markets are inherently trend-driven — multi-year bull or bear phases dominate
-                      the return distribution and inflate historical Long % figures structurally.
-                      A 90 % Long reading in equities often reflects a decade-long bull market, not a
-                      repeatable seasonal edge. Use these windows as context, not as standalone signals.
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                st.markdown(_radar_html(bias_df), unsafe_allow_html=True)
+        # ── Caution banner for non-forex asset classes ────────────────────────
+        if screener_cat != "Forex":
+            st.markdown(
+                f"""
+                <div style="background:rgba(240,180,41,0.06);border:1px solid rgba(240,180,41,0.22);
+                            border-radius:8px;padding:11px 16px;margin-bottom:14px;
+                            font-family:monospace;font-size:11px;line-height:1.7;color:{C['muted']};">
+                  <span style="color:{C['yellow']};font-weight:700;">⚠ Interpret with caution</span>
+                  &nbsp;·&nbsp;
+                  Seasonal patterns on commodities, indices and rates carry far less edge than on forex pairs.
+                  These markets are inherently trend-driven — multi-year bull or bear phases dominate
+                  the return distribution and inflate historical Long % figures structurally.
+                  A 90 % Long reading often reflects a multi-year trend, not a repeatable seasonal edge.
+                  Use these windows as context, not as standalone signals.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        st.markdown(_radar_html(display_df), unsafe_allow_html=True)
     else:
-        st.info("No radar data available for the selected history length.")
+        st.info(f"No radar data available for {screener_cat}.")
 
     _render_footer()
 
