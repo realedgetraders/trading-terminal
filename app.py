@@ -41,6 +41,7 @@ MODULES = [
         "desc":     "Aggregates live macroeconomic data across 8 major currencies, scores key indicators by impact, and converts them into a directional bias — geopolitical events can override this signal at any time.",
         "active":   True,
         "pro":      True,
+        "maintenance": True,
         "page":     "pages/3_Macro_Dashboard.py",
     },
     {
@@ -727,6 +728,7 @@ def _render_module_card(col, mod: dict):
     teaser = mod.get("teaser", False)
     wip    = mod.get("wip", False)
     pro    = mod.get("pro", False)
+    maint  = mod.get("maintenance", False)
 
     if wip:
         border       = "#2e2e2e"
@@ -743,6 +745,14 @@ def _render_module_card(col, mod: dict):
         badge_bg     = "#1a1a1a"
         badge_color  = "#3a3a3a"
         badge_text   = "Coming Soon"
+        border_style = "dashed"
+    elif maint:
+        border       = "rgba(240,180,41,0.35)"
+        title_color  = C["text"]
+        desc_color   = C["muted"]
+        badge_bg     = C["yellow"]
+        badge_color  = C["bg"]
+        badge_text   = "Under Maintenance"
         border_style = "dashed"
     elif active and pro:
         border       = C["yellow"]
@@ -769,7 +779,7 @@ def _render_module_card(col, mod: dict):
         badge_text   = "Coming Soon"
         border_style = "solid"
 
-    is_clickable  = (active and not teaser) or wip
+    is_clickable  = (active and not teaser and not maint) or wip
     if wip:
         card_class = "ret-module-wip"
     elif is_clickable:
@@ -778,7 +788,7 @@ def _render_module_card(col, mod: dict):
             card_class += " ret-module-pro"
     else:
         card_class = ""
-    card_sizing   = "height:160px;overflow:hidden;" if is_clickable else "min-height:140px;margin-bottom:16px;"
+    card_sizing   = "height:160px;overflow:hidden;" if (is_clickable or maint) else "min-height:140px;margin-bottom:16px;"
 
     with col:
         st.markdown(
