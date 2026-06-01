@@ -252,6 +252,10 @@ def fetch_data(ticker: str, years: int) -> pd.DataFrame:
         return pd.DataFrame()
 
     df = df[["Open", "High", "Low", "Close"]].copy()
+    # Guard: drop non-positive prices before any calculation. Protects
+    # normalization / pct_change from artifacts like CL=F's negative 2020-04-20
+    # settlement. Instrument-agnostic — a no-op wherever Close is always > 0.
+    df = df[df["Close"] > 0]
     df["Win"]        = (df["Close"] > df["Open"]).astype(int)
     df["Return"]     = df["Close"].pct_change()
     df["LogReturn"]  = np.log(df["Close"] / df["Close"].shift(1))
