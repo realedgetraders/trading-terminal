@@ -7,8 +7,11 @@ exact fetch and computation logic from the Streamlit COT module
 (pages/2_COT_Analysis.py), with no Streamlit/UI code.
 
 Coverage: 8 major FX currencies, weekly.
-  - net_position : Non-Commercial (large speculator) net = Long - Short,
+  - net_position : Commercial (hedger) net = Long - Short,
                    FUTURES-ONLY ("(Old)" columns in the Legacy report).
+                   Matches the lead category in pages/2_COT_Analysis.py
+                   (default group + divergence screener) and Module 7's
+                   "Commercials COT Index" consumer.
   - cot_index    : 26-week stochastic min-max normalization of net_position:
                    (current - min_26w) / (max_26w - min_26w) * 100
                    (100 = most net-long in 26 weeks, 0 = most net-short;
@@ -63,11 +66,11 @@ MARKETS = {
 }
 
 # Exact column names from deacot{YEAR}.zip (Legacy COT format).
-# "(Old)" = Futures only (not Futures+Options). Non-Commercials = large speculators.
+# "(Old)" = Futures only (not Futures+Options). Commercials = hedgers/producers.
 _NAME_COL = "Market and Exchange Names"
 _DATE_COL = "As of Date in Form YYYY-MM-DD"
-_LONG_COL = "Noncommercial Positions-Long (Old)"
-_SHORT_COL = "Noncommercial Positions-Short (Old)"
+_LONG_COL = "Commercial Positions-Long (Old)"
+_SHORT_COL = "Commercial Positions-Short (Old)"
 
 
 def _require_env() -> tuple[str, str]:
@@ -107,7 +110,7 @@ def fetch_cot_raw(start_year: int) -> pd.DataFrame:
 
 
 def market_net_series(raw: pd.DataFrame, market_name: str) -> pd.Series:
-    """Return the weekly Non-Commercial net series (Long - Short, futures-only)
+    """Return the weekly Commercial net series (Long - Short, futures-only)
     for one market, indexed by report date (ascending, de-duplicated).
 
     Mirrors get_market_data() in pages/2_COT_Analysis.py: substring match on the
