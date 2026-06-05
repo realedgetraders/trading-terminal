@@ -89,6 +89,13 @@ MARKET_GROUPS = {
 _NAME_COL = "Market and Exchange Names"
 _DATE_COL = "As of Date in Form YYYY-MM-DD"
 
+# Look-alike contracts that share a base name with a main contract and would be
+# wrongly swept in by the substring match (MICRO GOLD vs GOLD, MICRO SILVER vs
+# SILVER, ULTRA UST BOND vs UST BOND). No main contract name contains these
+# tokens, so excluding them only drops the look-alikes — the other markets are
+# untouched.
+_EXCLUDE_TOKENS = ("MICRO ", "ULTRA ")
+
 # target db column -> source CSV column (the six raw long/short fields)
 _COT_COLS = {
     "comm_long":     "Commercial Positions-Long (Old)",
@@ -149,9 +156,12 @@ def market_records(raw: pd.DataFrame, cftc_name: "str | list[str]") -> pd.DataFr
         return pd.DataFrame()
 
     names = [cftc_name] if isinstance(cftc_name, str) else cftc_name
+    upper = raw[_NAME_COL].str.upper()
     mask = pd.Series(False, index=raw.index)
     for n in names:
-        mask |= raw[_NAME_COL].str.upper().str.contains(n.upper(), regex=False, na=False)
+        mask |= upper.str.contains(n.upper(), regex=False, na=False)
+    for tok in _EXCLUDE_TOKENS:  # drop MICRO/ULTRA look-alikes that share a base name
+        mask &= ~upper.str.contains(tok, regex=False, na=False)
     df = raw[mask].copy()
     if df.empty or _DATE_COL not in df.columns:
         return pd.DataFrame()
