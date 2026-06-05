@@ -2,29 +2,25 @@
 """Fetch CFTC Commitments-of-Traders positioning and upsert it into Supabase.
 
 Source: the CFTC Legacy COT history files (deacot{YEAR}.zip) published at
-https://www.cftc.gov/files/dea/history/ — free, no API key. This reuses the
-exact fetch and computation logic from the Streamlit COT module
-(pages/2_COT_Analysis.py), with no Streamlit/UI code.
+https://www.cftc.gov/files/dea/history/ — free, no API key. The market universe,
+substring-match logic and "(Old)" futures-only columns are reused 1:1 from the
+Streamlit COT module (pages/2_COT_Analysis.py), with no Streamlit/UI code.
 
-Coverage: 8 major FX currencies, weekly.
-  - net_position : Commercial (hedger) net = Long - Short,
-                   FUTURES-ONLY ("(Old)" columns in the Legacy report).
-                   Matches the lead category in pages/2_COT_Analysis.py
-                   (default group + divergence screener) and Module 7's
-                   "Commercials COT Index" consumer.
-  - cot_index    : 26-week stochastic min-max normalization of net_position:
-                   (current - min_26w) / (max_26w - min_26w) * 100
-                   (100 = most net-long in 26 weeks, 0 = most net-short;
-                   None while the 26-week window is not yet full).
+Coverage: all 19 markets across 4 categories (Forex, Commodities, Indices,
+Bonds), weekly. For every (market, report_date) the RAW long/short contracts of
+all three trader categories are written — futures-only ("(Old)" columns):
+  - comm_long / comm_short        Commercial (hedger)
+  - noncomm_long / noncomm_short  Non-Commercial (large speculator)
+  - nonrept_long / nonrept_short  Non-Reportable (small trader)
 
-Rows are written to the ``cot_data`` table (columns: currency, report_date,
-net_position, cot_index, source) via upsert on the natural key
-(currency, report_date), so re-runs never create duplicates. A market that is
-missing or renamed is reported and skipped — one bad market never aborts the run.
+Net positions and the 26-week COT Index are intentionally NOT stored — the web
+app derives both from these raw values, so the database stays a single source of
+truth with no redundant pre-computation.
 
-This module is intentionally provider-agnostic at the plumbing layer: adding a
-new market later means appending one entry to ``MARKETS`` — the fetch/parse and
-Supabase-load code stays untouched.
+Rows are written to the ``cot_data`` table via upsert on the natural key
+(market, report_date), so re-runs never create duplicates. A market that is
+missing or renamed, or a year that fails to download, is reported and skipped —
+one bad market/year never aborts the run.
 
 Required environment variables (never hardcode credentials):
   SUPABASE_URL         Supabase project URL
@@ -46,31 +42,62 @@ import requests
 from supabase import create_client
 
 SOURCE = "cftc"
-START_YEAR = 2020          # ~5y history — ample context for the 26-week index
+START_YEAR = 2001          # full Legacy COT history (deacot2001.zip onward)
 REQUEST_TIMEOUT = 30       # seconds per CFTC request
 UPSERT_CHUNK = 500         # rows per Supabase upsert call
-COT_INDEX_WINDOW = 26      # weeks — stochastic normalization window
 
-# currency -> exact "Market and Exchange Names" string from deacot{YEAR}.zip
-# (Forex group, taken verbatim from pages/2_COT_Analysis.py). Raw CFTC numbers,
-# no inversion applied to any market.
-MARKETS = {
-    "USD": "USD INDEX - ICE FUTURES U.S.",
-    "EUR": "EURO FX - CHICAGO MERCANTILE EXCHANGE",
-    "GBP": "BRITISH POUND - CHICAGO MERCANTILE EXCHANGE",
-    "JPY": "JAPANESE YEN - CHICAGO MERCANTILE EXCHANGE",
-    "AUD": "AUSTRALIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE",
-    "NZD": "NZ DOLLAR - CHICAGO MERCANTILE EXCHANGE",
-    "CAD": "CANADIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE",
-    "CHF": "SWISS FRANC - CHICAGO MERCANTILE EXCHANGE",
+# display_name -> exact "Market and Exchange Names" string from deacot{YEAR}.zip.
+# A list of names handles markets renamed across years (OR match, dedup by date).
+# Raw CFTC numbers only — no inversion applied. Taken verbatim from
+# pages/2_COT_Analysis.py (MARKET_GROUPS).
+MARKET_GROUPS = {
+    "Forex": {
+        "USD": "USD INDEX - ICE FUTURES U.S.",
+        "EUR": "EURO FX - CHICAGO MERCANTILE EXCHANGE",
+        "GBP": "BRITISH POUND - CHICAGO MERCANTILE EXCHANGE",
+        "JPY": "JAPANESE YEN - CHICAGO MERCANTILE EXCHANGE",
+        "CHF": "SWISS FRANC - CHICAGO MERCANTILE EXCHANGE",
+        "CAD": "CANADIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE",
+        "AUD": "AUSTRALIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE",
+        "NZD": "NZ DOLLAR - CHICAGO MERCANTILE EXCHANGE",
+    },
+    "Commodities": {
+        "Gold":   "GOLD - COMMODITY EXCHANGE INC.",
+        "Silver": "SILVER - COMMODITY EXCHANGE INC.",
+        # WTI crude was renamed: NYMEX (2001-2022) -> WTI-PHYSICAL (2022-present)
+        "Oil (WTI)": [
+            "CRUDE OIL, LIGHT SWEET - NEW YORK MERCANTILE EXCHANGE",
+            "WTI-PHYSICAL - NEW YORK MERCANTILE EXCHANGE",
+        ],
+    },
+    "Indices": {
+        "S&P 500":      "S&P 500 Consolidated - CHICAGO MERCANTILE EXCHANGE",
+        "Nasdaq-100":   "NASDAQ-100 Consolidated - CHICAGO MERCANTILE EXCHANGE",
+        "Dow Jones":    "DJIA Consolidated - CHICAGO BOARD OF TRADE",
+        "Russell 2000": "RUSSELL E-MINI - CHICAGO MERCANTILE EXCHANGE",
+    },
+    "Bonds": {
+        "10Y T-Note": "UST 10Y NOTE - CHICAGO BOARD OF TRADE",
+        "30Y T-Bond": "UST BOND - CHICAGO BOARD OF TRADE",
+        "2Y T-Note":  "UST 2Y NOTE - CHICAGO BOARD OF TRADE",
+        "5Y T-Note":  "UST 5Y NOTE - CHICAGO BOARD OF TRADE",
+    },
 }
 
 # Exact column names from deacot{YEAR}.zip (Legacy COT format).
-# "(Old)" = Futures only (not Futures+Options). Commercials = hedgers/producers.
+# "(Old)" = Futures only (not Futures+Options).
 _NAME_COL = "Market and Exchange Names"
 _DATE_COL = "As of Date in Form YYYY-MM-DD"
-_LONG_COL = "Commercial Positions-Long (Old)"
-_SHORT_COL = "Commercial Positions-Short (Old)"
+
+# target db column -> source CSV column (the six raw long/short fields)
+_COT_COLS = {
+    "comm_long":     "Commercial Positions-Long (Old)",
+    "comm_short":    "Commercial Positions-Short (Old)",
+    "noncomm_long":  "Noncommercial Positions-Long (Old)",
+    "noncomm_short": "Noncommercial Positions-Short (Old)",
+    "nonrept_long":  "Nonreportable Positions-Long (Old)",
+    "nonrept_short": "Nonreportable Positions-Short (Old)",
+}
 
 
 def _require_env() -> tuple[str, str]:
@@ -109,25 +136,25 @@ def fetch_cot_raw(start_year: int) -> pd.DataFrame:
     return combined
 
 
-def market_net_series(raw: pd.DataFrame, market_name: str) -> pd.Series:
-    """Return the weekly Commercial net series (Long - Short, futures-only)
-    for one market, indexed by report date (ascending, de-duplicated).
+def market_records(raw: pd.DataFrame, cftc_name: "str | list[str]") -> pd.DataFrame:
+    """Return the six raw long/short series for one market, indexed by report
+    date (ascending, de-duplicated).
 
-    Mirrors get_market_data() in pages/2_COT_Analysis.py: substring match on the
-    market name, parse the as-of date, drop duplicate dates (earliest name wins).
-    Returns an empty Series when the market or required columns are absent.
+    Mirrors get_market_data() in pages/2_COT_Analysis.py: OR substring match over
+    one or more name variants (regex=False), parse the as-of date, drop duplicate
+    dates (earliest name wins). Returns an empty DataFrame when the market or the
+    required columns are absent.
     """
     if _NAME_COL not in raw.columns:
-        return pd.Series(dtype=float)
-    if _LONG_COL not in raw.columns or _SHORT_COL not in raw.columns:
-        return pd.Series(dtype=float)
+        return pd.DataFrame()
 
-    mask = raw[_NAME_COL].str.upper().str.contains(
-        market_name.upper(), regex=False, na=False
-    )
+    names = [cftc_name] if isinstance(cftc_name, str) else cftc_name
+    mask = pd.Series(False, index=raw.index)
+    for n in names:
+        mask |= raw[_NAME_COL].str.upper().str.contains(n.upper(), regex=False, na=False)
     df = raw[mask].copy()
     if df.empty or _DATE_COL not in df.columns:
-        return pd.Series(dtype=float)
+        return pd.DataFrame()
 
     df["Date"] = pd.to_datetime(df[_DATE_COL], errors="coerce")
     df = (
@@ -137,54 +164,64 @@ def market_net_series(raw: pd.DataFrame, market_name: str) -> pd.Series:
         .set_index("Date")
     )
 
-    longs = pd.to_numeric(df[_LONG_COL], errors="coerce")
-    shorts = pd.to_numeric(df[_SHORT_COL], errors="coerce")
-    return (longs - shorts).dropna()
+    out = pd.DataFrame(index=df.index)
+    for key, src_col in _COT_COLS.items():
+        if src_col in df.columns:
+            out[key] = pd.to_numeric(df[src_col], errors="coerce")
+    return out.dropna(how="all")
 
 
-def calc_cot_index(series: pd.Series, window: int = COT_INDEX_WINDOW) -> pd.Series:
-    """Stochastic-style min-max normalization over a rolling window.
+def _to_int(value) -> "int | None":
+    """Round a numeric cell to int; None when missing (keeps NULLs out of the DB)."""
+    if value is None or pd.isna(value):
+        return None
+    return int(round(float(value)))
 
-    COT Index = (current - min_N) / (max_N - min_N) * 100
-    100 = most long in N weeks, 0 = most short. NaN when range == 0 or the
-    window is not yet full. Identical to calc_cot_index() in the source module.
+
+def collect_rows(raw: pd.DataFrame) -> tuple[list[dict], list[dict]]:
+    """Build Supabase row dicts for every market x report date.
+
+    Returns (rows, summary) where summary holds one entry per written market for
+    the run report (category, week count, latest date, example value).
     """
-    roll = series.rolling(window, min_periods=window)
-    mn = roll.min()
-    mx = roll.max()
-    rng = mx - mn
-    return ((series - mn) / rng * 100).where(rng != 0)
-
-
-def collect_cot_rows(raw: pd.DataFrame) -> list[dict]:
-    """Build Supabase row dicts for every currency × report date."""
     rows: list[dict] = []
-    for currency, market_name in MARKETS.items():
-        net = market_net_series(raw, market_name)
-        if net.empty:
-            print(f"  skip  {currency}: market not found ({market_name})")
-            continue
+    summary: list[dict] = []
+    for category, markets in MARKET_GROUPS.items():
+        for market, cftc_name in markets.items():
+            recs = market_records(raw, cftc_name)
+            if recs.empty:
+                print(f"  skip  {market} ({category}): market not found")
+                continue
 
-        index = calc_cot_index(net)
-        for when, net_val in net.items():
-            ci = index.get(when)
-            rows.append({
-                "currency": currency,
-                "report_date": when.date().isoformat(),
-                "net_position": int(round(float(net_val))),
-                "cot_index": None if pd.isna(ci) else round(float(ci), 2),
-                "source": SOURCE,
+            for when, rec in recs.iterrows():
+                row = {
+                    "market": market,
+                    "category": category,
+                    "report_date": when.date().isoformat(),
+                    "source": SOURCE,
+                }
+                for key in _COT_COLS:
+                    row[key] = _to_int(rec.get(key))
+                rows.append(row)
+
+            latest = recs.index[-1]
+            summary.append({
+                "market": market,
+                "category": category,
+                "weeks": len(recs),
+                "latest": latest.date().isoformat(),
+                "comm_long": _to_int(recs.iloc[-1].get("comm_long")),
             })
-        print(f"  ok    {currency}: {len(net):>3} weeks (latest {net.index[-1].date()})")
-    return rows
+            print(f"  ok    {market:14s} ({category:11s}): {len(recs):>4} weeks (latest {latest.date()})")
+    return rows, summary
 
 
 def upsert_rows(client, rows: list[dict]) -> int:
-    """Upsert rows into cot_data in chunks, deduping on (currency, report_date)."""
+    """Upsert rows into cot_data in chunks, deduping on (market, report_date)."""
     written = 0
     for start in range(0, len(rows), UPSERT_CHUNK):
         chunk = rows[start:start + UPSERT_CHUNK]
-        client.table("cot_data").upsert(chunk, on_conflict="currency,report_date").execute()
+        client.table("cot_data").upsert(chunk, on_conflict="market,report_date").execute()
         written += len(chunk)
     return written
 
@@ -200,13 +237,19 @@ def main() -> None:
     if _NAME_COL not in raw.columns:
         sys.exit(f"ERROR: unexpected CFTC schema (missing '{_NAME_COL}' column).")
 
-    rows = collect_cot_rows(raw)
+    rows, summary = collect_rows(raw)
     if not rows:
         sys.exit("ERROR: no COT rows built — nothing to write.")
 
     print(f"Upserting {len(rows)} rows into cot_data...")
     written = upsert_rows(client, rows)
     print(f"Done: upserted {written} rows (source={SOURCE}).")
+
+    # ── Run report ────────────────────────────────────────────────────────────
+    print(f"\nMarkets written: {len(summary)} of {sum(len(m) for m in MARKET_GROUPS.values())}")
+    for s in summary:
+        print(f"  {s['category']:11s} {s['market']:14s} latest {s['latest']} "
+              f"(comm_long={s['comm_long']})")
 
 
 if __name__ == "__main__":
