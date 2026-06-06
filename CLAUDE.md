@@ -64,7 +64,13 @@ trading-terminal/
 │   ├── 4_Geopolitics.py     → MODULE 4: COMPLETE ✓
 │   ├── 5_Market_Regime.py   → MODULE 5: COMPLETE ✓  (Market Phase Scanner)
 │   ├── 6_Journal.py         → Coming Soon placeholder (Edge Journal, amber/gold accent)
-│   └── 7_Pair_Intelligence.py → MODULE 7: COMPLETE ✓  (PRO, password-gated)
+│   ├── 7_Pair_Intelligence.py → MODULE 7: COMPLETE ✓  (PRO, password-gated)
+│   └── 7_Valuation.py       → Valuation Tool: COMPLETE ✓  (rolling-range 0–100 vs 4 macro anchors)
+├── scripts/                 → Supabase collectors (data pipeline for the edgelabweb web port)
+│   ├── fetch_cot_data.py            → cot_data (19 markets × 3 trader categories)
+│   ├── fetch_seasonality_prices.py  → seasonality_prices (56 instruments, daily OHLC ~25y)
+│   ├── fetch_vix_history.py         → vix_history (^VIX daily close ~2y)
+│   └── fetch_valuation_prices.py    → valuation_prices (45 futures+anchor closes ~3y)
 ├── requirements.txt
 └── CLAUDE.md
 ```
@@ -77,6 +83,18 @@ trading-terminal/
 - Module 5 (Market Phase Scanner): COMPLETE ✓ — DO NOT MODIFY unless explicitly asked
 - Module 6 (Edge Journal): Coming Soon placeholder — amber/gold accent
 - Module 7 (Pair Intelligence): COMPLETE ✓ — PRO-gated, password "12345", imports data layer from `_shared.py`
+- Valuation Tool (`7_Valuation.py`): COMPLETE ✓ — rolling-range 0–100 (stochastic %K) vs Precious Metals · USD · Bonds · World Equities; futures screener; 38 futures + custom ticker
+
+## Supabase Collectors (data pipeline for the edgelabweb web port)
+Standalone scripts in `scripts/` fetch source data and upsert into Supabase
+(read by the Next.js app at edgelabweb). All idempotent (upsert on natural key),
+run on demand / cron; credentials from `.env` (`SUPABASE_URL`, `SUPABASE_SECRET_KEY`).
+- `fetch_cot_data.py`           → `cot_data` (19 markets × 3 trader categories, raw long/short from 2001; MICRO/ULTRA look-alikes excluded)
+- `fetch_seasonality_prices.py` → `seasonality_prices` (56 instruments, daily OHLC ~25y; synthetic forex crosses with corrected leg orientation)
+- `fetch_vix_history.py`        → `vix_history` (^VIX daily close ~2y)
+- `fetch_valuation_prices.py`   → `valuation_prices` (38 futures + macro-anchor tickers, adjusted close ~3y)
+
+Modules ported to edgelabweb so far: COT (M2), Seasonality (M1), Market Phase (M5), Valuation. M3 (Economic Bias) and M4 (Geopolitics) pending.
 
 ---
 
@@ -419,9 +437,9 @@ When `_shared.py` is updated, Module 7 picks up changes automatically on next St
 ---
 
 ## Last Commits
-- 1ca4eef fix(journal): rename subtitle label from Edge Journal to Journal Suite
-- 36f9d96 feat(journal): rename header to Edge Journal + add tagline
-- 0ed8469 feat(journal): restructure hub to 3 cards — Trade Log, Performance Stats, Trader Profile
-- 9b748ed feat(journal): build amber-themed journal hub with feature card grid
-- 217932e feat(theme): add .streamlit/config.toml with dark theme and blue primaryColor
-- df502b1 feat(hub): rename analysis section title to Real Edge Terminal + tagline
+- b64fcd8 feat(scripts): valuation prices collector — futures + macro anchors to Supabase
+- 09da11c feat(scripts): VIX history collector — daily ^VIX close to Supabase
+- e8ced4d feat(scripts): seasonality OHLC collector — 56 instruments, ~25y, to Supabase
+- aaacd18 fix(scripts): exclude MICRO/ULTRA look-alikes in COT market match
+- 2ef2ddd feat(scripts): COT collector writes all 19 markets, 3 categories, raw long/short from 2001
+- 3f845c9 fix(scripts): COT collector uses Commercials net (match Module 2/7)
