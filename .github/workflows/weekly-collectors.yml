@@ -1,0 +1,45 @@
+name: Weekly collectors
+
+# Robust, weekly source collectors (CFTC, DBnomics).
+# Trigger is schedule + manual ONLY — never push/pull_request: this repo is
+# public, and the Supabase secret must never run in a fork PR context.
+on:
+  schedule:
+    # Saturday 06:00 UTC — safely after the CFTC Friday COT release (~15:30 ET).
+    - cron: "0 6 * * 6"
+  workflow_dispatch:
+
+jobs:
+  cot:
+    name: COT (cot_data)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Fetch COT data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python scripts/fetch_cot_data.py
+
+  macro:
+    name: Macro (macro_data)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Fetch macro data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python scripts/fetch_macro_data.py

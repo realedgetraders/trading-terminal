@@ -1,0 +1,96 @@
+name: Daily prices
+
+# Trading-day yfinance collectors (seasonality, valuation, VIX).
+# Trigger is schedule + manual ONLY — never push/pull_request: this repo is
+# public, and the Supabase secret must never run in a fork PR context.
+on:
+  schedule:
+    # 23:00 UTC, Mon-Fri — after the US cash close in both EDT (19:00) and
+    # EST (18:00), so the day's close is always available.
+    - cron: "0 23 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  seasonality:
+    name: Seasonality (seasonality_prices)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Fetch seasonality prices (retry on Yahoo throttling)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          attempt=1
+          max=3
+          until python scripts/fetch_seasonality_prices.py; do
+            if [ "$attempt" -ge "$max" ]; then
+              echo "::error::failed after $attempt attempts"
+              exit 1
+            fi
+            echo "attempt $attempt failed; backing off $((attempt * 60))s..."
+            sleep $((attempt * 60))
+            attempt=$((attempt + 1))
+          done
+
+  valuation:
+    name: Valuation (valuation_prices)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Fetch valuation prices (retry on Yahoo throttling)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          attempt=1
+          max=3
+          until python scripts/fetch_valuation_prices.py; do
+            if [ "$attempt" -ge "$max" ]; then
+              echo "::error::failed after $attempt attempts"
+              exit 1
+            fi
+            echo "attempt $attempt failed; backing off $((attempt * 60))s..."
+            sleep $((attempt * 60))
+            attempt=$((attempt + 1))
+          done
+
+  vix:
+    name: VIX (vix_history)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Fetch VIX history (retry on Yahoo throttling)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          attempt=1
+          max=3
+          until python scripts/fetch_vix_history.py; do
+            if [ "$attempt" -ge "$max" ]; then
+              echo "::error::failed after $attempt attempts"
+              exit 1
+            fi
+            echo "attempt $attempt failed; backing off $((attempt * 60))s..."
+            sleep $((attempt * 60))
+            attempt=$((attempt + 1))
+          done
