@@ -46,6 +46,7 @@ import requests
 from supabase import create_client
 
 from _assets_feed import load_assets, with_module
+from _incremental import latest_dates, resolve_mode
 
 SOURCE = "cftc"
 START_YEAR = 2001          # full Legacy COT history (deacot2001.zip onward)
@@ -240,9 +241,28 @@ def main() -> None:
     if not market_count:
         sys.exit("ERROR: no COT markets in the asset feed — nothing to write.")
 
-    print(f"Fetching CFTC COT data (deacot{START_YEAR}..{datetime.now().year}) "
-          f"for {market_count} markets...")
-    raw = fetch_cot_raw(START_YEAR)
+    # Mode: backfill downloads every yearly zip from 2001; an incremental run only
+    # needs the CURRENT year's zip (weekly cadence, idempotent upsert) — plus the
+    # prior year's in January, when late-December reports are still landing. Full
+    # multi-year backfill happens only when cot_data holds no data yet (auto), or
+    # when forced (--mode backfill).
+    mode = resolve_mode()
+    markets = [m for cat in groups.values() for m in cat]
+    latest = {} if mode == "backfill" else latest_dates(
+        client, "cot_data", "report_date", "market", markets)
+    table_empty = not any(latest.values())
+    do_backfill = mode == "backfill" or (mode == "auto" and table_empty)
+
+    current_year = datetime.now().year
+    if do_backfill:
+        fetch_year = START_YEAR
+        print(f"[mode={mode}] backfill — CFTC COT deacot{START_YEAR}..{current_year} "
+              f"for {market_count} markets...")
+    else:
+        fetch_year = current_year - 1 if datetime.now().month == 1 else current_year
+        print(f"[mode={mode}] incremental — CFTC COT deacot{fetch_year}..{current_year} "
+              f"for {market_count} markets...")
+    raw = fetch_cot_raw(fetch_year)
     if raw.empty:
         sys.exit("ERROR: no COT data fetched from CFTC — nothing to write.")
     if _NAME_COL not in raw.columns:

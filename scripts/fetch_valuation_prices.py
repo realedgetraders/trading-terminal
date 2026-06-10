@@ -33,10 +33,13 @@ import yfinance as yf
 from supabase import create_client
 
 from _assets_feed import load_assets, with_module
+from _incremental import fetch_start, is_backfill, latest_dates, resolve_mode
 
 HISTORY_YEARS = 3
 UPSERT_CHUNK = 1000        # rows per Supabase upsert call
 RETRY_SLEEP = 2            # seconds before the single retry of a transient fail
+PACE_EVERY = 50            # pause every N per-ticker downloads (rate-limit pacing)
+PACE_SLEEP = 1.5           # seconds paused at each pacing interval
 
 # Macro-anchor tickers — primary sources + fallbacks (ANCHORS in the module).
 # Fixed benchmark series (not part of the tradable feed universe), so kept here.
@@ -74,6 +77,12 @@ def fetch_close(ticker: str, start: datetime, end: datetime) -> pd.Series:
 
     One retry on a transient failure (exception or first-attempt empty); after
     the retry an empty frame is treated as "no data" (invalid ticker).
+
+    NB: kept per-ticker (NOT batched). yfinance's `auto_adjust=True` adjustment
+    factor is rounded slightly differently in batched vs single-ticker downloads
+    (~1e-5 on dividend-paying stocks), so a bulk path would not be byte-identical
+    to the stored series — unacceptable here. Seasonality (auto_adjust=False, raw
+    OHLC) has no such drift and IS batched. The per-ticker loop is paced instead.
     """
     raw = None
     for attempt in (1, 2):
@@ -113,16 +122,24 @@ def main() -> None:
     client = create_client(url, key)
 
     end = datetime.today()
-    start = end - timedelta(days=int(HISTORY_YEARS * 365.25))
+    backfill_start = (end - timedelta(days=int(HISTORY_YEARS * 365.25))).date()
     symbols = _symbol_universe()
-    print(f"Fetching daily adjusted close for {len(symbols)} symbols "
-          f"({start.date()} .. {end.date()})...")
+
+    mode = resolve_mode()
+    latest = {} if mode == "backfill" else latest_dates(
+        client, "valuation_prices", "date", "symbol", symbols)
+    n_backfill = sum(is_backfill(mode, latest.get(tk)) for tk in symbols)
+    print(f"[mode={mode}] daily adjusted close for {len(symbols)} symbols "
+          f"({n_backfill} backfill, {len(symbols) - n_backfill} tail; end {end.date()})...")
 
     total_written = 0
     summary: list[dict] = []
     failed: list[str] = []
 
-    for ticker in symbols:
+    for idx, ticker in enumerate(symbols):
+        if idx and idx % PACE_EVERY == 0:
+            time.sleep(PACE_SLEEP)  # pace bursts to limit yfinance rate-limiting
+        start = fetch_start(mode, latest.get(ticker), backfill_start, end.date())
         try:
             close = fetch_close(ticker, start, end)
         except Exception as exc:  # download / parse — never abort the whole run

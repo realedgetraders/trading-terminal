@@ -38,6 +38,8 @@ from datetime import date, timedelta
 import requests
 from supabase import create_client
 
+from _incremental import fetch_start, is_backfill, latest_date, resolve_mode
+
 DBNOMICS_API = "https://api.db.nomics.world/v22/series"
 SOURCE = "dbnomics"
 LOOKBACK_YEARS = 3          # keep >= 12 months of history per series
@@ -158,10 +160,14 @@ def fetch_series(ref: str) -> list[tuple[date, float]]:
     return observations
 
 
-def collect_dbnomics_rows(cutoff: date) -> list[dict]:
+def collect_dbnomics_rows(series_cutoff) -> list[dict]:
     """Pull every configured DBnomics series and build Supabase row dicts.
 
-    Series with no data at or after ``cutoff`` are reported and skipped.
+    ``series_cutoff(indicator, currency)`` returns the per-series cutoff date —
+    the backfill window for a full pull, or (latest stored − overlap) for a tail
+    pull. DBnomics always returns the whole series; the cutoff bounds which
+    observations are upserted. Series with no data at or after the cutoff are
+    reported and skipped.
     """
     rows: list[dict] = []
     for indicator, currency_map in INDICATORS.items():
@@ -171,6 +177,7 @@ def collect_dbnomics_rows(cutoff: date) -> list[dict]:
                 print(f"  skip  {indicator:<13} {currency}: no series configured")
                 continue
 
+            cutoff = series_cutoff(indicator, currency)
             observations = [(d, v) for d, v in fetch_series(ref) if d >= cutoff]
             if not observations:
                 print(f"  skip  {indicator:<13} {currency}: no data returned")
@@ -202,10 +209,26 @@ def upsert_rows(client, rows: list[dict]) -> int:
 def main() -> None:
     url, key = _require_env()
     client = create_client(url, key)
-    cutoff = date.today() - timedelta(days=365 * LOOKBACK_YEARS + 31)
+    backfill_cutoff = date.today() - timedelta(days=365 * LOOKBACK_YEARS + 31)
 
-    print(f"Fetching macro data from DBnomics (history since {cutoff})...")
-    rows = collect_dbnomics_rows(cutoff)
+    # Per (currency, indicator) cutoff: full backfill window for an empty/forced
+    # series, else (latest stored − overlap) so only the recent tail is re-upserted.
+    mode = resolve_mode()
+    series = [(ind, cur) for ind, cmap in INDICATORS.items()
+              for cur in CURRENCIES if cmap.get(cur)]
+    latest = {} if mode == "backfill" else {
+        (ind, cur): latest_date(client, "macro_data", "date",
+                                {"indicator": ind, "currency": cur})
+        for ind, cur in series
+    }
+    n_bf = sum(is_backfill(mode, latest.get(s)) for s in series)
+    print(f"[mode={mode}] macro data from DBnomics "
+          f"({n_bf} backfill, {len(series) - n_bf} tail)...")
+
+    def series_cutoff(indicator: str, currency: str) -> date:
+        return fetch_start(mode, latest.get((indicator, currency)), backfill_cutoff)
+
+    rows = collect_dbnomics_rows(series_cutoff)
     # Future providers (PMI, forecasts, ...) append their rows here, e.g.:
     #   rows += collect_pmi_rows(cutoff)
 

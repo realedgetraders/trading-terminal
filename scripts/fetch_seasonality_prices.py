@@ -39,6 +39,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+from collections import defaultdict
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -46,11 +47,14 @@ import yfinance as yf
 from supabase import create_client
 
 from _assets_feed import load_assets, with_module
+from _incremental import fetch_start, is_backfill, latest_dates, resolve_mode
 
 HISTORY_YEARS = 25
 UPSERT_CHUNK = 1000          # rows per Supabase upsert call
 SHORT_HISTORY_YEARS = 20.0   # below this span a symbol is flagged in the report
 RETRY_SLEEP = 2              # seconds before the single retry of a transient fail
+BATCH_SIZE = 50              # tickers per bulk yfinance download (direct assets)
+BATCH_SLEEP = 1.5            # seconds paced between bulk batches
 
 
 def _require_env() -> tuple[str, str]:
@@ -116,25 +120,34 @@ def _yf_ohlc(ticker: str, start: datetime, end: datetime, shift: bool) -> pd.Dat
 
 
 # Per-run cache so each spot leg is downloaded only once (crosses reuse 7 legs).
-_LEG_CACHE: dict[str, pd.Series] = {}
+# Keyed by (ticker, start) so a leg shared by a tail cross and a backfill cross —
+# which need different start dates — is not served the wrong (too-short) window.
+_LEG_CACHE: dict[tuple, pd.Series] = {}
 
 
-def _leg_series(ticker: str, invert: bool, start: datetime, end: datetime) -> pd.Series:
+def _leg_series(ticker: str, invert: bool, start, end: datetime) -> pd.Series:
     """XXX/USD Close for one leg, inverting USD-base quotes when flagged."""
-    if ticker not in _LEG_CACHE:
-        _LEG_CACHE[ticker] = _yf_close(ticker, start, end)
-    s = _LEG_CACHE[ticker]
+    cache_key = (ticker, start)
+    if cache_key not in _LEG_CACHE:
+        _LEG_CACHE[cache_key] = _yf_close(ticker, start, end)
+    s = _LEG_CACHE[cache_key]
     if not s.empty and invert:
         s = 1.0 / s
     return s
 
 
-def build_ohlc(seasonality: dict, start: datetime, end: datetime) -> pd.DataFrame:
+def build_ohlc(seasonality: dict, start: datetime, end: datetime,
+               min_overlap: int = 50) -> pd.DataFrame:
     """Return an OHLC DataFrame for one asset (empty on failure).
 
     Resolution is taken from the feed's `seasonality` block. The -1 day shift is
     driven strictly by resolve == 'fx_spot' (spot legs of a synthetic carry it
     too via _yf_close); 'direct' assets are never shifted.
+
+    ``min_overlap`` is the minimum number of shared leg dates required to build a
+    synthetic cross. The default 50 rejects barely-overlapping (invalid) pairs on
+    a full backfill; a tail run passes a smaller value, since a few recent days of
+    overlap is all a known-valid cross can have in the short tail window.
     """
     resolve = seasonality["resolve"]
     if resolve == "synthetic":
@@ -142,7 +155,7 @@ def build_ohlc(seasonality: dict, start: datetime, end: datetime) -> pd.DataFram
         num_s = _leg_series(leg_a["ticker"], leg_a["invert"], start, end)
         den_s = _leg_series(leg_b["ticker"], leg_b["invert"], start, end)
         common = num_s.index.intersection(den_s.index)
-        if len(common) <= 50:
+        if len(common) <= min_overlap:
             return pd.DataFrame()
         close = (num_s.loc[common] / den_s.loc[common]).dropna()
         df = close.to_frame(name="Close")
@@ -157,6 +170,66 @@ def build_ohlc(seasonality: dict, start: datetime, end: datetime) -> pd.DataFram
         return pd.DataFrame()
     df = df[df["Close"] > 0]  # guard: drop non-positive prices
     return df
+
+
+def _process_direct(raw) -> pd.DataFrame:
+    """Process a downloaded frame exactly like build_ohlc('direct'): OHLC, dropna,
+    NO shift, drop Close<=0 — so the bulk path is byte-identical to the per-symbol
+    `_yf_ohlc(shift=False)` path. Used only for direct-resolve assets."""
+    if raw is None or raw.empty:
+        return pd.DataFrame()
+    if isinstance(raw.columns, pd.MultiIndex):
+        raw = raw.copy()
+        raw.columns = raw.columns.get_level_values(0)
+    if not {"Open", "High", "Low", "Close"}.issubset(raw.columns):
+        return pd.DataFrame()
+    df = raw[["Open", "High", "Low", "Close"]].copy().dropna()
+    if df.empty:
+        return pd.DataFrame()
+    df.index = _to_naive_shift(df.index, 0)
+    df = df[df["Close"] > 0]
+    return df
+
+
+def bulk_ohlc(tickers: list[str], start: datetime, end: datetime) -> dict[str, pd.DataFrame]:
+    """Batched bulk OHLC download → {ticker: processed OHLC df}, for direct-resolve
+    assets only (stocks/ETFs/crypto/indices/commodities/rates).
+
+    Downloads in BATCH_SIZE chunks (threaded, paced by BATCH_SLEEP) to cut
+    round-trips and rate-limit hits. auto_adjust=False is preserved; each ticker
+    is processed by `_process_direct`, identical to the per-symbol direct path. A
+    ticker missing/empty in the batch (or a batch that errors) falls back to the
+    exact per-symbol path `build_ohlc({direct})` (which carries the retry-once guard).
+    fx_spot (−1 shift) and synthetic crosses are NOT bulked — they keep per-symbol.
+    """
+    out: dict[str, pd.DataFrame] = {}
+    uniq = list(dict.fromkeys(tickers))
+    for i in range(0, len(uniq), BATCH_SIZE):
+        batch = uniq[i:i + BATCH_SIZE]
+        frames = None
+        try:
+            frames = yf.download(batch, start=start, end=end, auto_adjust=False,
+                                 progress=False, group_by="ticker", threads=True)
+        except Exception:
+            frames = None
+        for tk in batch:
+            df = pd.DataFrame()
+            if frames is not None and not frames.empty:
+                try:
+                    sub = frames[tk] if isinstance(frames.columns, pd.MultiIndex) else frames
+                    df = _process_direct(sub)
+                except Exception:
+                    df = pd.DataFrame()
+            if df.empty:  # missing/transient → exact per-symbol direct path (retry-once)
+                try:
+                    df = build_ohlc({"resolve": "direct", "ticker": tk}, start, end)
+                except Exception:
+                    df = pd.DataFrame()
+            if not df.empty:
+                out[tk] = df
+        if i + BATCH_SIZE < len(uniq):
+            time.sleep(BATCH_SLEEP)
+    return out
 
 
 def instrument_plan() -> list[dict]:
@@ -201,28 +274,63 @@ def main() -> None:
     client = create_client(url, key)
 
     end = datetime.today()
-    start = end - timedelta(days=int(HISTORY_YEARS * 365.25))
+    backfill_start = (end - timedelta(days=int(HISTORY_YEARS * 365.25))).date()
     plan = instrument_plan()
-    print(f"Fetching daily OHLC for {len(plan)} instruments "
-          f"({start.date()} .. {end.date()})...")
+
+    # Per-symbol latest stored date → each instrument fetches from its OWN start:
+    # full history when it has no data (auto) or backfill is forced, else just the
+    # recent tail (latest − overlap). Crucially the start is per-symbol, NOT a
+    # shared minimum — a single stale series must never drag the whole universe
+    # back to a multi-year refetch.
+    mode = resolve_mode()
+    latest = {} if mode == "backfill" else latest_dates(
+        client, "seasonality_prices", "date", "symbol", [it["symbol"] for it in plan])
+    for it in plan:
+        it["backfill"] = is_backfill(mode, latest.get(it["symbol"]))
+        it["start"] = fetch_start(mode, latest.get(it["symbol"]), backfill_start, end.date())
+
+    n_bf = sum(it["backfill"] for it in plan)
+    print(f"[mode={mode}] daily OHLC for {len(plan)} instruments "
+          f"({n_bf} backfill, {len(plan) - n_bf} tail; end {end.date()})...")
 
     summary: list[dict] = []
     total_written = 0
 
+    # Bulk-download the direct-resolve tickers (the bulk of the universe), grouped
+    # by their per-symbol start so the fresh majority (one shared recent start)
+    # batches together while a stale/new series only fetches its own gap. fx_spot
+    # / synthetic stay per-symbol below (exact −1 shift / leg synthesis).
+    direct_by_start: dict = defaultdict(list)
+    for it in plan:
+        if it["seasonality"]["resolve"] == "direct":
+            direct_by_start[it["start"]].append(it["seasonality"]["ticker"])
+    bulk_cache: dict[str, pd.DataFrame] = {}
+    for s_start, tickers in sorted(direct_by_start.items()):
+        print(f"  bulk-downloading {len(tickers)} direct tickers from {s_start} "
+              f"in batches of {BATCH_SIZE}…")
+        bulk_cache.update(bulk_ohlc(tickers, s_start, end))
+
     for item in plan:
         symbol, category = item["symbol"], item["category"]
+        block = item["seasonality"]
         try:
-            df = build_ohlc(item["seasonality"], start, end)
+            if block["resolve"] == "direct":
+                df = bulk_cache.get(block["ticker"], pd.DataFrame())
+            else:  # fx_spot / synthetic — per-symbol (shift / leg synthesis)
+                # Tail runs have only a few overlapping leg days; relax the
+                # synthetic min-overlap guard (it's a backfill data-quality check).
+                df = build_ohlc(block, item["start"], end,
+                                min_overlap=50 if item["backfill"] else 0)
         except Exception as exc:  # download / parse — never abort the whole run
             print(f"  skip  {symbol:14s} ({category}): {exc}")
             summary.append({"symbol": symbol, "category": category, "rows": 0,
-                            "first": None, "last": None, "years": 0.0})
+                            "first": None, "last": None, "years": 0.0, "backfill": item["backfill"]})
             continue
 
         if df.empty:
             print(f"  skip  {symbol:14s} ({category}): no data")
             summary.append({"symbol": symbol, "category": category, "rows": 0,
-                            "first": None, "last": None, "years": 0.0})
+                            "first": None, "last": None, "years": 0.0, "backfill": item["backfill"]})
             continue
 
         rows = df_to_rows(symbol, category, df)
@@ -230,16 +338,18 @@ def main() -> None:
         total_written += written
         first, last = df.index[0].date(), df.index[-1].date()
         years = (df.index[-1] - df.index[0]).days / 365.25
-        flag = "  ⚠ short" if years < SHORT_HISTORY_YEARS else ""
+        # The short-history flag is only meaningful on a full pull — a tail run
+        # fetches only the recent window, so suppress it there.
+        flag = "  ⚠ short" if (item["backfill"] and years < SHORT_HISTORY_YEARS) else ""
         print(f"  ok    {symbol:14s} ({category:11s}): {written:>5} rows  "
               f"{first} .. {last}  ({years:4.1f}y){flag}")
         summary.append({"symbol": symbol, "category": category, "rows": written,
                         "first": first.isoformat(), "last": last.isoformat(),
-                        "years": years})
+                        "years": years, "backfill": item["backfill"]})
 
     # ── Run report ────────────────────────────────────────────────────────────
     ok = [s for s in summary if s["rows"] > 0]
-    short = [s for s in ok if s["years"] < SHORT_HISTORY_YEARS]
+    short = [s for s in ok if s["backfill"] and s["years"] < SHORT_HISTORY_YEARS]
     failed = [s for s in summary if s["rows"] == 0]
     print(f"\nDone: upserted {total_written} rows across {len(ok)}/{len(plan)} symbols.")
     if short:
