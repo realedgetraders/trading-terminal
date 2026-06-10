@@ -40,6 +40,7 @@ UPSERT_CHUNK = 1000        # rows per Supabase upsert call
 RETRY_SLEEP = 2            # seconds before the single retry of a transient fail
 PACE_EVERY = 50            # pause every N per-ticker downloads (rate-limit pacing)
 PACE_SLEEP = 1.5           # seconds paused at each pacing interval
+MIN_SUCCESS_RATIO = 0.5    # below this share of symbols written → fatal (red job)
 
 # Macro-anchor tickers — primary sources + fallbacks (ANCHORS in the module).
 # Fixed benchmark series (not part of the tradable feed universe), so kept here.
@@ -156,7 +157,12 @@ def main() -> None:
             {"symbol": ticker, "date": ts.date().isoformat(), "close": round(float(val), 6)}
             for ts, val in close.items()
         ]
-        written = upsert_rows(client, rows)
+        try:
+            written = upsert_rows(client, rows)
+        except Exception as exc:  # transient Supabase/throttle — skip, never abort
+            print(f"  skip  {ticker:10s}: upsert failed: {exc}")
+            failed.append(ticker)
+            continue
         total_written += written
         first, last = close.index[0].date(), close.index[-1].date()
         print(f"  ok    {ticker:10s}: {written:>4} rows  {first} .. {last}")
@@ -169,6 +175,17 @@ def main() -> None:
         print(f"\nFailed / no data ({len(failed)}):")
         for tk in failed:
             print(f"  {tk}")
+
+    # ── Tolerant exit (see fetch_seasonality_prices) ────────────────────────────
+    # Red only on a systemic failure: nothing written (Supabase down) or fewer
+    # than MIN_SUCCESS_RATIO of symbols written. A few throttled skips heal on the
+    # next idempotent daily run.
+    ratio = len(summary) / len(symbols) if symbols else 0.0
+    if not summary or ratio < MIN_SUCCESS_RATIO:
+        sys.exit(f"ERROR: only {len(summary)}/{len(symbols)} symbols written "
+                 f"({ratio:.0%} < {MIN_SUCCESS_RATIO:.0%} min) — treating as fatal.")
+    print(f"OK: {len(summary)}/{len(symbols)} symbols written ({ratio:.0%} ≥ "
+          f"{MIN_SUCCESS_RATIO:.0%}) — run successful (skips heal on the next daily run).")
 
 
 if __name__ == "__main__":

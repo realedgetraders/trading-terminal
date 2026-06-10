@@ -55,6 +55,7 @@ SHORT_HISTORY_YEARS = 20.0   # below this span a symbol is flagged in the report
 RETRY_SLEEP = 2              # seconds before the single retry of a transient fail
 BATCH_SIZE = 50              # tickers per bulk yfinance download (direct assets)
 BATCH_SLEEP = 1.5            # seconds paced between bulk batches
+MIN_SUCCESS_RATIO = 0.5      # below this share of symbols written → fatal (red job)
 
 
 def _require_env() -> tuple[str, str]:
@@ -334,7 +335,13 @@ def main() -> None:
             continue
 
         rows = df_to_rows(symbol, category, df)
-        written = upsert_rows(client, rows)
+        try:
+            written = upsert_rows(client, rows)
+        except Exception as exc:  # transient Supabase/throttle — skip, never abort
+            print(f"  skip  {symbol:14s} ({category}): upsert failed: {exc}")
+            summary.append({"symbol": symbol, "category": category, "rows": 0,
+                            "first": None, "last": None, "years": 0.0, "backfill": item["backfill"]})
+            continue
         total_written += written
         first, last = df.index[0].date(), df.index[-1].date()
         years = (df.index[-1] - df.index[0]).days / 365.25
@@ -361,6 +368,18 @@ def main() -> None:
         print("\nNo data (skipped):")
         for s in failed:
             print(f"  {s['category']:11s} {s['symbol']}")
+
+    # ── Tolerant exit ───────────────────────────────────────────────────────────
+    # A handful of Yahoo-throttled skips must NOT fail the job — the idempotent
+    # daily re-run heals them. Red only on a SYSTEMIC failure: nothing written
+    # (e.g. Supabase down → every upsert fails → 0 ok) or fewer than
+    # MIN_SUCCESS_RATIO of the planned symbols written.
+    ratio = len(ok) / len(plan) if plan else 0.0
+    if not ok or ratio < MIN_SUCCESS_RATIO:
+        sys.exit(f"ERROR: only {len(ok)}/{len(plan)} symbols written "
+                 f"({ratio:.0%} < {MIN_SUCCESS_RATIO:.0%} min) — treating as fatal.")
+    print(f"OK: {len(ok)}/{len(plan)} symbols written ({ratio:.0%} ≥ "
+          f"{MIN_SUCCESS_RATIO:.0%}) — run successful (skips heal on the next daily run).")
 
 
 if __name__ == "__main__":

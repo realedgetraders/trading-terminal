@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -30,6 +31,8 @@ from _incremental import OVERLAP_DAYS, latest_date, resolve_mode
 
 PERIOD = "2y"          # ~2 years buffer; web app reads the last 12 months
 UPSERT_CHUNK = 500     # rows per Supabase upsert call
+MAX_ATTEMPTS = 3       # download attempts before giving up (Yahoo throttling)
+RETRY_SLEEP = 2        # base seconds before a retry (scaled by attempt = backoff)
 
 
 def _require_env() -> tuple[str, str]:
@@ -45,13 +48,25 @@ def fetch_vix(period: str | None = None, start: datetime | None = None) -> pd.Se
 
     Full history when ``period`` is given (backfill); only the recent tail when
     ``start`` is given (incremental). Same interval/auto_adjust either way, so
-    overlapping dates are byte-identical to a full pull.
+    overlapping dates are byte-identical to a full pull. A transient Yahoo failure
+    (exception or empty frame) is retried with a short backoff before giving up —
+    only a genuinely empty result after MAX_ATTEMPTS is treated as "no data".
     """
-    if start is not None:
-        df = yf.download("^VIX", start=start, interval="1d", progress=False, auto_adjust=True)
-    else:
-        df = yf.download("^VIX", period=period, interval="1d", progress=False, auto_adjust=True)
-    if df.empty:
+    df = pd.DataFrame()
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            if start is not None:
+                df = yf.download("^VIX", start=start, interval="1d", progress=False, auto_adjust=True)
+            else:
+                df = yf.download("^VIX", period=period, interval="1d", progress=False, auto_adjust=True)
+            if df is not None and not df.empty:
+                break
+        except Exception:
+            if attempt == MAX_ATTEMPTS:
+                raise
+        if attempt < MAX_ATTEMPTS:
+            time.sleep(RETRY_SLEEP * attempt)
+    if df is None or df.empty:
         return pd.Series(dtype=float)
     close = df["Close"].dropna()
     if isinstance(close, pd.DataFrame):
