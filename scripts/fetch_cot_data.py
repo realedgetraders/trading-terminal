@@ -6,9 +6,13 @@ https://www.cftc.gov/files/dea/history/ — free, no API key. The market univers
 substring-match logic and "(Old)" futures-only columns are reused 1:1 from the
 Streamlit COT module (pages/2_COT_Analysis.py), with no Streamlit/UI code.
 
-Coverage: all 19 markets across 4 categories (Forex, Commodities, Indices,
-Bonds), weekly. For every (market, report_date) the RAW long/short contracts of
-all three trader categories are written — futures-only ("(Old)" columns):
+Coverage: every asset with modules.cot in the canonical asset feed (/api/assets,
+loaded via _assets_feed) — currently the 19 markets across 4 categories (Forex,
+Commodities, Indices, Bonds). Each asset carries its CFTC match strings
+(cot.match, incl. rename variants) and exclude tokens (cot.exclude); the match /
+"(Old)" futures-only logic is unchanged. For every (market, report_date) the RAW
+long/short contracts of all three trader categories are written — futures-only
+("(Old)" columns):
   - comm_long / comm_short        Commercial (hedger)
   - noncomm_long / noncomm_short  Non-Commercial (large speculator)
   - nonrept_long / nonrept_short  Non-Reportable (small trader)
@@ -41,60 +45,51 @@ import pandas as pd
 import requests
 from supabase import create_client
 
+from _assets_feed import load_assets, with_module
+
 SOURCE = "cftc"
 START_YEAR = 2001          # full Legacy COT history (deacot2001.zip onward)
 REQUEST_TIMEOUT = 30       # seconds per CFTC request
 UPSERT_CHUNK = 500         # rows per Supabase upsert call
 
-# display_name -> exact "Market and Exchange Names" string from deacot{YEAR}.zip.
-# A list of names handles markets renamed across years (OR match, dedup by date).
-# Raw CFTC numbers only — no inversion applied. Taken verbatim from
-# pages/2_COT_Analysis.py (MARKET_GROUPS).
-MARKET_GROUPS = {
-    "Forex": {
-        "USD": "USD INDEX - ICE FUTURES U.S.",
-        "EUR": "EURO FX - CHICAGO MERCANTILE EXCHANGE",
-        "GBP": "BRITISH POUND - CHICAGO MERCANTILE EXCHANGE",
-        "JPY": "JAPANESE YEN - CHICAGO MERCANTILE EXCHANGE",
-        "CHF": "SWISS FRANC - CHICAGO MERCANTILE EXCHANGE",
-        "CAD": "CANADIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE",
-        "AUD": "AUSTRALIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE",
-        "NZD": "NZ DOLLAR - CHICAGO MERCANTILE EXCHANGE",
-    },
-    "Commodities": {
-        "Gold":   "GOLD - COMMODITY EXCHANGE INC.",
-        "Silver": "SILVER - COMMODITY EXCHANGE INC.",
-        # WTI crude was renamed: NYMEX (2001-2022) -> WTI-PHYSICAL (2022-present)
-        "Oil (WTI)": [
-            "CRUDE OIL, LIGHT SWEET - NEW YORK MERCANTILE EXCHANGE",
-            "WTI-PHYSICAL - NEW YORK MERCANTILE EXCHANGE",
-        ],
-    },
-    "Indices": {
-        "S&P 500":      "S&P 500 Consolidated - CHICAGO MERCANTILE EXCHANGE",
-        "Nasdaq-100":   "NASDAQ-100 Consolidated - CHICAGO MERCANTILE EXCHANGE",
-        "Dow Jones":    "DJIA Consolidated - CHICAGO BOARD OF TRADE",
-        "Russell 2000": "RUSSELL E-MINI - CHICAGO MERCANTILE EXCHANGE",
-    },
-    "Bonds": {
-        "10Y T-Note": "UST 10Y NOTE - CHICAGO BOARD OF TRADE",
-        "30Y T-Bond": "UST BOND - CHICAGO BOARD OF TRADE",
-        "2Y T-Note":  "UST 2Y NOTE - CHICAGO BOARD OF TRADE",
-        "5Y T-Note":  "UST 5Y NOTE - CHICAGO BOARD OF TRADE",
-    },
+# Feed category -> the cot_data `category` label the web app's screener groups by
+# (lib/cot.ts MARKET_GROUPS keys). Preserves the existing 4 display categories.
+COT_CATEGORY_DISPLAY = {
+    "fx": "Forex",
+    "commodity": "Commodities",
+    "index": "Indices",
+    "rate": "Bonds",
 }
+
+
+def build_market_groups(assets: list[dict]) -> dict[str, dict[str, dict]]:
+    """display_category -> {market_name -> {"match": [...], "exclude": [...]}}.
+
+    Built from every asset with modules.cot: `cotMarketName` is the market name
+    written to cot_data, `cot.match` the CFTC "Market and Exchange Names"
+    substrings (incl. rename variants), `cot.exclude` the look-alike tokens
+    (MICRO/ULTRA). Feed-driven — no hardcoded market list.
+    """
+    groups: dict[str, dict[str, dict]] = {}
+    for asset in with_module(assets, "cot"):
+        cot = asset.get("cot") or {}
+        market = asset.get("cotMarketName")
+        match = cot.get("match")
+        if not market or not match:
+            print(f"  skip  {asset.get('symbol')}: cot capability without "
+                  f"cotMarketName/match in feed")
+            continue
+        category = COT_CATEGORY_DISPLAY.get(asset["category"], asset["category"])
+        groups.setdefault(category, {})[market] = {
+            "match": match,
+            "exclude": cot.get("exclude", []),
+        }
+    return groups
 
 # Exact column names from deacot{YEAR}.zip (Legacy COT format).
 # "(Old)" = Futures only (not Futures+Options).
 _NAME_COL = "Market and Exchange Names"
 _DATE_COL = "As of Date in Form YYYY-MM-DD"
-
-# Look-alike contracts that share a base name with a main contract and would be
-# wrongly swept in by the substring match (MICRO GOLD vs GOLD, MICRO SILVER vs
-# SILVER, ULTRA UST BOND vs UST BOND). No main contract name contains these
-# tokens, so excluding them only drops the look-alikes — the other markets are
-# untouched.
-_EXCLUDE_TOKENS = ("MICRO ", "ULTRA ")
 
 # target db column -> source CSV column (the six raw long/short fields)
 _COT_COLS = {
@@ -143,25 +138,25 @@ def fetch_cot_raw(start_year: int) -> pd.DataFrame:
     return combined
 
 
-def market_records(raw: pd.DataFrame, cftc_name: "str | list[str]") -> pd.DataFrame:
+def market_records(raw: pd.DataFrame, names: list[str], exclude: list[str]) -> pd.DataFrame:
     """Return the six raw long/short series for one market, indexed by report
     date (ascending, de-duplicated).
 
     Mirrors get_market_data() in pages/2_COT_Analysis.py: OR substring match over
-    one or more name variants (regex=False), parse the as-of date, drop duplicate
-    dates (earliest name wins). Returns an empty DataFrame when the market or the
-    required columns are absent.
+    one or more name variants (regex=False), drop look-alike rows whose name
+    contains an `exclude` token (MICRO/ULTRA), parse the as-of date, drop
+    duplicate dates (earliest name wins). Returns an empty DataFrame when the
+    market or the required columns are absent.
     """
     if _NAME_COL not in raw.columns:
         return pd.DataFrame()
 
-    names = [cftc_name] if isinstance(cftc_name, str) else cftc_name
     upper = raw[_NAME_COL].str.upper()
     mask = pd.Series(False, index=raw.index)
     for n in names:
         mask |= upper.str.contains(n.upper(), regex=False, na=False)
-    for tok in _EXCLUDE_TOKENS:  # drop MICRO/ULTRA look-alikes that share a base name
-        mask &= ~upper.str.contains(tok, regex=False, na=False)
+    for tok in exclude:  # drop MICRO/ULTRA look-alikes that share a base name
+        mask &= ~upper.str.contains(tok.upper(), regex=False, na=False)
     df = raw[mask].copy()
     if df.empty or _DATE_COL not in df.columns:
         return pd.DataFrame()
@@ -188,7 +183,7 @@ def _to_int(value) -> "int | None":
     return int(round(float(value)))
 
 
-def collect_rows(raw: pd.DataFrame) -> tuple[list[dict], list[dict]]:
+def collect_rows(raw: pd.DataFrame, groups: dict[str, dict[str, dict]]) -> tuple[list[dict], list[dict]]:
     """Build Supabase row dicts for every market x report date.
 
     Returns (rows, summary) where summary holds one entry per written market for
@@ -196,9 +191,9 @@ def collect_rows(raw: pd.DataFrame) -> tuple[list[dict], list[dict]]:
     """
     rows: list[dict] = []
     summary: list[dict] = []
-    for category, markets in MARKET_GROUPS.items():
-        for market, cftc_name in markets.items():
-            recs = market_records(raw, cftc_name)
+    for category, markets in groups.items():
+        for market, spec in markets.items():
+            recs = market_records(raw, spec["match"], spec["exclude"])
             if recs.empty:
                 print(f"  skip  {market} ({category}): market not found")
                 continue
@@ -240,14 +235,20 @@ def main() -> None:
     url, key = _require_env()
     client = create_client(url, key)
 
-    print(f"Fetching CFTC COT data (deacot{START_YEAR}..{datetime.now().year})...")
+    groups = build_market_groups(load_assets())
+    market_count = sum(len(m) for m in groups.values())
+    if not market_count:
+        sys.exit("ERROR: no COT markets in the asset feed — nothing to write.")
+
+    print(f"Fetching CFTC COT data (deacot{START_YEAR}..{datetime.now().year}) "
+          f"for {market_count} markets...")
     raw = fetch_cot_raw(START_YEAR)
     if raw.empty:
         sys.exit("ERROR: no COT data fetched from CFTC — nothing to write.")
     if _NAME_COL not in raw.columns:
         sys.exit(f"ERROR: unexpected CFTC schema (missing '{_NAME_COL}' column).")
 
-    rows, summary = collect_rows(raw)
+    rows, summary = collect_rows(raw, groups)
     if not rows:
         sys.exit("ERROR: no COT rows built — nothing to write.")
 
@@ -256,7 +257,7 @@ def main() -> None:
     print(f"Done: upserted {written} rows (source={SOURCE}).")
 
     # ── Run report ────────────────────────────────────────────────────────────
-    print(f"\nMarkets written: {len(summary)} of {sum(len(m) for m in MARKET_GROUPS.values())}")
+    print(f"\nMarkets written: {len(summary)} of {market_count}")
     for s in summary:
         print(f"  {s['category']:11s} {s['market']:14s} latest {s['latest']} "
               f"(comm_long={s['comm_long']})")

@@ -29,3 +29,6 @@ __pycache__/
 *.log
 tmp/
 .cache/
+
+# Assets feed cache (last-good copy of /api/assets; not source of truth)
+scripts/.assets_cache.json

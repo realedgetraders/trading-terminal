@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Fetch daily adjusted close for the Valuation Tool's symbols into Supabase.
+"""Fetch daily adjusted close for the Valuation universe into Supabase.
 
-Source: yfinance (adjusted, daily). The symbol universe is reused 1:1 from
-pages/7_Valuation.py — the 38 tradable futures (FUTURES_BY_CAT) plus the four
-macro-anchor sources (primary + fallback tickers). ~3 years of history are
-stored, enough lookback for the 12-month rolling-range (stochastic %K) the web
-app computes; newer tickers (crypto futures) store whatever is available.
+Source: yfinance (adjusted, daily). The symbol universe comes from the canonical
+asset feed (/api/assets, loaded via _assets_feed): every asset with
+modules.valuation, keyed by its `yfinanceTicker`. The four macro-anchor / fixed
+benchmark sources (primary + fallback tickers) stay hardcoded here — they are
+fixed comparison series, not part of the tradable universe. ~3 years of history
+are stored, enough lookback for the 12-month rolling-range (stochastic %K) the
+web app computes; newer tickers store whatever is available.
 
 Rows go to the ``valuation_prices`` table (symbol, date, close) via upsert on
-(symbol, date), so re-runs never duplicate. A symbol that fails to download is
-reported and skipped — one bad symbol never aborts the run.
+(symbol, date), so re-runs never duplicate. Transient yfinance failures are
+retried once; a symbol that still fails is reported and skipped — one bad symbol
+never aborts the run.
 
 Required environment variables (never hardcode credentials):
   SUPABASE_URL         Supabase project URL
@@ -22,82 +25,37 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from datetime import datetime, timedelta
 
 import pandas as pd
 import yfinance as yf
 from supabase import create_client
 
+from _assets_feed import load_assets, with_module
+
 HISTORY_YEARS = 3
 UPSERT_CHUNK = 1000        # rows per Supabase upsert call
-
-# ─── Symbol universe (verbatim from pages/7_Valuation.py) ────────────────────
-
-# Tradable futures, grouped by screener category — FUTURES_BY_CAT.
-FUTURES_BY_CAT = {
-    "Forex": {
-        "Euro FX":            "6E=F",
-        "British Pound":      "6B=F",
-        "Japanese Yen":       "6J=F",
-        "Australian Dollar":  "6A=F",
-        "Canadian Dollar":    "6C=F",
-        "Swiss Franc":        "6S=F",
-        "New Zealand Dollar": "6N=F",
-        "Mexican Peso":       "6M=F",
-    },
-    "Commodities": {
-        "Crude Oil (WTI)":    "CL=F",
-        "Brent Crude":        "BZ=F",
-        "Natural Gas":        "NG=F",
-        "RBOB Gasoline":      "RB=F",
-        "Heating Oil":        "HO=F",
-        "Gold":               "GC=F",
-        "Silver":             "SI=F",
-        "Platinum":           "PL=F",
-        "Palladium":          "PA=F",
-        "Copper":             "HG=F",
-    },
-    "Agriculture": {
-        "Corn":               "ZC=F",
-        "Wheat":              "ZW=F",
-        "Soybeans":           "ZS=F",
-        "Soybean Oil":        "ZL=F",
-        "Soybean Meal":       "ZM=F",
-        "Coffee":             "KC=F",
-        "Cocoa":              "CC=F",
-        "Cotton":             "CT=F",
-        "Sugar":              "SB=F",
-        "Orange Juice":       "OJ=F",
-        "Live Cattle":        "LE=F",
-        "Feeder Cattle":      "GF=F",
-        "Lean Hogs":          "HE=F",
-    },
-    "Indices": {
-        "S&P 500":            "ES=F",
-        "Nasdaq 100":         "NQ=F",
-        "Dow Jones":          "YM=F",
-        "Russell 2000":       "RTY=F",
-        "Nikkei 225":         "NKD=F",
-    },
-    "Crypto": {
-        "Bitcoin":            "BTC=F",
-        "Ethereum":           "ETH=F",
-    },
-}
+RETRY_SLEEP = 2            # seconds before the single retry of a transient fail
 
 # Macro-anchor tickers — primary sources + fallbacks (ANCHORS in the module).
-# (The metals-basket tickers GC=F/SI=F/PL=F/PA=F are already in the futures.)
+# Fixed benchmark series (not part of the tradable feed universe), so kept here.
+# (The metals-basket tickers GC=F/SI=F/PL=F/PA=F are already in the universe.)
 ANCHOR_PRIMARY  = ["DX-Y.NYB", "ZN=F", "ACWI"]
 ANCHOR_FALLBACK = ["DX=F", "IEF", "VT", "GLD"]
 
 
 def _symbol_universe() -> list[str]:
-    """All distinct tickers to collect, de-duplicated, in a stable order."""
+    """All distinct tickers to collect, de-duplicated, in a stable order.
+
+    The tradable universe is every asset with modules.valuation (keyed by its
+    yfinanceTicker) from the feed; the fixed macro anchors are appended.
+    """
     seen: set[str] = set()
     out: list[str] = []
-    groups = [tk for cat in FUTURES_BY_CAT.values() for tk in cat.values()]
-    for tk in groups + ANCHOR_PRIMARY + ANCHOR_FALLBACK:
-        if tk not in seen:
+    universe = [a["yfinanceTicker"] for a in with_module(load_assets(), "valuation")]
+    for tk in universe + ANCHOR_PRIMARY + ANCHOR_FALLBACK:
+        if tk and tk not in seen:
             seen.add(tk)
             out.append(tk)
     return out
@@ -112,9 +70,23 @@ def _require_env() -> tuple[str, str]:
 
 
 def fetch_close(ticker: str, start: datetime, end: datetime) -> pd.Series:
-    """Daily adjusted Close from yfinance (ascending by date). Empty on failure."""
-    raw = yf.download(ticker, start=start, end=end, interval="1d",
-                      auto_adjust=True, progress=False)
+    """Daily adjusted Close from yfinance (ascending by date). Empty on failure.
+
+    One retry on a transient failure (exception or first-attempt empty); after
+    the retry an empty frame is treated as "no data" (invalid ticker).
+    """
+    raw = None
+    for attempt in (1, 2):
+        try:
+            raw = yf.download(ticker, start=start, end=end, interval="1d",
+                              auto_adjust=True, progress=False)
+            if raw is not None and not raw.empty:
+                break
+        except Exception:
+            if attempt == 2:
+                raise
+        if attempt == 1:
+            time.sleep(RETRY_SLEEP)
     if raw is None or raw.empty or "Close" not in raw:
         return pd.Series(dtype=float)
     close = raw["Close"]
