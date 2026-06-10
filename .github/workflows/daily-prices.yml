@@ -28,8 +28,8 @@ jobs:
       ASSETS_URL: ${{ secrets.ASSETS_URL || 'https://edgelabweb.vercel.app/api/assets' }}
       COLLECTOR_MODE: auto
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
