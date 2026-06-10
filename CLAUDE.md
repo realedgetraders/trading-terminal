@@ -85,14 +85,58 @@ trading-terminal/
 - Module 7 (Pair Intelligence): COMPLETE ✓ — PRO-gated, password "12345", imports data layer from `_shared.py`
 - Valuation Tool (`7_Valuation.py`): COMPLETE ✓ — rolling-range 0–100 (stochastic %K) vs Precious Metals · USD · Bonds · World Equities; futures screener; 38 futures + custom ticker
 
-## Supabase Collectors (data pipeline for the edgelabweb web port)
-Standalone scripts in `scripts/` fetch source data and upsert into Supabase
-(read by the Next.js app at edgelabweb). All idempotent (upsert on natural key),
-run on demand / cron; credentials from `.env` (`SUPABASE_URL`, `SUPABASE_SECRET_KEY`).
-- `fetch_cot_data.py`           → `cot_data` (19 markets × 3 trader categories, raw long/short from 2001; MICRO/ULTRA look-alikes excluded)
-- `fetch_seasonality_prices.py` → `seasonality_prices` (56 instruments, daily OHLC ~25y; synthetic forex crosses with corrected leg orientation)
+## Data pipeline (collectors → Supabase → edgelabweb web port)
+
+### Single source of truth — the asset registry
+The canonical asset registry lives in **edgelabweb** (`lib/assets.ts`) and is served
+as JSON at **`/api/assets`** (deployed: `https://edgelabweb.vercel.app/api/assets`).
+- **856 assets** across categories `fx` / `commodity` / `index` / `rate` / `crypto` / `stock`.
+- Each asset carries `symbol`, `name`, `category`, `yfinanceTicker`, capability
+  `modules` (seasonality/screener/correlation/valuation/cot), a `seasonality`
+  resolution block, plus `sector` (stocks) and `popular` (curated core vs long-tail).
+- **44 COT-eligible** markets (`modules.cot` true ⇔ a `cotMarketName` is set —
+  CFTC-covered futures + CME crypto only, never individual stocks).
+- Curated entries (`a(...)`, `popular: true`) vs expanded long-tail (`tail(...)`,
+  `popular: false`). Registry edits happen in edgelabweb, NOT here.
+
+### Collectors (`scripts/`) — feed-driven, incremental
+Standalone scripts fetch source data and upsert into Supabase (read by the Next.js
+app). **Feed-driven:** the work-list comes from `/api/assets` via `_assets_feed.py`
+(caches each good response to `scripts/.assets_cache.json`; on a network failure it
+falls back to that cache, never runs on no data). All idempotent (upsert on natural
+key). Credentials from env / `.env` (`SUPABASE_URL`, `SUPABASE_SECRET_KEY`).
+
+- `fetch_cot_data.py`           → `cot_data` (44 markets × 3 trader categories, raw long/short from 2001; MICRO/ULTRA look-alikes excluded)
+- `fetch_seasonality_prices.py` → `seasonality_prices` (feed seasonality universe, daily OHLC ~25y; synthetic forex crosses, corrected leg orientation)
 - `fetch_vix_history.py`        → `vix_history` (^VIX daily close ~2y)
-- `fetch_valuation_prices.py`   → `valuation_prices` (38 futures + macro-anchor tickers, adjusted close ~3y)
+- `fetch_valuation_prices.py`   → `valuation_prices` (feed valuation universe + macro-anchor tickers, adjusted close ~3y)
+- `fetch_macro_data.py`         → `macro_data` (8 currencies × 4 core indicators from DBnomics)
+
+### Modes — `_incremental.py` (`--mode auto|backfill|incremental`, env `COLLECTOR_MODE`, default `auto`)
+- **auto** (scheduled default): per series, full **backfill** if it has no stored data,
+  else a **tail** update from `last stored date − 5d overlap` forward. Tail output is
+  **byte-identical** to a full pull for any given date (same logic + idempotent upsert).
+- **backfill** forces full history (re-seed); **incremental** forces tail-only.
+- **"Latest stored date"** is read with one **per-series indexed query** over the
+  `(key, date)` composite index (`WHERE key=… ORDER BY date DESC LIMIT 1`) — a single
+  grouped `max(date)` is NOT used because **PostgREST aggregate functions are disabled
+  on this Supabase project** (and the big tables have no standalone `date` index).
+- Preserved exactly: fx_spot `−1` day shift, synthetic crosses (leg cache), retry-once,
+  skip-on-failure, pacing, `auto_adjust`, `Close ≤ 0` drop. Seasonality bulk-downloads
+  direct tickers **grouped by per-symbol start date**; valuation stays **per-symbol**
+  (its `auto_adjust=True` factor differs in batched vs single download).
+
+### Scheduling — GitHub Actions (schedule + `workflow_dispatch` only; never push/PR)
+- **`daily-prices.yml`** — cron `30 23 * * 1-5` (weekdays **23:30 UTC**, after US close):
+  seasonality → valuation → vix, `COLLECTOR_MODE=auto`, 30-min timeout.
+- **`weekly-collectors.yml`** — cron `0 12 * * 6` (**Sat 12:00 UTC**, after Fri CFTC release):
+  cot → macro, `COLLECTOR_MODE=auto`, 15-min timeout.
+- Repo secrets (by NAME only): **`SUPABASE_URL`**, **`SUPABASE_SECRET_KEY`** (optional
+  `ASSETS_URL` feed override; no FRED key needed). Later steps use `if: always()` so one
+  failing collector never blocks the others.
+
+### Supabase
+On the **Pro** plan (**8 GB** disk).
 
 Modules ported to edgelabweb so far: COT (M2), Seasonality (M1), Market Phase (M5), Valuation. M3 (Economic Bias) and M4 (Geopolitics) pending.
 
