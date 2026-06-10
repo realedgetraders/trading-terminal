@@ -1,19 +1,31 @@
-name: Weekly collectors
+name: Weekly collectors (auto)
 
-# Robust, weekly source collectors (CFTC, DBnomics).
+# Source collectors (CFTC COT, DBnomics macro) in incremental `auto` mode:
+# COT downloads only the current-year zip (full backfill only when cot_data is
+# empty); macro re-upserts only the recent tail per series.
+#
 # Trigger is schedule + manual ONLY — never push/pull_request: this repo is
-# public, and the Supabase secret must never run in a fork PR context.
+# public and the Supabase secret must never run in a fork PR context.
 on:
   schedule:
-    # Saturday 06:00 UTC — safely after the CFTC Friday COT release (~15:30 ET).
-    - cron: "0 6 * * 6"
+    # 12:00 UTC Saturday — safely after the CFTC Friday COT release (~15:30 ET).
+    - cron: "0 12 * * 6"
   workflow_dispatch:
 
 jobs:
-  cot:
-    name: COT (cot_data)
+  collect:
+    name: Collect weekly sources
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Measured auto-mode durations are well under a minute each; 15 min is ample
+    # headroom for slow CFTC / DBnomics responses.
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      # Optional feed override (used by the COT collector); falls back to the
+      # public deployed feed when the secret is unset (empty).
+      ASSETS_URL: ${{ secrets.ASSETS_URL || 'https://edgelabweb.vercel.app/api/assets' }}
+      COLLECTOR_MODE: auto
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,25 +33,11 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      - name: Fetch COT data
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: python scripts/fetch_cot_data.py
 
-  macro:
-    name: Macro (macro_data)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - run: pip install -r requirements.txt
-      - name: Fetch macro data
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      # Each collector is its own step; `if: always()` keeps macro running even
+      # if COT fails. Each script prints its own run summary.
+      - name: COT (cot_data)
+        run: python scripts/fetch_cot_data.py
+      - name: Macro (macro_data)
+        if: always()
         run: python scripts/fetch_macro_data.py
